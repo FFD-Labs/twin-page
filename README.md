@@ -8,7 +8,7 @@ The published file reads like the source. It opens with a map of what it contain
 
 ## Try it
 
-1. Download `releases/2026-10-09/devcon8.html` (open it on GitHub and use "Download raw file") and open it in a browser, on a phone or a laptop. It needs no server and nothing else to install.
+1. Download `releases/2026-10-10/devcon8.html` (open it on GitHub and use "Download raw file") and open it in a browser, on a phone or a laptop. It needs no server and nothing else to install.
 2. Add the network, the contract and a bag number after a `#` at the end of the address, exactly like this, and load the page again. On a phone, tap the address bar and paste the part from `#`:
 
 ```
@@ -16,7 +16,7 @@ devcon8.html#11155111:0x240dfbca7064d091149169eff95f764d1e21cea7/1
 ```
 
    Bags 1 to 20 exist on that Sepolia test contract. The page reads Ethereum and Swarm, so it needs an internet connection.
-3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm. No one else in between."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; who holds the twin; and, in the footer, the fingerprint of the file you are looking at, which you can compare with `releases/2026-10-09/SHA256SUMS`.
+3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm. No one else in between."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; who holds the twin; and, in the footer, the fingerprint of the file you are looking at, which you can compare with `releases/2026-10-10/SHA256SUMS`.
 
 ## The link
 
@@ -50,14 +50,14 @@ The file behind the QR is published here with its SHA-256 hash, in `releases/<da
 To check a copy of the file:
 
 ```
-cd releases/2026-10-09 && shasum -a 256 -c SHA256SUMS
+cd releases/2026-10-10 && shasum -a 256 -c SHA256SUMS
 ```
 
 To check that the published file is what this source builds: with Node 24 and the lockfile, the build gives the same bytes every time. Name the release when you build, since the file links to its own folder; the page's own code is not compiled, only stripped of its types, so the file's last script is the three source files one after another.
 
 ```
 npm ci
-node scripts/standalone.mjs --release 2026-10-09
+node scripts/standalone.mjs --release 2026-10-10
 shasum -a 256 dist/devcon8.html
 ```
 
@@ -101,12 +101,13 @@ Open the built file with the network, the contract and the bag number after a ha
 
 ## Status
 
-9 October 2026. Work in progress.
+10 October 2026. Work in progress.
 
 - The records the page reads today are test records on a Sepolia contract. The event runs on Ethereum mainnet with real records; the network and the contract in the QR come with that contract.
 - Placeholder: the fruit photos, the nutrition figures (working values until a public table is cited), the CO₂ factor and reference scenario (being closed with our partners), the colours of the frame around the fruit card.
 - The bags and their packaging are separate work, not in this repository.
-- The latest file is `releases/2026-10-09/devcon8.html`; its hash is in `SHA256SUMS` next to it.
+- The latest file is `releases/2026-10-10/devcon8.html`; its hash is in `SHA256SUMS` next to it.
+- `releases/2026-10-09/devcon8.html` is withdrawn. It painted a record before checking it and wrote one of its values into the page as it came, so a gateway or an RPC that lied could run script in it. The file stays here with its hash so that a copy of it can be recognised; do not use it.
 
 ## License
 
