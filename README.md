@@ -8,7 +8,7 @@ The published file reads like the source. It opens with a map of what it contain
 
 ## Try it
 
-1. Download `releases/2026-10-10/devcon8.html` (open it on GitHub and use "Download raw file") and open it in a browser, on a phone or a laptop. It needs no server and nothing else to install.
+1. Download `devcon8.html` from the folder of the current release, the one marked current in [Releases](#releases) (open it on GitHub and use "Download raw file"), and open it in a browser, on a phone or a laptop. It needs no server and nothing else to install.
 2. Add the network, the contract and a bag number after a `#` at the end of the address, exactly like this, and load the page again. On a phone, tap the address bar and paste the part from `#`:
 
 ```
@@ -16,7 +16,7 @@ devcon8.html#11155111:0x240dfbca7064d091149169eff95f764d1e21cea7/1
 ```
 
    Bags 1 to 20 exist on that Sepolia test contract. The page reads Ethereum and Swarm, so it needs an internet connection.
-3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm. No one else in between."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; who holds the twin; and, in the footer, the fingerprint of the file you are looking at, which you can compare with `releases/2026-10-10/SHA256SUMS`.
+3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm. No one else in between."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; who holds the twin; and, in the footer, the fingerprint of the file you are looking at, which you can compare with the `SHA256SUMS` of its release.
 
 ## The link
 
@@ -45,21 +45,45 @@ The states the page handles: no record yet for the bag, no bag in the link, a li
 
 ## The fingerprint
 
-The file behind the QR is published here with its SHA-256 hash, in `releases/<date>/`. A page cannot carry its own hash, since writing it in would change the bytes. So when the page opens from the web, the device reads the file it received, hashes it and shows the result in the footer, the same way it hashes every record. Compare that number with `SHA256SUMS`.
+The file behind the QR is published here with its SHA-256 hash, each release in a folder of its own under `releases/`. A page cannot carry its own hash, since writing it in would change the bytes. So when the page opens from the web, the device reads the file it received, hashes it and shows the result in the footer, the same way it hashes every record. Compare that number with `SHA256SUMS`.
 
-To check a copy of the file:
-
-```
-cd releases/2026-10-10 && shasum -a 256 -c SHA256SUMS
-```
-
-To check that the published file is what this source builds: with Node 24 and the lockfile, the build gives the same bytes every time. Name the release when you build, since the file links to its own folder; the page's own code is not compiled, only stripped of its types, so the file's last script is the three source files one after another.
+To check a copy of the file, in the folder of its release:
 
 ```
+cd releases/<folder> && shasum -a 256 -c SHA256SUMS
+```
+
+To check that a published file is what its source builds: with Node 24 and the lockfile, the build gives the same bytes every time. Build from the tag of the release and name its folder, since the file links to its own; the page's own code is not compiled, only stripped of its types, so the file's last script is the three source files one after another.
+
+```
+git checkout <tag>
 npm ci
-node scripts/standalone.mjs --release 2026-10-10
+node scripts/standalone.mjs --release <folder>
 shasum -a 256 dist/devcon8.html
 ```
+
+## Releases
+
+Every file that has been published, in the order it was. A release has a number, a folder that is never written again and a tag on the commit it was built from.
+
+The number has two parts. The first is 0 while the page is in the workshop (see Status) and 1 from the first official release. The second counts the releases of that line, one by one: after 0.2 comes 0.3, and the first official one is 1.0.
+
+The first two were named by their date and keep their folder and their tag, since each file links to its own folder. From the third on, release 0.3 is `releases/0.3/` and the tag `v0.3`.
+
+| Release | Date | Folder | Tag | SHA-256 of `devcon8.html` | Status |
+|---|---|---|---|---|---|
+| 0.1 | 9 Oct 2026 | `releases/2026-10-09/` | `2026-10-09` | `c9840efe1f223e1d199b2f6039be5573bdefd9685378a51631ac4f4f32e2ed87` | withdrawn |
+| 0.2 | 10 Oct 2026 | `releases/2026-10-10/` | `2026-10-10` | `0e6f48570feedab7d29b1b6a741eabf1366ea2a4aacd201b3052f54eee69d95e` | current |
+
+The file to use is the one marked current. A superseded one has a newer file after it and nothing known against it. Release 0.1 is withdrawn: it painted a record before checking it and wrote one of its values into the page as it came, so a gateway or an RPC that lied could run script in it. Its file stays here with its hash so that a copy of it can be recognised; do not use it.
+
+To publish the next one:
+
+```
+npm run release -- <n>
+```
+
+`<n>` is the next number; run it without one and it says which. It is the next of the same line or, to begin the line that follows, its first: after 0.2 the script takes 0.3 or 1.0 and nothing else. It builds the file, files it in `releases/<n>/` with its `SHA256SUMS` and adds its row to the table, and it never writes into a folder that is there. Commit the folder and the README; once that commit is on `main`, tag it `v<n>` and attach the two files to a GitHub release of that name. While the first number is 0 that GitHub release is marked as a pre-release, so that "Latest" waits for 1.0.
 
 ## What the page never does
 
@@ -77,7 +101,7 @@ npm run check          # type check
 npm test               # the check and the paint functions against a gateway, an RPC and records that lie
 npm run dev            # http://localhost:5173/devcon8.html
 npm run standalone     # dist/devcon8.html, the one file
-npm run release        # builds the file and files it in releases/<today>/ with SHA256SUMS
+npm run release -- <n> # builds the file and files it as release <n>, see Releases
 ```
 
 Open the built file with the network, the contract and the bag number after a hash, as in The link.
@@ -96,8 +120,9 @@ Open the built file with the network, the contract and the bag number after a ha
 | `test/check.test.mjs` | The whole check against a gateway and an RPC that lie: bytes that fail it are never read, and a reference is 64 hex digits or nothing |
 | `test/page.mjs` | The page for the tests: the markup and the script as written, in jsdom |
 | `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed, and the policy that names those two scripts by their hash |
-| `scripts/release.mjs` | Builds the file and files it with its hash |
-| `releases/<date>/` | The published files and their `SHA256SUMS` |
+| `test/releases.test.mjs` | The releases: every folder still holds the file its `SHA256SUMS` and its row in the table name |
+| `scripts/release.mjs` | Builds the file and files it as the next release, with its hash and its row in the table. It never writes over a release |
+| `releases/<folder>/` | The published files and their `SHA256SUMS`, one folder per release |
 
 ## Status
 
@@ -106,8 +131,7 @@ Open the built file with the network, the contract and the bag number after a ha
 - The records the page reads today are test records on a Sepolia contract. The event runs on Ethereum mainnet with real records; the network and the contract in the QR come with that contract.
 - Placeholder: the fruit photos, the nutrition figures (working values until a public table is cited), the CO₂ factor and reference scenario (being closed with our partners), the colours of the frame around the fruit card.
 - The bags and their packaging are separate work, not in this repository.
-- The latest file is `releases/2026-10-10/devcon8.html`; its hash is in `SHA256SUMS` next to it.
-- `releases/2026-10-09/devcon8.html` is withdrawn. It painted a record before checking it and wrote one of its values into the page as it came, so a gateway or an RPC that lied could run script in it. The file stays here with its hash so that a copy of it can be recognised; do not use it.
+- The file to use is the one marked current in [Releases](#releases).
 
 ## License
 
