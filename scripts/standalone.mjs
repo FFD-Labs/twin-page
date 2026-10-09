@@ -1,9 +1,11 @@
 // Folds the page into one file that opens anywhere and reads like the source. The file is web/devcon8.html as written,
-// with four things added in their marked places: the fonts and marks as data URIs, the merged config as JSON, the libraries
-// as one compact script, and the page's own modules one after another with only their types removed (Node's stripper keeps
-// every comment and line). `node scripts/standalone.mjs` writes dist/devcon8.html. With `--release <date>` (what
-// scripts/release.mjs passes) the fingerprint line links to that release's SHA256SUMS on GitHub.
+// with five things added in their marked places: the fonts and marks as data URIs, the merged config as JSON, the libraries
+// as one compact script, the page's own modules one after another with only their types removed (Node's stripper keeps
+// every comment and line), and in the head the policy that lets those two scripts run and no other. `node
+// scripts/standalone.mjs` writes dist/devcon8.html. With `--release <date>` (what scripts/release.mjs passes) the
+// fingerprint line links to that release's SHA256SUMS on GitHub.
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import { resolve } from 'node:path'
@@ -73,6 +75,9 @@ const config = JSON.parse(text('web/public/config.json'))
 delete config._about
 if (release && config.source) config.source = `${config.source}/blob/main/releases/${release}/SHA256SUMS`
 
+// The two scripts as they sit between their tags, to the byte: the policy names each by the hash of exactly this text.
+const scripts = { library: `\n${libraries}\n        `, page: `\n${ours}\n        ` }
+
 // a function, so that a `$&` or a `$'` inside the minified libraries is not read as a replacement pattern
 html = html.replace(
     /[ \t]*<script type="module" src="\.\/devcon8\.ts"><\/script>\n/,
@@ -80,11 +85,28 @@ html = html.replace(
     `        <!-- 3 · Config: what the page reads from, read by loadConfig() before anything else. -->\n` +
         `        <script type="application/json" id="config">\n${JSON.stringify(config, null, 2).replace(/</g, '\\u003c')}\n        </script>\n` +
         `        <!-- 4 · Library: ${versions}, bundled and minified from npm, unchanged. What the page takes from it is listed in src/rails.ts -->\n` +
-        `        <script>\n${libraries}\n        </script>\n` +
+        `        <script>${scripts.library}</script>\n` +
         `        <!-- 5 · Script: the page's own code as written, src/lib.ts, web/life-grid.ts and web/devcon8.ts, with only the types removed -->\n` +
-        `        <script type="module">\n${ours}\n        </script>\n`
+        `        <script type="module">${scripts.page}</script>\n`
 )
 if (/<script type="module" src=/.test(html)) throw Error('the script tag was not replaced')
+
+// ---------- the policy: the file runs its own two scripts and no other ----------
+// A Content-Security-Policy, as a meta since the file travels without a server of its own. It names the two scripts by their
+// SHA-256 and allows no other: not a handler written into the markup, not a script added later, not a javascript: link. The
+// page writes what a record says as text; if a value ever reached the markup as it came, it would still not run. The policy
+// is about script and nothing else: what the page may load and where it may connect stay as they were.
+const sha256 = (script) => `'sha256-${createHash('sha256').update(script).digest('base64')}'`
+const policy = `script-src ${sha256(scripts.library)} ${sha256(scripts.page)}; object-src 'none'; base-uri 'none'`
+html = html.replace(/([ \t]*)<meta charset="utf-8" \/>\n/, (charset, indent) => `${charset}${indent}<meta http-equiv="Content-Security-Policy" content="${policy}" />\n`)
+if (!html.includes(`content="${policy}"`)) throw Error('the policy was not placed')
+// What was hashed must be what a browser will hash. It reads the text between the tags after turning every carriage return
+// into a line feed and every NUL into a replacement character, and it would stop a script that does not match its hash.
+for (const [, attributes, script] of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)) {
+    if (attributes.includes('type="application/json"')) continue // data, read by the page and never run
+    if (/[\r\0]/.test(script)) throw Error('a script has a carriage return or a NUL: its hash would not be the one a browser computes')
+    if (!policy.includes(sha256(script))) throw Error('the file has a script the policy does not name')
+}
 
 mkdirSync(resolve(root, 'dist'), { recursive: true })
 const name = 'devcon8.html'

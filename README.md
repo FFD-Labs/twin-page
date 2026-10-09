@@ -67,6 +67,7 @@ shasum -a 256 dist/devcon8.html
 - It sets no cookies and keeps nothing on the device.
 - What follows `#` in the link stays on the device: the page reads it and never sends it.
 - Nothing here signs, uploads or moves anything.
+- It runs no script but its own two. What a record says is written as text, and the head of the file carries a Content-Security-Policy that names the two scripts by their SHA-256, so nothing written into the page afterwards can run.
 
 ## Build
 
@@ -94,7 +95,7 @@ Open the built file with the network, the contract and the bag number after a ha
 | `test/paint.test.mjs` | The paint functions, given a record whose values are HTML: nothing of it may become an element of the page |
 | `test/check.test.mjs` | The whole check against a gateway and an RPC that lie: bytes that fail it are never read, and a reference is 64 hex digits or nothing |
 | `test/page.mjs` | The page for the tests: the markup and the script as written, in jsdom |
-| `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed |
+| `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed, and the policy that names those two scripts by their hash |
 | `scripts/release.mjs` | Builds the file and files it with its hash |
 | `releases/<date>/` | The published files and their `SHA256SUMS` |
 
