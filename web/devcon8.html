@@ -14,6 +14,9 @@
       5 · Script      the page's own code, as written in src/lib.ts, web/life-grid.ts and web/devcon8.ts, types removed
       6 · Fonts       the three typefaces, inlined so the file is one
 
+    The file runs two scripts, 4 and 5, and no other: the Content-Security-Policy in the head names each by its SHA-256
+    (added by the build), so nothing written into the page afterwards can run as script.
+
     What the page talks to, and nothing else:
       Ethereum        a public RPC, read only: the bag's record, the anchors, who holds the twin, ENS names (config: rpc)
       Swarm           public gateways, read only: the records themselves (config: gateways)

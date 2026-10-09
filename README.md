@@ -8,7 +8,7 @@ The published file reads like the source. It opens with a map of what it contain
 
 ## Try it
 
-1. Download `releases/2026-10-09/devcon8.html` (open it on GitHub and use "Download raw file") and open it in a browser, on a phone or a laptop. It needs no server and nothing else to install.
+1. Download `releases/2026-10-10/devcon8.html` (open it on GitHub and use "Download raw file") and open it in a browser, on a phone or a laptop. It needs no server and nothing else to install.
 2. Add the network, the contract and a bag number after a `#` at the end of the address, exactly like this, and load the page again. On a phone, tap the address bar and paste the part from `#`:
 
 ```
@@ -16,7 +16,7 @@ devcon8.html#11155111:0x240dfbca7064d091149169eff95f764d1e21cea7/1
 ```
 
    Bags 1 to 20 exist on that Sepolia test contract. The page reads Ethereum and Swarm, so it needs an internet connection.
-3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm. No one else in between."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; who holds the twin; and, in the footer, the fingerprint of the file you are looking at, which you can compare with `releases/2026-10-09/SHA256SUMS`.
+3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm. No one else in between."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; who holds the twin; and, in the footer, the fingerprint of the file you are looking at, which you can compare with `releases/2026-10-10/SHA256SUMS`.
 
 ## The link
 
@@ -41,7 +41,7 @@ Top to bottom, each block filling in as its records arrive.
 | The twin | Who holds the bag's twin: the jazzicon of its address, as its wallet draws it, or its ENS name and avatar when it has them | Ethereum and ENS |
 | The footer | Anchored on Ethereum, stored on Swarm, living on public rails; the Fair Food Data mark and the site; the fingerprint of the page | |
 
-The states the page handles: no record yet for the bag, no bag in the link, a link cut short, a contract the page does not list, a network the page has no RPC for, and a network that does not answer (the gateways are tried in order, with a retry).
+The states the page handles: no record yet for the bag, no bag in the link, a link cut short, a contract the page does not list, a network the page has no RPC for, a network that does not answer (the gateways are tried in order, with a retry), and a record that fails the check. That last one is never read: what a gateway serves is hashed and compared with its anchor before a byte of it is parsed, and a record that does not match gets a card with its reference and nothing of what arrived.
 
 ## The fingerprint
 
@@ -50,14 +50,14 @@ The file behind the QR is published here with its SHA-256 hash, in `releases/<da
 To check a copy of the file:
 
 ```
-cd releases/2026-10-09 && shasum -a 256 -c SHA256SUMS
+cd releases/2026-10-10 && shasum -a 256 -c SHA256SUMS
 ```
 
 To check that the published file is what this source builds: with Node 24 and the lockfile, the build gives the same bytes every time. Name the release when you build, since the file links to its own folder; the page's own code is not compiled, only stripped of its types, so the file's last script is the three source files one after another.
 
 ```
 npm ci
-node scripts/standalone.mjs --release 2026-10-09
+node scripts/standalone.mjs --release 2026-10-10
 shasum -a 256 dist/devcon8.html
 ```
 
@@ -67,12 +67,14 @@ shasum -a 256 dist/devcon8.html
 - It sets no cookies and keeps nothing on the device.
 - What follows `#` in the link stays on the device: the page reads it and never sends it.
 - Nothing here signs, uploads or moves anything.
+- It runs no script but its own two. What a record says is written as text, and the head of the file carries a Content-Security-Policy that names the two scripts by their SHA-256, so nothing written into the page afterwards can run.
 
 ## Build
 
 ```
 npm ci
 npm run check          # type check
+npm test               # the check and the paint functions against a gateway, an RPC and records that lie
 npm run dev            # http://localhost:5173/devcon8.html
 npm run standalone     # dist/devcon8.html, the one file
 npm run release        # builds the file and files it in releases/<today>/ with SHA256SUMS
@@ -90,18 +92,22 @@ Open the built file with the network, the contract and the bag number after a ha
 | `src/lib.ts` | The contract's read side, the link format, downloading a record, and the Swarm reference of a file computed the way Swarm computes it, written here so anyone can read how a record is checked |
 | `src/rails.ts` | Everything the page takes from viem, by name: the read side of Ethereum and ENS, keccak256 |
 | `web/public/config.json` | What the page reads: the RPC and the contract it trusts, the custody address, the gateways in order, the day the storage is paid up to, the links, this repository, the fruits and the CO₂ assumptions |
-| `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed |
+| `test/paint.test.mjs` | The paint functions, given a record whose values are HTML: nothing of it may become an element of the page |
+| `test/check.test.mjs` | The whole check against a gateway and an RPC that lie: bytes that fail it are never read, and a reference is 64 hex digits or nothing |
+| `test/page.mjs` | The page for the tests: the markup and the script as written, in jsdom |
+| `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed, and the policy that names those two scripts by their hash |
 | `scripts/release.mjs` | Builds the file and files it with its hash |
 | `releases/<date>/` | The published files and their `SHA256SUMS` |
 
 ## Status
 
-9 October 2026. Work in progress.
+10 October 2026. Work in progress.
 
 - The records the page reads today are test records on a Sepolia contract. The event runs on Ethereum mainnet with real records; the network and the contract in the QR come with that contract.
 - Placeholder: the fruit photos, the nutrition figures (working values until a public table is cited), the CO₂ factor and reference scenario (being closed with our partners), the colours of the frame around the fruit card.
 - The bags and their packaging are separate work, not in this repository.
-- The latest file is `releases/2026-10-09/devcon8.html`; its hash is in `SHA256SUMS` next to it.
+- The latest file is `releases/2026-10-10/devcon8.html`; its hash is in `SHA256SUMS` next to it.
+- `releases/2026-10-09/devcon8.html` is withdrawn. It painted a record before checking it and wrote one of its values into the page as it came, so a gateway or an RPC that lied could run script in it. The file stays here with its hash so that a copy of it can be recognised; do not use it.
 
 ## License
 

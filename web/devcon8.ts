@@ -83,14 +83,15 @@ type Page = Config & {
     source?: string
 }
 
+// One record of the path. `verified`: hashed the way Swarm does, the bytes a gateway served give `ref`, and `ref` has its
+// anchor. `data` is what the record says, and it is there only when that holds: bytes that fail the check are never parsed.
 type Event = {
     ref: Hex
     at: string | null
     block: bigint
-    bytes: Uint8Array
-    data: Record
+    data: Record | null
     gateway: string
-    verified: boolean | null
+    verified: boolean
     tx: string | null
 }
 
@@ -281,10 +282,18 @@ const steps = {
 }
 
 function card(event: Event, explorer: string | undefined) {
-    const { title, twin, rows: list } = steps[event.data.phase](event.data)
-    const correction = (event.data.version ?? 1) > 1 ? `<span class="chip wait">Correction v${event.data.version}</span>` : ''
+    const data = event.data
+    // A record that did not pass the check was not read: its card carries the reference the page asked for and nothing of what arrived.
+    if (!data)
+        return `
+        <p class="stage"><span class="num"></span> · not read</p>
+        <h2>Record not shown</h2>
+        <p class="check pending">Checking against its Ethereum anchor…</p>
+        <details><summary>Reference</summary><p>Swarm <code>${esc(event.ref)}</code></p></details>`
+    const { title, twin, rows: list } = steps[data.phase](data)
+    const correction = (data.version ?? 1) > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
     return `
-        <p class="stage"><span class="num"></span> · ${esc(event.data.phase)}</p>
+        <p class="stage"><span class="num"></span> · ${esc(data.phase)}</p>
         <h2>${esc(title)}</h2>
         ${twin ? '<p class="twin-born">This bag’s twin starts here.</p>' : ''}
         ${correction ? `<div class="chips">${correction}</div>` : ''}
@@ -294,7 +303,7 @@ function card(event: Event, explorer: string | undefined) {
             ${explorer && event.block ? `<a class="btn anchor" href="${esc(`${explorer}/block/${event.block}`)}" target="_blank" rel="noopener">Ethereum anchor ↗</a>` : ''}
             <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>
         </div>
-        <details><summary>Raw record</summary><pre>${esc(JSON.stringify(event.data, null, 2))}</pre><p>Swarm <code>${event.ref}</code></p></details>`
+        <details><summary>Raw record</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
 
 // Cards are painted as their record arrives and kept in the order of the events; the numbers follow.
@@ -311,14 +320,20 @@ const resetLater = () => {
     laterTimers.clear()
 }
 
-function placeCard(path: HTMLOListElement, events: Event[], event: Event, explorer: string | undefined) {
+// The tile beside a card: the day and the month the record gives. A record that was not read has no date to give.
+function tile(data: Record | null) {
+    if (!data) return '<span class="tile"><b>✗</b></span>'
+    const when = new Date(data.at)
+    const d = when.toLocaleDateString('en-GB', { day: 'numeric', timeZone: 'UTC' })
+    const m = when.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
+    return `<time class="tile" datetime="${esc(data.at)}"><b>${d}</b><span>${m}</span></time>`
+}
+
+export function placeCard(path: HTMLOListElement, events: Event[], event: Event, explorer: string | undefined) {
     const li = document.createElement('li')
     li.className = 'step'
     li.dataset.ref = event.ref
-    const when = new Date(event.data.at)
-    const d = when.toLocaleDateString('en-GB', { day: 'numeric', timeZone: 'UTC' })
-    const m = when.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
-    li.innerHTML = `<div class="unfold"><div class="unfold-in"><time class="tile" datetime="${esc(event.data.at)}"><b>${d}</b><span>${m}</span></time><div class="card">${card(event, explorer)}</div></div></div>`
+    li.innerHTML = `<div class="unfold"><div class="unfold-in">${tile(event.data)}<div class="card">${card(event, explorer)}</div></div></div>`
     const index = events.indexOf(event)
     const next = events[index + 1]
     const before = next ? path.querySelector<HTMLLIElement>(`li[data-ref="${next.ref}"]`) : null
@@ -338,6 +353,9 @@ function markCheck(li: HTMLElement, event: Event) {
 // ---------- the fruit card (block 3) ----------
 
 const g = (value: number) => `${Number(value.toFixed(1))} g`
+// The grams of a bag as its packing record gives them: a positive number, or none. Anything else in that field is not grams,
+// and the two blocks that compute with them, the fruit card and the arithmetic, are not painted from it.
+const bagGrams = (packing?: Record | null) => (typeof packing?.bag_g === 'number' && Number.isFinite(packing.bag_g) && packing.bag_g > 0 ? packing.bag_g : null)
 
 // The donut of what the bag holds: sugars on their own, the rest of the carbohydrate, protein, fat, fibre, and what is left of the weight as minerals.
 function donut(n: Nutrition, grams: number) {
@@ -399,10 +417,10 @@ const fruitState = { key: null as string | null, grams: null as number | null, n
 
 function fruitKey(config: Page, events: Event[]): string | null {
     const keys = Object.keys(config.fruits ?? {})
-    const intake = events.find(e => e.data.phase === 'intake')?.data
+    const intake = events.find(e => e.data?.phase === 'intake')?.data
     if (intake?.fruit && keys.includes(intake.fruit)) return intake.fruit
     for (const event of events) {
-        const product = event.data.product?.toLowerCase()
+        const product = event.data?.product?.toLowerCase()
         if (!product) continue
         const hit = keys.find(key => product.includes(key.toLowerCase()) || product.includes((config.fruits?.[key]?.name ?? '').toLowerCase()))
         if (hit) return hit
@@ -410,11 +428,11 @@ function fruitKey(config: Page, events: Event[]): string | null {
     return null
 }
 
-function revealFruit(config: Page, events: Event[], final = false) {
+export function revealFruit(config: Page, events: Event[], final = false) {
     const key = fruitState.key ?? fruitKey(config, events)
     const fruit = key ? config.fruits?.[key] : undefined
-    const packing = events.find(e => e.data.phase === 'packing')?.data
-    const product = events.find(e => e.data.product)?.data.product
+    const packing = events.find(e => e.data?.phase === 'packing')?.data
+    const product = events.find(e => e.data?.product)?.data?.product
     if (fruit && !fruitState.named) {
         fruitState.key = key
         fruitState.named = true
@@ -437,7 +455,7 @@ function revealFruit(config: Page, events: Event[], final = false) {
         $('fruit-contains').hidden = true
         $('stage-cap').hidden = true
     }
-    const grams = packing?.bag_g ?? null
+    const grams = bagGrams(packing)
     if (fruit && grams && fruitState.grams !== grams) {
         fruitState.grams = grams
         $('fruit-grams').textContent = `${grams} g per bag`
@@ -481,12 +499,12 @@ function resetFruit() {
 
 // ---------- the arithmetic (block 5) ----------
 
-function renderCo2(config: Page, events: Event[]) {
+export function renderCo2(config: Page, events: Event[]) {
     const co2 = config.co2
-    const intake = events.find(e => e.data.phase === 'intake')?.data
-    const cycle = events.find(e => e.data.phase === 'cycle')?.data
-    const packing = events.find(e => e.data.phase === 'packing')?.data
-    const bag = packing?.bag_g
+    const intake = events.find(e => e.data?.phase === 'intake')?.data
+    const cycle = events.find(e => e.data?.phase === 'cycle')?.data
+    const packing = events.find(e => e.data?.phase === 'packing')?.data
+    const bag = bagGrams(packing)
     const loadedKg = cycle?.loads?.length ? sum(cycle.loads, 'kg') : 0
     // The yield comes from the cycle when the plant declared both sides of it; otherwise from the config.
     const declared = cycle?.kg_out != null && loadedKg > 0 ? cycle.kg_out / loadedKg : null
@@ -705,7 +723,7 @@ function hideLead() {
     $('fruit').hidden = true
 }
 
-function reset() {
+export function reset() {
     for (const id of ['notice', 'co2', 'twin', 'reported', 'alive']) $(id).hidden = true
     $('proof-fold').classList.remove('open')
     for (const id of ['notice', 'co2', 'twin']) $(id).innerHTML = ''
@@ -725,7 +743,7 @@ function reset() {
 
 // ---------- the check ----------
 
-async function main() {
+export async function main() {
     reset()
     const config = await loadConfig()
     try {
@@ -782,7 +800,9 @@ async function check(config: Page) {
         row(1, 'record and holder')
         row(2, 'reading…', 'busy')
 
-        // 2 · reading Swarm: walk the chain back from the latest record, painting each card as it lands.
+        // 2 · reading Swarm: walk the chain back from the latest record. Each one is checked as it lands, before a byte of it is
+        // read as a record: hashed the way Swarm does, the bytes must give the reference the page asked for, and that reference
+        // must have its anchor. Only then are they parsed and their card painted, and only then are the records they name fetched.
         const path = $<HTMLOListElement>('path')
         const events: Event[] = []
         const cards = new Map<Hex, HTMLElement>()
@@ -807,22 +827,24 @@ async function check(config: Page) {
             if (seen.has(ref)) continue
             seen.add(ref)
             const { bytes, gateway } = await fetchBytes(ref)
-            const data = JSON.parse(new TextDecoder().decode(bytes)) as Record
             const [anchored, block] = await reader.anchoredAt(ref)
-            const event: Event = { ref, at: anchored ? new Date(Number(anchored) * 1000).toISOString() : null, block, bytes, data, gateway, verified: null, tx: null }
+            const at = anchored ? new Date(Number(anchored) * 1000).toISOString() : null
+            const verified = at !== null && swarmHash(bytes) === ref
+            const data = verified ? (JSON.parse(new TextDecoder().decode(bytes)) as Record | null) : null
+            if (verified && !data) throw Error(`record ${ref} is empty`)
+            const event: Event = { ref, at, block, data, gateway, verified, tx: null }
             events.push(event)
-            events.sort((a, b) => a.data.at.localeCompare(b.data.at))
+            // a record that was not read has no date: it goes first, before the ones that could be placed
+            events.sort((a, b) => (a.data ? a.data.at : '').localeCompare(b.data ? b.data.at : ''))
             cards.set(ref, placeCard(path, events, event, explorer))
-            queue.push(...(data.inputs ?? []).map(hex))
+            queue.push(...(data?.inputs ?? []).map(hex))
             row(2, `${events.length} data ${events.length === 1 ? 'record' : 'records'}${queue.length ? '…' : ''}`, queue.length ? 'busy' : 'lit')
         }
         row(2, `${events.length} data ${events.length === 1 ? 'record' : 'records'}`)
         row(3, 'verifying…', 'busy')
 
-        for (const event of events) {
-            event.verified = event.at !== null && swarmHash(event.bytes) === event.ref
-            markCheck(cards.get(event.ref)!, event)
-        }
+        // 3 · the result of the check, on each card and on the plate
+        for (const event of events) markCheck(cards.get(event.ref)!, event)
         const good = events.filter(e => e.verified).length
         const allGood = good === events.length
         row(3, `${good} of ${events.length} ${events.length === 1 ? 'match' : 'matches'}`, allGood ? 'lit' : 'bad')
