@@ -1,0 +1,44 @@
+{
+    "_about": "What the page reads, and nothing else: the Ethereum RPC and the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the day the records' storage is paid up to, the links of the footer, the repository that publishes the file, and the content of the fruit card and the arithmetic. A block whose keys are missing is not painted.",
+    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+    "contract": "0x240dfbca7064d091149169eff95f764d1e21cea7",
+    "custody": "0x607658fddA3c05068237F6151aEf3C9f8aD8c184",
+    "gateways": [
+        "https://bzz.limo",
+        "https://gateway.ethswarm.org"
+    ],
+    "storage": {
+        "until": "2027-01-27"
+    },
+    "links": {
+        "ethereum": "https://ethereum.org",
+        "swarm": "https://www.ethswarm.org",
+        "ens": "https://fairfooddata.eth.limo"
+    },
+    "source": "https://github.com/FFD-Labs/twin-page",
+    "fruits": {
+        "mango": {
+            "name": "Mango",
+            "photo": null,
+            "lines": []
+        },
+        "banana": {
+            "name": "Banana",
+            "photo": null,
+            "lines": []
+        },
+        "jackfruit": {
+            "name": "Jackfruit",
+            "photo": null,
+            "lines": []
+        }
+    },
+    "co2": {
+        "factor_kg_per_kg": 0.6,
+        "factor_source": "source to cite",
+        "scenario": "an open dump",
+        "scenario_written": "2026-10-04",
+        "label": null,
+        "closing": null
+    }
+}

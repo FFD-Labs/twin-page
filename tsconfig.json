@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "lib": [
+      "es2022",
+      "dom"
+    ]
+  },
+  "include": [
+    "src",
+    "web"
+  ]
+}
