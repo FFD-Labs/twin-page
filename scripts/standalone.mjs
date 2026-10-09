@@ -2,8 +2,8 @@
 // with five things added in their marked places: the fonts and marks as data URIs, the merged config as JSON, the libraries
 // as one compact script, the page's own modules one after another with only their types removed (Node's stripper keeps
 // every comment and line), and in the head the policy that lets those two scripts run and no other. `node
-// scripts/standalone.mjs` writes dist/devcon8.html. With `--release <date>` (what scripts/release.mjs passes) the
-// fingerprint line links to that release's SHA256SUMS on GitHub.
+// scripts/standalone.mjs` writes dist/devcon8.html. With `--release <folder>` (what scripts/release.mjs passes: the
+// number of the release) the fingerprint line links to the SHA256SUMS of that folder of releases/ on GitHub.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
