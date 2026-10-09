@@ -73,6 +73,7 @@ shasum -a 256 dist/devcon8.html
 ```
 npm ci
 npm run check          # type check
+npm test               # the paint functions against a record that carries HTML
 npm run dev            # http://localhost:5173/devcon8.html
 npm run standalone     # dist/devcon8.html, the one file
 npm run release        # builds the file and files it in releases/<today>/ with SHA256SUMS
@@ -90,6 +91,7 @@ Open the built file with the network, the contract and the bag number after a ha
 | `src/lib.ts` | The contract's read side, the link format, downloading a record, and the Swarm reference of a file computed the way Swarm computes it, written here so anyone can read how a record is checked |
 | `src/rails.ts` | Everything the page takes from viem, by name: the read side of Ethereum and ENS, keccak256 |
 | `web/public/config.json` | What the page reads: the RPC and the contract it trusts, the custody address, the gateways in order, the day the storage is paid up to, the links, this repository, the fruits and the CO₂ assumptions |
+| `test/paint.test.mjs` | The test: the paint functions are given a record whose values are HTML, and nothing of it may become an element of the page |
 | `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed |
 | `scripts/release.mjs` | Builds the file and files it with its hash |
 | `releases/<date>/` | The published files and their `SHA256SUMS` |

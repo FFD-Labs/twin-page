@@ -282,7 +282,7 @@ const steps = {
 
 function card(event: Event, explorer: string | undefined) {
     const { title, twin, rows: list } = steps[event.data.phase](event.data)
-    const correction = (event.data.version ?? 1) > 1 ? `<span class="chip wait">Correction v${event.data.version}</span>` : ''
+    const correction = (event.data.version ?? 1) > 1 ? `<span class="chip wait">Correction v${esc(event.data.version)}</span>` : ''
     return `
         <p class="stage"><span class="num"></span> · ${esc(event.data.phase)}</p>
         <h2>${esc(title)}</h2>
@@ -294,7 +294,7 @@ function card(event: Event, explorer: string | undefined) {
             ${explorer && event.block ? `<a class="btn anchor" href="${esc(`${explorer}/block/${event.block}`)}" target="_blank" rel="noopener">Ethereum anchor ↗</a>` : ''}
             <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>
         </div>
-        <details><summary>Raw record</summary><pre>${esc(JSON.stringify(event.data, null, 2))}</pre><p>Swarm <code>${event.ref}</code></p></details>`
+        <details><summary>Raw record</summary><pre>${esc(JSON.stringify(event.data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
 
 // Cards are painted as their record arrives and kept in the order of the events; the numbers follow.
@@ -311,7 +311,7 @@ const resetLater = () => {
     laterTimers.clear()
 }
 
-function placeCard(path: HTMLOListElement, events: Event[], event: Event, explorer: string | undefined) {
+export function placeCard(path: HTMLOListElement, events: Event[], event: Event, explorer: string | undefined) {
     const li = document.createElement('li')
     li.className = 'step'
     li.dataset.ref = event.ref
@@ -338,6 +338,9 @@ function markCheck(li: HTMLElement, event: Event) {
 // ---------- the fruit card (block 3) ----------
 
 const g = (value: number) => `${Number(value.toFixed(1))} g`
+// The grams of a bag as its packing record gives them: a positive number, or none. Anything else in that field is not grams,
+// and the two blocks that compute with them, the fruit card and the arithmetic, are not painted from it.
+const bagGrams = (packing?: Record) => (typeof packing?.bag_g === 'number' && Number.isFinite(packing.bag_g) && packing.bag_g > 0 ? packing.bag_g : null)
 
 // The donut of what the bag holds: sugars on their own, the rest of the carbohydrate, protein, fat, fibre, and what is left of the weight as minerals.
 function donut(n: Nutrition, grams: number) {
@@ -410,7 +413,7 @@ function fruitKey(config: Page, events: Event[]): string | null {
     return null
 }
 
-function revealFruit(config: Page, events: Event[], final = false) {
+export function revealFruit(config: Page, events: Event[], final = false) {
     const key = fruitState.key ?? fruitKey(config, events)
     const fruit = key ? config.fruits?.[key] : undefined
     const packing = events.find(e => e.data.phase === 'packing')?.data
@@ -437,7 +440,7 @@ function revealFruit(config: Page, events: Event[], final = false) {
         $('fruit-contains').hidden = true
         $('stage-cap').hidden = true
     }
-    const grams = packing?.bag_g ?? null
+    const grams = bagGrams(packing)
     if (fruit && grams && fruitState.grams !== grams) {
         fruitState.grams = grams
         $('fruit-grams').textContent = `${grams} g per bag`
@@ -481,12 +484,12 @@ function resetFruit() {
 
 // ---------- the arithmetic (block 5) ----------
 
-function renderCo2(config: Page, events: Event[]) {
+export function renderCo2(config: Page, events: Event[]) {
     const co2 = config.co2
     const intake = events.find(e => e.data.phase === 'intake')?.data
     const cycle = events.find(e => e.data.phase === 'cycle')?.data
     const packing = events.find(e => e.data.phase === 'packing')?.data
-    const bag = packing?.bag_g
+    const bag = bagGrams(packing)
     const loadedKg = cycle?.loads?.length ? sum(cycle.loads, 'kg') : 0
     // The yield comes from the cycle when the plant declared both sides of it; otherwise from the config.
     const declared = cycle?.kg_out != null && loadedKg > 0 ? cycle.kg_out / loadedKg : null
@@ -705,7 +708,7 @@ function hideLead() {
     $('fruit').hidden = true
 }
 
-function reset() {
+export function reset() {
     for (const id of ['notice', 'co2', 'twin', 'reported', 'alive']) $(id).hidden = true
     $('proof-fold').classList.remove('open')
     for (const id of ['notice', 'co2', 'twin']) $(id).innerHTML = ''
