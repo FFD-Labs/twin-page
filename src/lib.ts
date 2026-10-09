@@ -11,7 +11,12 @@ export const abi = parseAbi([
     'event Anchored(bytes32 indexed ref, uint64 at)'
 ])
 
-export const hex = (ref: string) => (ref.startsWith('0x') ? ref : `0x${ref}`) as Hex
+// A Swarm reference is 32 bytes: 64 hex digits, with or without 0x in front. Anything else is not a reference, and the page
+// stops there rather than ask a gateway or the contract for it.
+export function hex(ref: unknown) {
+    if (typeof ref !== 'string' || !/^(0x)?[0-9a-fA-F]{64}$/.test(ref)) throw Error(`not a Swarm reference: ${ref}`)
+    return (ref.startsWith('0x') ? ref : `0x${ref}`).toLowerCase() as Hex
+}
 
 export async function download(gateway: string, ref: Hex) {
     const response = await fetch(`${gateway}/bytes/${ref.slice(2)}`)
