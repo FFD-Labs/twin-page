@@ -204,12 +204,67 @@ test('an RPC that anchors a hostile record: it is read, and its values stay text
     clean(document)
 })
 
-test('a record that names something that is not a reference: the page stops and asks no one for it', async (t) => {
-    t.mock.method(console, 'error', () => {}) // the page logs what stopped it
+test('a record that names something that is not a reference: it is not understood, and no one is asked for it', async () => {
     net.head = put(packed({ inputs: [hostile('inputs')] }))
     await scan()
-    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
-    assert.match($('notice').textContent, /not a Swarm reference/)
+    assert.equal(cards()[0].querySelector('h2').textContent, 'Record not understood')
+    assert.equal($('notice').hidden, true)
     assert.deepEqual(net.asked.filter((url) => url.includes('/bytes/')), [`${config.gateways[0]}/bytes/${net.head.slice(2)}`])
+    clean(document)
+})
+
+// A record that passed the check and is not one the page knows how to show. The types of a record are what it should be:
+// what it is, is whatever was anchored. None of these may stop the page, and none may put its own words where the page's go.
+const odd = {
+    'is not JSON': 'freeze-dried, not JSON',
+    'is a number': '7',
+    'is null': 'null',
+    'is a list': '[]',
+    'has a phase the page does not know': JSON.stringify(packed({ phase: 'recall' })),
+    'has a phase that is a list': JSON.stringify(packed({ phase: ['packing'] })),
+    'has no phase': JSON.stringify({ at: '2026-09-30T08:00:00Z' }),
+    'names its own card': JSON.stringify(packed({ phase: 'constructor', title: 'CERTIFIED-BY-THE-RECORD', twin: true, rows: [['Certificate', 'CERTIFIED-BY-THE-RECORD']] })),
+    'has __proto__ for a phase': '{"phase":"__proto__","at":"2026-09-30T08:00:00Z"}',
+    'has no date': JSON.stringify(packed({ at: undefined })),
+    'has a date that is not one': JSON.stringify(packed({ at: 'the day before yesterday' })),
+    'has a date that is a number': JSON.stringify(packed({ at: 1759400000 })),
+    'has a product that is a number': JSON.stringify({ phase: 'cycle', at: '2026-09-29T08:00:00Z', product: 5 }),
+    'has loads that are text': JSON.stringify({ phase: 'cycle', at: '2026-09-29T08:00:00Z', loads: 'twenty kilos' }),
+    'has a farm that is null': JSON.stringify({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', farms: [null] }),
+    'has an origin that is null': JSON.stringify({ phase: 'transport', at: '2026-10-01T08:00:00Z', origin: null }),
+    'has a field that cannot be written as text': JSON.stringify(packed({ lot: { toString: 1 } })),
+    'has inputs that are text': JSON.stringify(packed({ inputs: 'the cycle' }))
+}
+for (const [what, text] of Object.entries(odd))
+    test(`a record that ${what}: its own card, checked, and the page goes on`, async () => {
+        const file = new TextEncoder().encode(text)
+        net.head = swarmHash(file)
+        net.files.set(net.head, file)
+        net.anchors.set(net.head, [1759400000n, 7n])
+        await scan()
+        assert.equal($('notice').hidden, true)
+        assert.equal(cards().length, 1)
+        assert.equal(cards()[0].querySelector('h2').textContent, 'Record not understood')
+        assert.equal(cards()[0].querySelectorAll('.row, .twin-born').length, 0)
+        assert.equal(cards()[0].querySelector('pre').textContent, text)
+        assert.match(cards()[0].querySelector('.check').textContent, /^✓ Matches its Ethereum anchor of /)
+        assert.equal($('step-3').querySelector('.v').textContent, '1 of 1 match')
+        assert.equal($('fruit-name').textContent, 'This bag')
+        assert.equal($('co2').hidden, true)
+        clean(document)
+    })
+
+test('a record the page does not understand, in the middle of the path: what came before it is still read', async () => {
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' })
+    const cycle = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', start: '2026-09-28T10:00:00Z', end: '2026-09-29T08:00:00Z', loads: [{ trays: 10, kg: 20 }], kg_out: 2, inputs: [intake] })
+    const recall = put({ phase: 'recall', at: '2026-09-29T12:00:00Z', inputs: [cycle] })
+    net.head = put(packed({ inputs: [recall] }))
+    await scan()
+    assert.deepEqual(cards().map((li) => li.querySelector('h2').textContent), ['Record not understood', 'Received', 'Freeze-dried', 'Packed'])
+    assert.equal($('step-3').querySelector('.v').textContent, '4 of 4 matches')
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('fruit-name').textContent, 'Mango')
+    assert.equal($('fruit-grams').textContent, '30 g per bag')
+    assert.equal($('co2').hidden, false)
     clean(document)
 })

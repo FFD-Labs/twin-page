@@ -85,11 +85,13 @@ type Page = Config & {
 
 // One record of the path. `verified`: hashed the way Swarm does, the bytes a gateway served give `ref`, and `ref` has its
 // anchor. `data` is what the record says, and it is there only when that holds: bytes that fail the check are never parsed.
+// A record that passed the check and is not one the page knows how to show has no `data` either: `raw` is its text.
 type Event = {
     ref: Hex
     at: string | null
     block: bigint
     data: Record | null
+    raw?: string | null
     gateway: string
     verified: boolean
     tx: string | null
@@ -281,28 +283,63 @@ const steps = {
     })
 }
 
+// What a record says, when the page can show it: an object, of a phase the page knows, written at a moment it can place,
+// whose inputs are references and whose rows can be drawn. The types above are what a record should be, not what it is.
+// This is where that is found out, once, before anything is painted from it. A record that passed the check and is not
+// that is a record all the same: it has no `data`, it gets a card that says so, and the rest of the page goes on. The
+// records it names are followed either way, when it names them as references: a phase the page does not know yet must
+// not hide what came before it.
+export function read(text: string): { data: Record | null; inputs: Hex[] } {
+    let inputs: Hex[] = []
+    try {
+        const data = JSON.parse(text) as Record
+        if (data.inputs != null) inputs = data.inputs.map(input => hex(input))
+        const known = typeof data.phase === 'string' && Object.hasOwn(steps, data.phase)
+        const placed = typeof data.at === 'string' && !Number.isNaN(Date.parse(data.at))
+        const named = data.product == null || typeof data.product === 'string'
+        if (!known || !placed || !named) return { data: null, inputs }
+        rows(steps[data.phase](data).rows)
+        return { data, inputs }
+    } catch {
+        return { data: null, inputs }
+    }
+}
+
+// The most of a record's text a card shows when the page could not read it as a record.
+const RAW_SHOWN = 4000
+
 function card(event: Event, explorer: string | undefined) {
     const data = event.data
     // A record that did not pass the check was not read: its card carries the reference the page asked for and nothing of what arrived.
-    if (!data)
+    if (!event.verified)
         return `
         <p class="stage"><span class="num"></span> · not read</p>
         <h2>Record not shown</h2>
         <p class="check pending">Checking against its Ethereum anchor…</p>
         <details><summary>Reference</summary><p>Swarm <code>${esc(event.ref)}</code></p></details>`
+    const links = `
+        <p class="check pending">Checking against its Ethereum anchor…</p>
+        <div class="links">
+            ${explorer && event.block ? `<a class="btn anchor" href="${esc(`${explorer}/block/${event.block}`)}" target="_blank" rel="noopener">Ethereum anchor ↗</a>` : ''}
+            <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>
+        </div>`
+    // A record that passed the check and is not one the page knows how to show: what it says, as it was written, and no rows.
+    if (!data) {
+        const raw = event.raw ?? ''
+        return `
+        <p class="stage"><span class="num"></span> · not understood</p>
+        <h2>Record not understood</h2>
+        <div class="chips"><span class="chip wait">A kind this page does not know</span></div>${links}
+        <details><summary>Raw record</summary><pre>${esc(raw.length > RAW_SHOWN ? `${raw.slice(0, RAW_SHOWN)}…` : raw)}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
+    }
     const { title, twin, rows: list } = steps[data.phase](data)
-    const correction = (data.version ?? 1) > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
+    const correction = typeof data.version === 'number' && data.version > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
     return `
         <p class="stage"><span class="num"></span> · ${esc(data.phase)}</p>
         <h2>${esc(title)}</h2>
         ${twin ? '<p class="twin-born">This bag’s twin starts here.</p>' : ''}
         ${correction ? `<div class="chips">${correction}</div>` : ''}
-        ${rows(list)}
-        <p class="check pending">Checking against its Ethereum anchor…</p>
-        <div class="links">
-            ${explorer && event.block ? `<a class="btn anchor" href="${esc(`${explorer}/block/${event.block}`)}" target="_blank" rel="noopener">Ethereum anchor ↗</a>` : ''}
-            <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>
-        </div>
+        ${rows(list)}${links}
         <details><summary>Raw record</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
 
@@ -320,9 +357,9 @@ const resetLater = () => {
     laterTimers.clear()
 }
 
-// The tile beside a card: the day and the month the record gives. A record that was not read has no date to give.
-function tile(data: Record | null) {
-    if (!data) return '<span class="tile"><b>✗</b></span>'
+// The tile beside a card: the day and the month the record gives. A record that was not read, or not understood, has no date to give.
+function tile({ data, verified }: Event) {
+    if (!data) return `<span class="tile"><b>${verified ? '?' : '✗'}</b></span>`
     const when = new Date(data.at)
     const d = when.toLocaleDateString('en-GB', { day: 'numeric', timeZone: 'UTC' })
     const m = when.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
@@ -333,7 +370,7 @@ export function placeCard(path: HTMLOListElement, events: Event[], event: Event,
     const li = document.createElement('li')
     li.className = 'step'
     li.dataset.ref = event.ref
-    li.innerHTML = `<div class="unfold"><div class="unfold-in">${tile(event.data)}<div class="card">${card(event, explorer)}</div></div></div>`
+    li.innerHTML = `<div class="unfold"><div class="unfold-in">${tile(event)}<div class="card">${card(event, explorer)}</div></div></div>`
     const index = events.indexOf(event)
     const next = events[index + 1]
     const before = next ? path.querySelector<HTMLLIElement>(`li[data-ref="${next.ref}"]`) : null
@@ -837,15 +874,15 @@ async function check(config: Page) {
             const { bytes, gateway } = await fetchBytes(ref)
             const [anchored, block] = await reader.anchoredAt(ref)
             const at = anchored ? new Date(Number(anchored) * 1000).toISOString() : null
-            const data = at !== null && bytes ? (JSON.parse(new TextDecoder().decode(bytes)) as Record | null) : null
-            const verified = at !== null && bytes !== null
-            if (verified && !data) throw Error(`record ${ref} is empty`)
-            const event: Event = { ref, at, block, data, gateway, verified, tx: null }
+            const text = at !== null && bytes ? new TextDecoder().decode(bytes) : null
+            const verified = text !== null
+            const { data, inputs } = text !== null ? read(text) : { data: null, inputs: [] }
+            const event: Event = { ref, at, block, data, raw: data ? null : text, gateway, verified, tx: null }
             events.push(event)
-            // a record that was not read has no date: it goes first, before the ones that could be placed
+            // a record that was not read, or not understood, has no date: it goes first, before the ones that could be placed
             events.sort((a, b) => (a.data ? a.data.at : '').localeCompare(b.data ? b.data.at : ''))
             cards.set(ref, placeCard(path, events, event, explorer))
-            queue.push(...(data?.inputs ?? []).map(hex))
+            for (const input of inputs) queue.push(input)
             row(2, `${events.length} data ${events.length === 1 ? 'record' : 'records'}${queue.length ? '…' : ''}`, queue.length ? 'busy' : 'lit')
         }
         row(2, `${events.length} data ${events.length === 1 ? 'record' : 'records'}`)
