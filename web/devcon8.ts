@@ -5,7 +5,7 @@
 
 import { NotOfficial, abi, download, hex, parseSticker, swarmHash, type Config } from '../src/lib.ts'
 import './life-grid.ts'
-import { createClient, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, readContract, sepolia, zeroHash, type Address, type Hex } from '../src/rails.ts'
+import { BaseError, ContractFunctionRevertedError, createClient, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, readContract, sepolia, zeroHash, type Address, type Hex } from '../src/rails.ts'
 
 type Farm = { zone: string | null; country: string | null; variety: string | null; harvested: string | null; kg: number | null }
 
@@ -198,6 +198,11 @@ async function loadConfig(): Promise<Page> {
     return withNutrition(page)
 }
 
+// A client reads what its RPC answers and asks no one else. viem would otherwise follow an off-chain lookup (CCIP-Read): a
+// call that reverts naming URLs is a request to fetch them, and the URLs would be the RPC's to choose, or those of the
+// contract a holder's name or avatar points at. A name kept off-chain is then not resolved, and its holder is shown by address.
+const ownRpc = { ccipRead: false } as const
+
 // What the page asks the contract: four questions, through viem.
 type Reader = {
     recordOf: (id: bigint) => Promise<Hex>
@@ -209,7 +214,13 @@ function liveReader(client: ReturnType<typeof createClient>, address: Address): 
     const contract = { address, abi } as const
     return {
         recordOf: id => readContract(client, { ...contract, functionName: 'recordOf', args: [id] }),
-        ownerOf: id => readContract(client, { ...contract, functionName: 'ownerOf', args: [id] }).catch(() => null),
+        // null is the contract's own word that the twin is not created yet; an RPC that fails has said nothing about the twin
+        ownerOf: id =>
+            readContract(client, { ...contract, functionName: 'ownerOf', args: [id] }).catch(error => {
+                const revert = error instanceof BaseError ? error.walk(cause => cause instanceof ContractFunctionRevertedError) : null
+                if (revert instanceof ContractFunctionRevertedError && revert.data?.errorName === 'ERC721NonexistentToken') return null
+                throw error
+            }),
         anchoredAt: ref => readContract(client, { ...contract, functionName: 'anchoredAt', args: [ref] }),
         anchorTx: async (ref, block) => {
             const logs = await getContractEvents(client, { ...contract, eventName: 'Anchored', args: { ref }, fromBlock: block, toBlock: block }).catch(() => [])
@@ -222,8 +233,9 @@ function liveReader(client: ReturnType<typeof createClient>, address: Address): 
 async function isOfficial(config: Page, chainId: number, contract: Address) {
     if ([config.contract, ...(config.contracts ?? [])].some(listed => isAddressEqual(listed, contract))) return true
     if (chainId !== 1) return false
-    const client = createClient({ chain: mainnet, transport: http(config.rpcs?.[1] ?? config.rpc) })
-    const listed = await getEnsText(client, { name: 'fairfooddata.eth', key: 'ffd.contract' }).catch(() => null)
+    const client = createClient({ chain: mainnet, transport: http(config.rpcs?.[1] ?? config.rpc), ...ownRpc })
+    // no record under that name is an answer, and it is null; an RPC that fails is not one, and it is thrown
+    const listed = await getEnsText(client, { name: 'fairfooddata.eth', key: 'ffd.contract' })
     return !!listed && isAddress(listed) && isAddressEqual(listed, contract)
 }
 
@@ -684,7 +696,7 @@ async function nameHolder(owner: Address, chainId: number, rpc: string) {
     const chain = chainId === 1 ? mainnet : chainId === 11155111 ? sepolia : null
     if (!chain) return
     try {
-        const client = createClient({ chain, transport: http(rpc) })
+        const client = createClient({ chain, transport: http(rpc), ...ownRpc })
         const name = await getEnsName(client, { address: owner })
         if (!name) return
         const who = $('holder').querySelector<HTMLElement>('.who b')
@@ -813,15 +825,17 @@ async function check(config: Page) {
     try {
         // 1 · reading Ethereum: which contract, which record, who holds the twin.
         const rpc = config.rpcs?.[parsed.chainId] ?? config.rpc
-        const client = createClient({ transport: http(rpc) })
+        const client = createClient({ transport: http(rpc), ...ownRpc })
         const chainId = await getChainId(client)
         if (parsed.chainId !== chainId) throw Error(`no RPC for chain ${parsed.chainId}`)
         const address = parsed.contract
         if (!(await isOfficial(config, chainId, address))) throw new NotOfficial(`contract ${address} is not listed in the page config`)
         const reader = liveReader(client, address)
         const explorer = explorers[chainId]
-        const [run, owner] = await Promise.all([reader.recordOf(parsed.id), reader.ownerOf(parsed.id)])
+        // who holds the twin is not part of the check: when the RPC does not say, that block is left out and the rest goes on
+        const [run, owner] = await Promise.all([reader.recordOf(parsed.id), reader.ownerOf(parsed.id).catch(error => void console.error(error))])
         const twin = () => {
+            if (owner === undefined) return
             const state = renderTwin(parsed.id, owner, config, explorer, address)
             if (state !== 'none' && owner) void nameHolder(owner, chainId, rpc)
         }
@@ -928,5 +942,8 @@ async function check(config: Page) {
         await report(config, parsed.id, 'failed', served, 'unreachable')
     }
 }
+
+// Another bag in the link is another page: it is loaded again and read from nothing, not left under the seal of the bag before.
+window.addEventListener('hashchange', () => location.reload())
 
 void main()

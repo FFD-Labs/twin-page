@@ -8,6 +8,7 @@ export const abi = parseAbi([
     'function anchoredAt(bytes32 ref) view returns (uint64 at, uint64 block)',
     'function recordOf(uint256 id) view returns (bytes32)',
     'function ownerOf(uint256 id) view returns (address)',
+    'error ERC721NonexistentToken(uint256 tokenId)',
     'event Anchored(bytes32 indexed ref, uint64 at)'
 ])
 

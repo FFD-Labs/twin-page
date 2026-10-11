@@ -4,9 +4,9 @@
 // cannot see through, since the anchors are its word; even then, a record's values reach the page as text.
 import assert from 'node:assert/strict'
 import { beforeEach, mock, test } from 'node:test'
-import { decodeFunctionData, encodeFunctionResult } from 'viem'
+import { decodeFunctionData, encodeErrorResult, encodeFunctionResult, parseAbi } from 'viem'
 import { abi, hex, swarmHash } from '../src/lib.ts'
-import { clean, hostile, openPage } from './page.mjs'
+import { clean, hostile, loads, openPage } from './page.mjs'
 
 const contract = '0x240dfbca7064d091149169eff95f764d1e21cea7'
 const config = {
@@ -18,19 +18,28 @@ const config = {
 }
 
 // ---------- the network: one RPC and two gateways ----------
-// Both gateways serve the files, unless a test says what one of them does instead (`net.instead`, by its address).
-const net = { head: null, anchors: new Map(), files: new Map(), asked: [], instead: new Map() }
+// Both gateways serve the files, unless a test says what one of them does instead (`net.instead`, by its address). The RPC
+// is on Sepolia and the twin is not created yet, unless a test says otherwise: `net.chain`, `net.owner` (an address, or a
+// function that answers in its place) and `net.ens` (what the RPC does when it is asked for a name).
+const net = { head: null, anchors: new Map(), files: new Map(), asked: [], instead: new Map(), chain: '0xaa36a7', owner: null, ens: null }
 const [first, second] = config.gateways
 const answer = (body, type) => new Response(body, { headers: { 'content-type': type } })
+// what a contract says when it stops a call: the error it names, as an RPC hands it on
+const revert = (data) => Object.assign(Error('execution reverted'), { data })
+const others = parseAbi(['error OffchainLookup(address sender, string[] urls, bytes callData, bytes4 callbackFunction, bytes extraData)', 'error ResolverNotFound(bytes name)'])
 function rpc(method, [call] = []) {
-    if (method === 'eth_chainId') return '0xaa36a7'
+    if (method === 'eth_chainId') return net.chain
     if (method === 'eth_getLogs') return []
     if (method === 'eth_call' && call.to.toLowerCase() === contract) {
         const { functionName, args } = decodeFunctionData({ abi, data: call.data })
         if (functionName === 'recordOf') return encodeFunctionResult({ abi, functionName, result: net.head })
         if (functionName === 'anchoredAt') return encodeFunctionResult({ abi, functionName, result: net.anchors.get(args[0]) ?? [0n, 0n] })
+        if (typeof net.owner === 'function') return net.owner()
+        if (net.owner) return encodeFunctionResult({ abi, functionName, result: net.owner })
+        throw revert(encodeErrorResult({ abi, errorName: 'ERC721NonexistentToken', args }))
     }
-    throw Error('execution reverted') // ownerOf: the twin is not created yet
+    if (net.ens) return net.ens()
+    throw revert()
 }
 globalThis.fetch = async (input, init) => {
     const request = new Request(input, init)
@@ -41,7 +50,8 @@ globalThis.fetch = async (input, init) => {
         try {
             return answer(JSON.stringify({ jsonrpc: '2.0', id, result: rpc(method, params) }), 'application/json')
         } catch (error) {
-            return answer(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 3, message: error.message } }), 'application/json')
+            if (error instanceof Response) return error
+            return answer(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 3, message: error.message, data: error.data } }), 'application/json')
         }
     }
     const instead = net.instead.get(new URL(url).origin)
@@ -73,8 +83,8 @@ const cards = () => [...document.querySelectorAll('#path li.step')]
 // The page paces what it shows with timers. The test owns the clock: every timer runs as soon as it is set, until the check
 // is done, and then what the check left for later: the fruit card, the cards opening, the arithmetic.
 mock.timers.enable({ apis: ['setTimeout'] })
-async function scan() {
-    location.hash = `#11155111:${contract}/1`
+async function scan(link = `11155111:${contract}/1`) {
+    location.hash = `#${link}`
     let done = false
     const check = page.main().finally(() => (done = true))
     while (!done) {
@@ -91,6 +101,7 @@ beforeEach(() => {
     net.files.clear()
     net.asked.length = 0
     net.instead.clear()
+    Object.assign(net, { chain: '0xaa36a7', owner: null, ens: null })
 })
 
 test('a reference is 64 hex digits, with or without 0x', () => {
@@ -267,4 +278,90 @@ test('a record the page does not understand, in the middle of the path: what cam
     assert.equal($('fruit-grams').textContent, '30 g per bag')
     assert.equal($('co2').hidden, false)
     clean(document)
+})
+
+// ---------- who holds the twin, and whose contract it is ----------
+// An RPC that fails says nothing about the twin or about the contract: the page may not turn its silence into a statement.
+const holder = '0x1111111111111111111111111111111111111111'
+const stranger = '0x2222222222222222222222222222222222222222'
+const fails = () => {
+    throw new Response('too many requests', { status: 429 })
+}
+
+test('a twin the contract says is not created yet: the page says so', async () => {
+    net.head = put(packed())
+    await scan()
+    assert.equal($('twin').hidden, false)
+    assert.match($('twin').textContent, /Not created yet/)
+})
+
+test('a twin that has a holder: its address', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    net.head = put(packed())
+    net.owner = holder
+    await scan()
+    assert.match($('twin').textContent, /Twin held by 0x1111…1111/)
+})
+
+test('an RPC that fails when asked who holds the twin: the page does not say the twin was never created', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    net.owner = fails
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('twin').hidden, true)
+    assert.equal($('twin').textContent, '')
+})
+
+test('an RPC that answers with a lookup to make somewhere else: the page asks no one else', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    net.owner = () => {
+        throw revert(encodeErrorResult({ abi: others, errorName: 'OffchainLookup', args: [contract, ['https://elsewhere.example/{sender}/{data}'], '0x', '0x12345678', '0x'] }))
+    }
+    await scan()
+    assert.deepEqual(net.asked.filter((url) => !url.startsWith(config.rpc) && !url.includes('/bytes/')), [])
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('twin').hidden, true)
+})
+
+test('a contract the page does not list: nothing of it is shown', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    await scan(`11155111:${stranger}/1`)
+    assert.match($('notice').textContent, /This is not a Fair Food Data bag/)
+    assert.equal(document.getElementById('retry'), null)
+    assert.equal(cards().length, 0)
+})
+
+test('on mainnet, a contract that fairfooddata.eth does not name: not a Fair Food Data bag', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.chain = '0x1'
+    net.ens = () => {
+        throw revert(encodeErrorResult({ abi: others, errorName: 'ResolverNotFound', args: ['0x'] }))
+    }
+    await scan(`1:${stranger}/1`)
+    assert.match($('notice').textContent, /This is not a Fair Food Data bag/)
+    assert.equal(document.getElementById('retry'), null)
+})
+
+test('on mainnet, an RPC that fails when asked what fairfooddata.eth names: that is the network, and the page offers to try again', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.chain = '0x1'
+    net.ens = fails
+    await scan(`1:${stranger}/1`)
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.equal($('notice').textContent.includes('not a Fair Food Data bag'), false)
+    assert.ok(document.getElementById('retry'))
+})
+
+test('another bag in the link: the page is loaded again, not left under the seal of the bag before', async () => {
+    net.head = put(packed())
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const before = loads.length
+    location.hash = `#11155111:${contract}/2`
+    await new Promise((turn) => setImmediate(turn))
+    assert.equal(loads.length, before + 1)
+    assert.match(loads.at(-1), /navigation/)
 })

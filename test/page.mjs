@@ -4,15 +4,19 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { JSDOM } from 'jsdom'
+import { JSDOM, VirtualConsole } from 'jsdom'
 
 const root = resolve(import.meta.dirname, '..')
 const text = (file) => readFileSync(resolve(root, file), 'utf8')
 
 // Importing the script starts the page, as loading it does: with no bag in the link it settles on its notice. After that
 // its functions are the test's to call. One page per test file: node runs each file in a process of its own.
+// jsdom does not load a page again: when the page asks for it, jsdom says what it will not do, and that is kept here.
+export const loads = []
+const virtualConsole = new VirtualConsole().on('jsdomError', (error) => loads.push(error.message))
+
 export async function openPage(config = JSON.parse(text('web/public/config.json'))) {
-    const { window } = new JSDOM(text('web/devcon8.html'), { url: 'file:///devcon8.html' })
+    const { window } = new JSDOM(text('web/devcon8.html'), { url: 'file:///devcon8.html', virtualConsole })
     const { document } = window
     const inline = document.createElement('script')
     inline.type = 'application/json'
