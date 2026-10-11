@@ -152,7 +152,7 @@ Open the built file with the network, the contract and the bag number after a ha
 11 October 2026. Work in progress.
 
 - The records the page reads today are test records on a Sepolia contract. The event runs on Ethereum mainnet with real records; the network and the contract in the QR come with that contract.
-- Placeholder: the nutrition figures (working values until a public table is cited, and none yet for pineapple), the CO₂ factor and reference scenario (being closed with our partners).
+- Placeholder: the nutrition figures (working values until a public table is cited; those of pineapple are worked out from the fresh fruit), the CO₂ factor and reference scenario (being closed with our partners).
 - The fruits of the bags are pineapple, banana and jackfruit, each with the colours of its pouch. The illustrations are in for pineapple and jackfruit; banana shows the drawn crystal until its own are. The test records are of mango, shown in the jackfruit colourway.
 - The bags and their packaging are separate work, not in this repository.
 - The file to use is the one marked current in [Releases](#releases).
