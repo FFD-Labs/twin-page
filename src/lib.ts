@@ -2,7 +2,8 @@
 // contract, the sticker format, downloading a record from a gateway and hashing it the way Swarm does.
 import { bytesToHex, keccak256, parseAbi, type Address, type Hex } from './rails.ts'
 
-export type Config = { rpc: string; contract: Address; custody?: Address; rpcs?: Record<string, string>; contracts?: Address[]; gateways: string[] }
+// `rpcs`: the RPCs the page asks, by network and in order. The first that answers is read; the next is asked whether it says the same.
+export type Config = { rpcs: Record<string, string[]>; contract: Address; custody?: Address; contracts?: Address[]; gateways: string[] }
 
 export const abi = parseAbi([
     'function anchoredAt(bytes32 ref) view returns (uint64 at, uint64 block)',

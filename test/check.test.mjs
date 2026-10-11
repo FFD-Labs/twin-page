@@ -9,23 +9,25 @@ import { abi, hex, swarmHash } from '../src/lib.ts'
 import { clean, hostile, loads, openPage } from './page.mjs'
 
 const contract = '0x240dfbca7064d091149169eff95f764d1e21cea7'
+const rpcs = ['https://rpc.example', 'https://other-rpc.example']
 const config = {
-    rpc: 'https://rpc.example',
+    rpcs: { 11155111: rpcs, 1: rpcs },
     contract,
     gateways: ['https://gateway.example', 'https://second.example'],
     fruits: { mango: { name: 'Mango' } },
     co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' }
 }
 
-// ---------- the network: one RPC and two gateways ----------
-// Both gateways serve the files, unless a test says what one of them does instead (`net.instead`, by its address). The RPC
-// is on Sepolia and the twin is not created yet, unless a test says otherwise: `net.chain`, `net.owner` (an address, or a
-// function that answers in its place) and `net.ens` (what the RPC does when it is asked for a name).
-const net = { head: null, anchors: new Map(), files: new Map(), asked: [], instead: new Map(), chain: '0xaa36a7', owner: null, ens: null }
+// ---------- the network: two RPCs and two gateways ----------
+// Both gateways serve the files, unless a test says what one of them does instead (`net.instead`, by its address). Both
+// RPCs say the same, they are on Sepolia and the twin is not created yet, unless a test says otherwise: `net.chain`,
+// `net.owner` (an address, or a function that answers in its place), `net.ens` (what an RPC does when it is asked for a
+// name) and `net.says` (what one RPC answers in place of the other's answer, by its address).
+const net = { head: null, anchors: new Map(), files: new Map(), asked: [], calls: [], instead: new Map(), says: new Map(), chain: '0xaa36a7', owner: null, ens: null }
 const [first, second] = config.gateways
 const answer = (body, type) => new Response(body, { headers: { 'content-type': type } })
 // what a contract says when it stops a call: the error it names, as an RPC hands it on
-const revert = (data) => Object.assign(Error('execution reverted'), { data })
+const revert = (data) => Object.assign(Error('execution reverted'), { code: 3, data })
 const others = parseAbi(['error OffchainLookup(address sender, string[] urls, bytes callData, bytes4 callbackFunction, bytes extraData)', 'error ResolverNotFound(bytes name)'])
 function rpc(method, [call] = []) {
     if (method === 'eth_chainId') return net.chain
@@ -45,10 +47,12 @@ globalThis.fetch = async (input, init) => {
     const request = new Request(input, init)
     const url = request.url
     net.asked.push(url)
-    if (url === new URL(config.rpc).href) {
+    if (rpcs.includes(new URL(url).origin)) {
         const { id, method, params } = await request.json()
+        net.calls.push(`${new URL(url).host} ${method}`)
         try {
-            return answer(JSON.stringify({ jsonrpc: '2.0', id, result: rpc(method, params) }), 'application/json')
+            const says = net.says.get(new URL(url).origin)
+            return answer(JSON.stringify({ jsonrpc: '2.0', id, result: says ? says(method, params) : rpc(method, params) }), 'application/json')
         } catch (error) {
             if (error instanceof Response) return error
             return answer(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 3, message: error.message, data: error.data } }), 'application/json')
@@ -100,8 +104,11 @@ beforeEach(() => {
     net.anchors.clear()
     net.files.clear()
     net.asked.length = 0
+    net.calls.length = 0
     net.instead.clear()
+    net.says.clear()
     Object.assign(net, { chain: '0xaa36a7', owner: null, ens: null })
+    delete window.ethereum
 })
 
 test('a reference is 64 hex digits, with or without 0x', () => {
@@ -320,7 +327,7 @@ test('an RPC that answers with a lookup to make somewhere else: the page asks no
         throw revert(encodeErrorResult({ abi: others, errorName: 'OffchainLookup', args: [contract, ['https://elsewhere.example/{sender}/{data}'], '0x', '0x12345678', '0x'] }))
     }
     await scan()
-    assert.deepEqual(net.asked.filter((url) => !url.startsWith(config.rpc) && !url.includes('/bytes/')), [])
+    assert.deepEqual(net.asked.filter((url) => !rpcs.includes(new URL(url).origin) && !url.includes('/bytes/')), [])
     assert.ok($('hero').classList.contains('verified'))
     assert.equal($('twin').hidden, true)
 })
@@ -364,4 +371,106 @@ test('another bag in the link: the page is loaded again, not left under the seal
     await new Promise((turn) => setImmediate(turn))
     assert.equal(loads.length, before + 1)
     assert.match(loads.at(-1), /navigation/)
+})
+
+// ---------- where Ethereum is read from ----------
+// What is anchored is the word of a source, and a source that lied could seal anything. So the page reads with the first
+// that answers and asks the next whether it says the same. The plate closes on the first; what the second said is kept on
+// the plate (`data-sources`) and is not in sight yet.
+const [rpc1, rpc2] = rpcs
+const plate = () => ({ sealed: $('hero').classList.contains('verified'), open: $('proof-fold').classList.contains('open'), sources: $('hero').dataset.sources })
+const callsTo = (url) => net.calls.filter((call) => call.startsWith(`${new URL(url).host} `)).map((call) => call.split(' ')[1])
+
+test('two sources that say the same: the plate closes, and keeps that they agree', async () => {
+    net.head = put(packed())
+    await scan()
+    assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' })
+    assert.deepEqual(callsTo(rpc1).slice(0, 3), ['eth_chainId', 'eth_call', 'eth_call'])
+    // the second is asked which record the bag has and whether each record has its anchor, and nothing else
+    assert.deepEqual(callsTo(rpc2), ['eth_chainId', 'eth_call', 'eth_call'])
+})
+
+test('a second source that does not answer: the plate closes on one, and keeps that it was one', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the page logs the source that failed
+    net.head = put(packed())
+    net.says.set(rpc2, fails)
+    await scan()
+    assert.deepEqual(plate(), { sealed: true, open: true, sources: 'single' })
+    assert.match(cards()[0].querySelector('.check').textContent, /^✓ Matches its Ethereum anchor of /)
+    assert.equal($('notice').hidden, true)
+})
+
+test('a first source that does not answer: the page reads with the second, which is then the only one', async () => {
+    net.head = put(packed())
+    net.says.set(rpc1, fails)
+    await scan()
+    assert.deepEqual(plate(), { sealed: true, open: true, sources: 'single' })
+    assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
+})
+
+for (const [what, lie] of [
+    ['names another record for the bag', (method, params) => (method === 'eth_call' && params[0].data.startsWith('0x55d742e4') ? `0x${'ab'.repeat(32)}` : rpc(method, params))],
+    ['says a record has no anchor', (method, params) => (method === 'eth_call' && !params[0].data.startsWith('0x55d742e4') ? encodeFunctionResult({ abi, functionName: 'anchoredAt', result: [0n, 0n] }) : rpc(method, params))],
+    ['gives a record another anchor', (method, params) => (method === 'eth_call' && !params[0].data.startsWith('0x55d742e4') ? encodeFunctionResult({ abi, functionName: 'anchoredAt', result: [1759400001n, 7n] }) : rpc(method, params))]
+])
+    test(`a second source that ${what}: nothing in sight changes yet, and the plate keeps that they differ`, async () => {
+        net.head = put(packed())
+        net.says.set(rpc2, lie)
+        await scan()
+        assert.deepEqual(plate(), { sealed: true, open: true, sources: 'differ' })
+        assert.equal($('notice').hidden, true)
+        assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
+    })
+
+// A wallet in the browser is the visitor's own way to the chain. It is asked to read, and nothing else.
+function wallet(chain = '0xaa36a7') {
+    const asked = []
+    window.ethereum = {
+        request: async ({ method, params }) => {
+            asked.push(method)
+            return method === 'eth_chainId' ? chain : rpc(method, params)
+        }
+    }
+    return asked
+}
+
+test('a wallet on the network of the link: the page reads through it, and the first RPC is the second opinion', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the wallet of the test knows no names, and the page logs that
+    net.head = put(packed())
+    net.owner = holder
+    const asked = wallet()
+    await scan()
+    assert.equal(plate().sealed, true)
+    assert.match($('twin').textContent, /Twin held by 0x1111…1111/)
+    // reads only: no account, no signature, no change of network
+    assert.deepEqual([...new Set(asked)].sort(), ['eth_call', 'eth_chainId', 'eth_getLogs'])
+    assert.deepEqual(callsTo(rpc1), ['eth_chainId', 'eth_call', 'eth_call'])
+    assert.deepEqual(callsTo(rpc2), [])
+})
+
+test('a wallet on another network: it is passed over, and never asked to change', async () => {
+    net.head = put(packed())
+    const asked = wallet('0x1')
+    await scan()
+    assert.equal(plate().sealed, true)
+    assert.deepEqual(asked, ['eth_chainId'])
+    assert.deepEqual(callsTo(rpc2), ['eth_chainId', 'eth_call', 'eth_call'])
+})
+
+test('a wallet that does not answer: the page reads with the RPCs', async () => {
+    net.head = put(packed())
+    window.ethereum = { request: async () => { throw Object.assign(Error('the provider is disconnected'), { code: 4900 }) } }
+    await scan()
+    assert.equal(plate().sealed, true)
+    assert.deepEqual(callsTo(rpc2), ['eth_chainId', 'eth_call', 'eth_call'])
+})
+
+test('a link to a network the page has no RPC for: a wallet that is on it is not asked', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    const asked = wallet('0x89')
+    await scan(`137:${contract}/1`)
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /no RPC for chain 137/)
+    assert.deepEqual(asked, [])
+    assert.deepEqual(net.calls, [])
 })

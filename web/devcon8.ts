@@ -5,7 +5,7 @@
 
 import { NotOfficial, abi, download, hex, parseSticker, swarmHash, type Config } from '../src/lib.ts'
 import './life-grid.ts'
-import { BaseError, ContractFunctionRevertedError, createClient, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, readContract, sepolia, zeroHash, type Address, type Hex } from '../src/rails.ts'
+import { BaseError, ContractFunctionRevertedError, createClient, custom, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, readContract, sepolia, zeroHash, type Address, type Hex, type Transport } from '../src/rails.ts'
 
 type Farm = { zone: string | null; country: string | null; variety: string | null; harvested: string | null; kg: number | null }
 
@@ -178,7 +178,10 @@ const row = (step: number, value: string, state: 'busy' | 'lit' | 'idle' | 'bad'
     swap(li.querySelector<HTMLElement>('.v')!, value)
     if ((state === 'lit' || state === 'bad') && step <= 3) edge(`e${step}`, step === 3 && state === 'bad')
 }
-const status = (state: 'checking' | 'verified' | 'mismatch' | 'idle') => $('hero').classList.toggle('verified', state === 'verified')
+const status = (state: 'checking' | 'verified' | 'mismatch' | 'idle') => {
+    $('hero').classList.toggle('verified', state === 'verified')
+    delete $('hero').dataset.sources
+}
 
 // ---------- config ----------
 
@@ -202,6 +205,18 @@ async function loadConfig(): Promise<Page> {
 // call that reverts naming URLs is a request to fetch them, and the URLs would be the RPC's to choose, or those of the
 // contract a holder's name or avatar points at. A name kept off-chain is then not resolved, and its holder is shown by address.
 const ownRpc = { ccipRead: false } as const
+
+// Where the page reads Ethereum from. A wallet in the browser, when there is one, is the visitor's own way to the chain:
+// it is asked first, for reads only, never for an account, a signature or a change of network. Then the RPCs of the
+// configuration, in order. A wallet is asked only on a network the page has RPCs for: it is another way to the same
+// chain, not a way to another one.
+type Source = { name: string; transport: Transport }
+function sources(config: Page, chainId: number): Source[] {
+    const rpcs = (config.rpcs?.[chainId] ?? []).map(url => ({ name: new URL(url).host, transport: http(url, { retryCount: 1, timeout: 8_000 }) }))
+    const wallet = (window as unknown as { ethereum?: Parameters<typeof custom>[0] }).ethereum
+    return rpcs.length && typeof wallet?.request === 'function' ? [{ name: 'your wallet', transport: custom(wallet, { retryCount: 0 }) }, ...rpcs] : rpcs
+}
+const when = (anchored: bigint) => (anchored ? new Date(Number(anchored) * 1000).toISOString() : null)
 
 // What the page asks the contract: four questions, through viem.
 type Reader = {
@@ -230,13 +245,33 @@ function liveReader(client: ReturnType<typeof createClient>, address: Address): 
 }
 
 // Is this contract one of ours: listed in the config or, on mainnet, named by fairfooddata.eth.
-async function isOfficial(config: Page, chainId: number, contract: Address) {
+async function isOfficial(config: Page, chainId: number, contract: Address, source: Source) {
     if ([config.contract, ...(config.contracts ?? [])].some(listed => isAddressEqual(listed, contract))) return true
     if (chainId !== 1) return false
-    const client = createClient({ chain: mainnet, transport: http(config.rpcs?.[1] ?? config.rpc), ...ownRpc })
+    const client = createClient({ chain: mainnet, transport: source.transport, ...ownRpc })
     // no record under that name is an answer, and it is null; an RPC that fails is not one, and it is thrown
     const listed = await getEnsText(client, { name: 'fairfooddata.eth', key: 'ffd.contract' })
     return !!listed && isAddress(listed) && isAddressEqual(listed, contract)
+}
+
+// The second opinion. What Ethereum says is anchored reaches the page through a source, and a source that lied could seal
+// anything. So another one is asked the two things the check rests on, and nothing else: which record the bag has, and
+// whether each record has its anchor, and since when. The answer is whether it says the same; null is that there was no
+// other source, or that none of them answered.
+async function secondOpinion(others: Source[], chainId: number, contract: Address, id: bigint, run: Hex, events: Event[]) {
+    for (const source of others) {
+        try {
+            const client = createClient({ transport: source.transport, ...ownRpc })
+            if ((await getChainId(client)) !== chainId) continue
+            const reader = liveReader(client, contract)
+            const [head, anchors] = await Promise.all([reader.recordOf(id), Promise.all(events.map(event => reader.anchoredAt(event.ref)))])
+            const same = head === run && events.every((event, i) => when(anchors[i]![0]) === event.at && anchors[i]![1] === event.block)
+            return { name: source.name, same }
+        } catch (error) {
+            console.error(error)
+        }
+    }
+    return null
 }
 
 // ---------- the record cards (block 4) ----------
@@ -692,11 +727,11 @@ function rotateHue(hex: string, degrees: number): string {
 }
 
 // The holder's name and image, when its address has them on ENS
-async function nameHolder(owner: Address, chainId: number, rpc: string) {
+async function nameHolder(owner: Address, chainId: number, { transport }: Source) {
     const chain = chainId === 1 ? mainnet : chainId === 11155111 ? sepolia : null
     if (!chain) return
     try {
-        const client = createClient({ chain, transport: http(rpc), ...ownRpc })
+        const client = createClient({ chain, transport, ...ownRpc })
         const name = await getEnsName(client, { address: owner })
         if (!name) return
         const who = $('holder').querySelector<HTMLElement>('.who b')
@@ -823,21 +858,37 @@ async function check(config: Page) {
     document.title = `Twin #${parsed.id}`
 
     try {
-        // 1 · reading Ethereum: which contract, which record, who holds the twin.
-        const rpc = config.rpcs?.[parsed.chainId] ?? config.rpc
-        const client = createClient({ transport: http(rpc), ...ownRpc })
-        const chainId = await getChainId(client)
-        if (parsed.chainId !== chainId) throw Error(`no RPC for chain ${parsed.chainId}`)
+        // 1 · reading Ethereum: which contract, which record, who holds the twin. The first source that is on the network of
+        // the link and answers for the bag is the one the page reads with; one that is on another network, or does not
+        // answer, is passed over. The ones after it are kept for the second opinion.
+        const chainId = parsed.chainId
         const address = parsed.contract
-        if (!(await isOfficial(config, chainId, address))) throw new NotOfficial(`contract ${address} is not listed in the page config`)
-        const reader = liveReader(client, address)
         const explorer = explorers[chainId]
-        // who holds the twin is not part of the check: when the RPC does not say, that block is left out and the rest goes on
-        const [run, owner] = await Promise.all([reader.recordOf(parsed.id), reader.ownerOf(parsed.id).catch(error => void console.error(error))])
+        const asked = sources(config, chainId)
+        let first: { source: Source; reader: Reader; run: Hex; owner: Address | null | void } | undefined
+        let failed: unknown = Error(`no RPC for chain ${chainId}`)
+        for (const source of asked) {
+            try {
+                const client = createClient({ transport: source.transport, ...ownRpc })
+                if ((await getChainId(client)) !== chainId) throw Error(`${source.name} is on another network`)
+                if (!(await isOfficial(config, chainId, address, source))) throw new NotOfficial(`contract ${address} is not listed in the page config`)
+                const reader = liveReader(client, address)
+                // who holds the twin is not part of the check: when the source does not say, that block is left out and the rest goes on
+                const [run, owner] = await Promise.all([reader.recordOf(parsed.id), reader.ownerOf(parsed.id).catch(error => void console.error(error))])
+                first = { source, reader, run, owner }
+                break
+            } catch (error) {
+                if (error instanceof NotOfficial) throw error
+                failed = error
+            }
+        }
+        if (!first) throw failed
+        const { source, reader, run, owner } = first
+        const others = asked.slice(asked.indexOf(source) + 1)
         const twin = () => {
             if (owner === undefined) return
             const state = renderTwin(parsed.id, owner, config, explorer, address)
-            if (state !== 'none' && owner) void nameHolder(owner, chainId, rpc)
+            if (state !== 'none' && owner) void nameHolder(owner, chainId, source)
         }
         if (run === zeroHash) {
             twin()
@@ -887,7 +938,7 @@ async function check(config: Page) {
             seen.add(ref)
             const { bytes, gateway } = await fetchBytes(ref)
             const [anchored, block] = await reader.anchoredAt(ref)
-            const at = anchored ? new Date(Number(anchored) * 1000).toISOString() : null
+            const at = when(anchored)
             const text = at !== null && bytes ? new TextDecoder().decode(bytes) : null
             const verified = text !== null
             const { data, inputs } = text !== null ? read(text) : { data: null, inputs: [] }
@@ -927,6 +978,14 @@ async function check(config: Page) {
                 if (link) link.href = `${explorer}/tx/${tx}`
             })
         )
+
+        // The plate closes on what the first source says. A second one is then asked whether it says the same, and the answer
+        // is kept on the plate (`data-sources`: agree, differ, or single when there was no second one) and nowhere in sight:
+        // the page has no words for it yet, and until it has, nothing the visitor sees depends on it.
+        if (allGood) {
+            const second = await secondOpinion(others, chainId, address, parsed.id, run, events)
+            $('hero').dataset.sources = !second ? 'single' : second.same ? 'agree' : 'differ'
+        }
 
         const outcome = events.length && allGood ? 'verified' : 'failed'
         await report(config, parsed.id, outcome, served, outcome === 'failed' ? 'mismatch' : undefined)
