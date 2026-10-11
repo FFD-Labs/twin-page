@@ -5,7 +5,7 @@
 
 import { NotOfficial, abi, download, hex, parseSticker, swarmHash, type Config } from '../src/lib.ts'
 import './life-grid.ts'
-import { createClient, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, readContract, sepolia, zeroHash, type Address, type Hex } from '../src/rails.ts'
+import { BaseError, ContractFunctionRevertedError, createClient, custom, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, readContract, sepolia, zeroHash, type Address, type Hex, type Transport } from '../src/rails.ts'
 
 type Farm = { zone: string | null; country: string | null; variety: string | null; harvested: string | null; kg: number | null }
 
@@ -85,11 +85,13 @@ type Page = Config & {
 
 // One record of the path. `verified`: hashed the way Swarm does, the bytes a gateway served give `ref`, and `ref` has its
 // anchor. `data` is what the record says, and it is there only when that holds: bytes that fail the check are never parsed.
+// A record that passed the check and is not one the page knows how to show has no `data` either: `raw` is its text.
 type Event = {
     ref: Hex
     at: string | null
     block: bigint
     data: Record | null
+    raw?: string | null
     gateway: string
     verified: boolean
     tx: string | null
@@ -176,7 +178,10 @@ const row = (step: number, value: string, state: 'busy' | 'lit' | 'idle' | 'bad'
     swap(li.querySelector<HTMLElement>('.v')!, value)
     if ((state === 'lit' || state === 'bad') && step <= 3) edge(`e${step}`, step === 3 && state === 'bad')
 }
-const status = (state: 'checking' | 'verified' | 'mismatch' | 'idle') => $('hero').classList.toggle('verified', state === 'verified')
+const status = (state: 'checking' | 'verified' | 'mismatch' | 'idle') => {
+    $('hero').classList.toggle('verified', state === 'verified')
+    delete $('hero').dataset.sources
+}
 
 // ---------- config ----------
 
@@ -196,6 +201,23 @@ async function loadConfig(): Promise<Page> {
     return withNutrition(page)
 }
 
+// A client reads what its RPC answers and asks no one else. viem would otherwise follow an off-chain lookup (CCIP-Read): a
+// call that reverts naming URLs is a request to fetch them, and the URLs would be the RPC's to choose, or those of the
+// contract a holder's name or avatar points at. A name kept off-chain is then not resolved, and its holder is shown by address.
+const ownRpc = { ccipRead: false } as const
+
+// Where the page reads Ethereum from. A wallet in the browser, when there is one, is the visitor's own way to the chain:
+// it is asked first, for reads only, never for an account, a signature or a change of network. Then the RPCs of the
+// configuration, in order. A wallet is asked only on a network the page has RPCs for: it is another way to the same
+// chain, not a way to another one.
+type Source = { name: string; transport: Transport }
+function sources(config: Page, chainId: number): Source[] {
+    const rpcs = (config.rpcs?.[chainId] ?? []).map(url => ({ name: new URL(url).host, transport: http(url, { retryCount: 1, timeout: 8_000 }) }))
+    const wallet = (window as unknown as { ethereum?: Parameters<typeof custom>[0] }).ethereum
+    return rpcs.length && typeof wallet?.request === 'function' ? [{ name: 'your wallet', transport: custom(wallet, { retryCount: 0 }) }, ...rpcs] : rpcs
+}
+const when = (anchored: bigint) => (anchored ? new Date(Number(anchored) * 1000).toISOString() : null)
+
 // What the page asks the contract: four questions, through viem.
 type Reader = {
     recordOf: (id: bigint) => Promise<Hex>
@@ -207,7 +229,13 @@ function liveReader(client: ReturnType<typeof createClient>, address: Address): 
     const contract = { address, abi } as const
     return {
         recordOf: id => readContract(client, { ...contract, functionName: 'recordOf', args: [id] }),
-        ownerOf: id => readContract(client, { ...contract, functionName: 'ownerOf', args: [id] }).catch(() => null),
+        // null is the contract's own word that the twin is not created yet; an RPC that fails has said nothing about the twin
+        ownerOf: id =>
+            readContract(client, { ...contract, functionName: 'ownerOf', args: [id] }).catch(error => {
+                const revert = error instanceof BaseError ? error.walk(cause => cause instanceof ContractFunctionRevertedError) : null
+                if (revert instanceof ContractFunctionRevertedError && revert.data?.errorName === 'ERC721NonexistentToken') return null
+                throw error
+            }),
         anchoredAt: ref => readContract(client, { ...contract, functionName: 'anchoredAt', args: [ref] }),
         anchorTx: async (ref, block) => {
             const logs = await getContractEvents(client, { ...contract, eventName: 'Anchored', args: { ref }, fromBlock: block, toBlock: block }).catch(() => [])
@@ -217,12 +245,33 @@ function liveReader(client: ReturnType<typeof createClient>, address: Address): 
 }
 
 // Is this contract one of ours: listed in the config or, on mainnet, named by fairfooddata.eth.
-async function isOfficial(config: Page, chainId: number, contract: Address) {
+async function isOfficial(config: Page, chainId: number, contract: Address, source: Source) {
     if ([config.contract, ...(config.contracts ?? [])].some(listed => isAddressEqual(listed, contract))) return true
     if (chainId !== 1) return false
-    const client = createClient({ chain: mainnet, transport: http(config.rpcs?.[1] ?? config.rpc) })
-    const listed = await getEnsText(client, { name: 'fairfooddata.eth', key: 'ffd.contract' }).catch(() => null)
+    const client = createClient({ chain: mainnet, transport: source.transport, ...ownRpc })
+    // no record under that name is an answer, and it is null; an RPC that fails is not one, and it is thrown
+    const listed = await getEnsText(client, { name: 'fairfooddata.eth', key: 'ffd.contract' })
     return !!listed && isAddress(listed) && isAddressEqual(listed, contract)
+}
+
+// The second opinion. What Ethereum says is anchored reaches the page through a source, and a source that lied could seal
+// anything. So another one is asked the two things the check rests on, and nothing else: which record the bag has, and
+// whether each record has its anchor, and since when. The answer is whether it says the same; null is that there was no
+// other source, or that none of them answered.
+async function secondOpinion(others: Source[], chainId: number, contract: Address, id: bigint, run: Hex, events: Event[]) {
+    for (const source of others) {
+        try {
+            const client = createClient({ transport: source.transport, ...ownRpc })
+            if ((await getChainId(client)) !== chainId) continue
+            const reader = liveReader(client, contract)
+            const [head, anchors] = await Promise.all([reader.recordOf(id), Promise.all(events.map(event => reader.anchoredAt(event.ref)))])
+            const same = head === run && events.every((event, i) => when(anchors[i]![0]) === event.at && anchors[i]![1] === event.block)
+            return { name: source.name, same }
+        } catch (error) {
+            console.error(error)
+        }
+    }
+    return null
 }
 
 // ---------- the record cards (block 4) ----------
@@ -281,28 +330,63 @@ const steps = {
     })
 }
 
+// What a record says, when the page can show it: an object, of a phase the page knows, written at a moment it can place,
+// whose inputs are references and whose rows can be drawn. The types above are what a record should be, not what it is.
+// This is where that is found out, once, before anything is painted from it. A record that passed the check and is not
+// that is a record all the same: it has no `data`, it gets a card that says so, and the rest of the page goes on. The
+// records it names are followed either way, when it names them as references: a phase the page does not know yet must
+// not hide what came before it.
+export function read(text: string): { data: Record | null; inputs: Hex[] } {
+    let inputs: Hex[] = []
+    try {
+        const data = JSON.parse(text) as Record
+        if (data.inputs != null) inputs = data.inputs.map(input => hex(input))
+        const known = typeof data.phase === 'string' && Object.hasOwn(steps, data.phase)
+        const placed = typeof data.at === 'string' && !Number.isNaN(Date.parse(data.at))
+        const named = data.product == null || typeof data.product === 'string'
+        if (!known || !placed || !named) return { data: null, inputs }
+        rows(steps[data.phase](data).rows)
+        return { data, inputs }
+    } catch {
+        return { data: null, inputs }
+    }
+}
+
+// The most of a record's text a card shows when the page could not read it as a record.
+const RAW_SHOWN = 4000
+
 function card(event: Event, explorer: string | undefined) {
     const data = event.data
     // A record that did not pass the check was not read: its card carries the reference the page asked for and nothing of what arrived.
-    if (!data)
+    if (!event.verified)
         return `
         <p class="stage"><span class="num"></span> · not read</p>
         <h2>Record not shown</h2>
         <p class="check pending">Checking against its Ethereum anchor…</p>
         <details><summary>Reference</summary><p>Swarm <code>${esc(event.ref)}</code></p></details>`
+    const links = `
+        <p class="check pending">Checking against its Ethereum anchor…</p>
+        <div class="links">
+            ${explorer && event.block ? `<a class="btn anchor" href="${esc(`${explorer}/block/${event.block}`)}" target="_blank" rel="noopener">Ethereum anchor ↗</a>` : ''}
+            <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>
+        </div>`
+    // A record that passed the check and is not one the page knows how to show: what it says, as it was written, and no rows.
+    if (!data) {
+        const raw = event.raw ?? ''
+        return `
+        <p class="stage"><span class="num"></span> · not understood</p>
+        <h2>Record not understood</h2>
+        <div class="chips"><span class="chip wait">A kind this page does not know</span></div>${links}
+        <details><summary>Raw record</summary><pre>${esc(raw.length > RAW_SHOWN ? `${raw.slice(0, RAW_SHOWN)}…` : raw)}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
+    }
     const { title, twin, rows: list } = steps[data.phase](data)
-    const correction = (data.version ?? 1) > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
+    const correction = typeof data.version === 'number' && data.version > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
     return `
         <p class="stage"><span class="num"></span> · ${esc(data.phase)}</p>
         <h2>${esc(title)}</h2>
         ${twin ? '<p class="twin-born">This bag’s twin starts here.</p>' : ''}
         ${correction ? `<div class="chips">${correction}</div>` : ''}
-        ${rows(list)}
-        <p class="check pending">Checking against its Ethereum anchor…</p>
-        <div class="links">
-            ${explorer && event.block ? `<a class="btn anchor" href="${esc(`${explorer}/block/${event.block}`)}" target="_blank" rel="noopener">Ethereum anchor ↗</a>` : ''}
-            <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>
-        </div>
+        ${rows(list)}${links}
         <details><summary>Raw record</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
 
@@ -320,9 +404,9 @@ const resetLater = () => {
     laterTimers.clear()
 }
 
-// The tile beside a card: the day and the month the record gives. A record that was not read has no date to give.
-function tile(data: Record | null) {
-    if (!data) return '<span class="tile"><b>✗</b></span>'
+// The tile beside a card: the day and the month the record gives. A record that was not read, or not understood, has no date to give.
+function tile({ data, verified }: Event) {
+    if (!data) return `<span class="tile"><b>${verified ? '?' : '✗'}</b></span>`
     const when = new Date(data.at)
     const d = when.toLocaleDateString('en-GB', { day: 'numeric', timeZone: 'UTC' })
     const m = when.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
@@ -333,7 +417,7 @@ export function placeCard(path: HTMLOListElement, events: Event[], event: Event,
     const li = document.createElement('li')
     li.className = 'step'
     li.dataset.ref = event.ref
-    li.innerHTML = `<div class="unfold"><div class="unfold-in">${tile(event.data)}<div class="card">${card(event, explorer)}</div></div></div>`
+    li.innerHTML = `<div class="unfold"><div class="unfold-in">${tile(event)}<div class="card">${card(event, explorer)}</div></div></div>`
     const index = events.indexOf(event)
     const next = events[index + 1]
     const before = next ? path.querySelector<HTMLLIElement>(`li[data-ref="${next.ref}"]`) : null
@@ -643,11 +727,11 @@ function rotateHue(hex: string, degrees: number): string {
 }
 
 // The holder's name and image, when its address has them on ENS
-async function nameHolder(owner: Address, chainId: number, rpc: string) {
+async function nameHolder(owner: Address, chainId: number, { transport }: Source) {
     const chain = chainId === 1 ? mainnet : chainId === 11155111 ? sepolia : null
     if (!chain) return
     try {
-        const client = createClient({ chain, transport: http(rpc) })
+        const client = createClient({ chain, transport, ...ownRpc })
         const name = await getEnsName(client, { address: owner })
         if (!name) return
         const who = $('holder').querySelector<HTMLElement>('.who b')
@@ -774,19 +858,37 @@ async function check(config: Page) {
     document.title = `Twin #${parsed.id}`
 
     try {
-        // 1 · reading Ethereum: which contract, which record, who holds the twin.
-        const rpc = config.rpcs?.[parsed.chainId] ?? config.rpc
-        const client = createClient({ transport: http(rpc) })
-        const chainId = await getChainId(client)
-        if (parsed.chainId !== chainId) throw Error(`no RPC for chain ${parsed.chainId}`)
+        // 1 · reading Ethereum: which contract, which record, who holds the twin. The first source that is on the network of
+        // the link and answers for the bag is the one the page reads with; one that is on another network, or does not
+        // answer, is passed over. The ones after it are kept for the second opinion.
+        const chainId = parsed.chainId
         const address = parsed.contract
-        if (!(await isOfficial(config, chainId, address))) throw new NotOfficial(`contract ${address} is not listed in the page config`)
-        const reader = liveReader(client, address)
         const explorer = explorers[chainId]
-        const [run, owner] = await Promise.all([reader.recordOf(parsed.id), reader.ownerOf(parsed.id)])
+        const asked = sources(config, chainId)
+        let first: { source: Source; reader: Reader; run: Hex; owner: Address | null | void } | undefined
+        let failed: unknown = Error(`no RPC for chain ${chainId}`)
+        for (const source of asked) {
+            try {
+                const client = createClient({ transport: source.transport, ...ownRpc })
+                if ((await getChainId(client)) !== chainId) throw Error(`${source.name} is on another network`)
+                if (!(await isOfficial(config, chainId, address, source))) throw new NotOfficial(`contract ${address} is not listed in the page config`)
+                const reader = liveReader(client, address)
+                // who holds the twin is not part of the check: when the source does not say, that block is left out and the rest goes on
+                const [run, owner] = await Promise.all([reader.recordOf(parsed.id), reader.ownerOf(parsed.id).catch(error => void console.error(error))])
+                first = { source, reader, run, owner }
+                break
+            } catch (error) {
+                if (error instanceof NotOfficial) throw error
+                failed = error
+            }
+        }
+        if (!first) throw failed
+        const { source, reader, run, owner } = first
+        const others = asked.slice(asked.indexOf(source) + 1)
         const twin = () => {
+            if (owner === undefined) return
             const state = renderTwin(parsed.id, owner, config, explorer, address)
-            if (state !== 'none' && owner) void nameHolder(owner, chainId, rpc)
+            if (state !== 'none' && owner) void nameHolder(owner, chainId, source)
         }
         if (run === zeroHash) {
             twin()
@@ -808,18 +910,26 @@ async function check(config: Page) {
         const cards = new Map<Hex, HTMLElement>()
         const queue: Hex[] = [run]
         const seen = new Set<Hex>()
+        // What a gateway serves is hashed as it lands, and the first bytes that give the reference are the record. A gateway
+        // that serves other bytes is passed over like one that does not answer. `bytes` is null when gateways answered and
+        // none of them had the record; when none answered at all, that is the network, and it is thrown.
         const fetchBytes = async (ref: Hex) => {
             let last: unknown
+            let other: string | null = null
             for (const gateway of gateways) {
                 tried.add(gateway)
                 try {
                     const bytes = await download(gateway, ref)
-                    served = gateway
-                    return { bytes, gateway }
+                    if (swarmHash(bytes) === ref) {
+                        served = gateway
+                        return { bytes, gateway }
+                    }
+                    other ??= gateway
                 } catch (error) {
                     last = error
                 }
             }
+            if (other) return { bytes: null, gateway: other }
             throw last instanceof Error ? last : Error('no gateway answered')
         }
         while (queue.length) {
@@ -828,16 +938,16 @@ async function check(config: Page) {
             seen.add(ref)
             const { bytes, gateway } = await fetchBytes(ref)
             const [anchored, block] = await reader.anchoredAt(ref)
-            const at = anchored ? new Date(Number(anchored) * 1000).toISOString() : null
-            const verified = at !== null && swarmHash(bytes) === ref
-            const data = verified ? (JSON.parse(new TextDecoder().decode(bytes)) as Record | null) : null
-            if (verified && !data) throw Error(`record ${ref} is empty`)
-            const event: Event = { ref, at, block, data, gateway, verified, tx: null }
+            const at = when(anchored)
+            const text = at !== null && bytes ? new TextDecoder().decode(bytes) : null
+            const verified = text !== null
+            const { data, inputs } = text !== null ? read(text) : { data: null, inputs: [] }
+            const event: Event = { ref, at, block, data, raw: data ? null : text, gateway, verified, tx: null }
             events.push(event)
-            // a record that was not read has no date: it goes first, before the ones that could be placed
+            // a record that was not read, or not understood, has no date: it goes first, before the ones that could be placed
             events.sort((a, b) => (a.data ? a.data.at : '').localeCompare(b.data ? b.data.at : ''))
             cards.set(ref, placeCard(path, events, event, explorer))
-            queue.push(...(data?.inputs ?? []).map(hex))
+            for (const input of inputs) queue.push(input)
             row(2, `${events.length} data ${events.length === 1 ? 'record' : 'records'}${queue.length ? '…' : ''}`, queue.length ? 'busy' : 'lit')
         }
         row(2, `${events.length} data ${events.length === 1 ? 'record' : 'records'}`)
@@ -869,6 +979,14 @@ async function check(config: Page) {
             })
         )
 
+        // The plate closes on what the first source says. A second one is then asked whether it says the same, and the answer
+        // is kept on the plate (`data-sources`: agree, differ, or single when there was no second one) and nowhere in sight:
+        // the page has no words for it yet, and until it has, nothing the visitor sees depends on it.
+        if (allGood) {
+            const second = await secondOpinion(others, chainId, address, parsed.id, run, events)
+            $('hero').dataset.sources = !second ? 'single' : second.same ? 'agree' : 'differ'
+        }
+
         const outcome = events.length && allGood ? 'verified' : 'failed'
         await report(config, parsed.id, outcome, served, outcome === 'failed' ? 'mismatch' : undefined)
     } catch (error) {
@@ -883,5 +1001,8 @@ async function check(config: Page) {
         await report(config, parsed.id, 'failed', served, 'unreachable')
     }
 }
+
+// Another bag in the link is another page: it is loaded again and read from nothing, not left under the seal of the bag before.
+window.addEventListener('hashchange', () => location.reload())
 
 void main()

@@ -82,6 +82,16 @@ test('a correction says its version', () => {
     clean(document)
 })
 
+test('a record that was read and not understood has a card with its text, as text', () => {
+    const odd = event(3, null, { raw: hostile('raw') })
+    paint([intake(), cycle(), odd])
+    assert.match(cardOf(odd).textContent, /Record not understood/)
+    assert.equal(cardOf(odd).querySelector('pre').textContent, hostile('raw'))
+    assert.ok(cardOf(odd).querySelector('.links a').href.startsWith('https://explorer.example/block/'))
+    assert.equal($('fruit-name').textContent, 'Mango')
+    clean(document)
+})
+
 test('a record that was not read has a card with its reference and nothing else', () => {
     const unread = event(3, null, { verified: false })
     paint([intake(), cycle(), unread])

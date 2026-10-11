@@ -16,14 +16,14 @@ devcon8.html#11155111:0x240dfbca7064d091149169eff95f764d1e21cea7/1
 ```
 
    Bags 1 to 20 exist on that Sepolia test contract. The page reads Ethereum and Swarm, so it needs an internet connection.
-3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm. No one else in between."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; who holds the twin; and, in the footer, the fingerprint of the file you are looking at, which you can compare with the `SHA256SUMS` of its release.
+3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; and who holds the twin. Opened from the web, the footer also shows the fingerprint of the file, which you can compare with the `SHA256SUMS` of its release; a file opened from a folder has none to show, so hash it yourself (see The fingerprint).
 
 ## The link
 
 The QR on a bag is a link to this page with the bag after a `#`:
 
 ```
-https://fairfooddata.eth.limo/devcon.html#<chainId>:<contract>/<id>
+https://fairfooddata.eth.limo/devcon8.html#<chainId>:<contract>/<id>
 ```
 
 `chainId` is the network (1 for Ethereum mainnet, 11155111 for Sepolia), `contract` the address of the Fair Food Data contract and `id` the bag number. The page reads the three, checks the contract against the ones it lists (and, on mainnet, against the `ffd.contract` record of `fairfooddata.eth`) and shows the bag. A link whose contract is not Fair Food Data's shows a warning and nothing else.
@@ -41,11 +41,24 @@ Top to bottom, each block filling in as its records arrive.
 | The twin | Who holds the bag's twin: the jazzicon of its address, as its wallet draws it, or its ENS name and avatar when it has them | Ethereum and ENS |
 | The footer | Anchored on Ethereum, stored on Swarm, living on public rails; the Fair Food Data mark and the site; the fingerprint of the page | |
 
-The states the page handles: no record yet for the bag, no bag in the link, a link cut short, a contract the page does not list, a network the page has no RPC for, a network that does not answer (the gateways are tried in order, with a retry), and a record that fails the check. That last one is never read: what a gateway serves is hashed and compared with its anchor before a byte of it is parsed, and a record that does not match gets a card with its reference and nothing of what arrived.
+The states the page handles: no record yet for the bag, no bag in the link, a link cut short, a contract the page does not list, a network the page has no RPC for, a source of Ethereum or a gateway that does not answer or serves something else (the next is asked; when none answers, the page says so and offers to try again), a record that fails the check, and a record that passes it and is not one the page knows how to show.
+
+A record that fails the check is never read: what a gateway serves is hashed and compared with its anchor before a byte of it is parsed, and a record that does not match gets a card with its reference and nothing of what arrived. "Does not match" is said only when a gateway answered and none had the record. A record that passes and that the page does not understand, a phase it does not know yet or a field of another kind, has a card that says so, with its text as it was written, and the rest of the page goes on.
+
+## Who the page asks
+
+The records are checked by arithmetic: whatever gateway serves them, their bytes give their reference or they do not. What Ethereum says is different. Which record a bag has, and whether a record is anchored, is something the page is told by a source, and it reads with the first of these that is on the network of the link and answers:
+
+1. A wallet in the browser, when there is one. It is the visitor's own way to the chain. It is asked to read, never for an account, a signature or a change of network, and only on a network the page has RPCs for.
+2. The RPCs of the configuration, in order: for Sepolia, an Alchemy endpoint and then a public one. The key in the Alchemy address is public, like the rest of the file; it is limited to the page's contracts and to ENS.
+
+When every record matches, the next source is asked the two things the check rests on: which record the bag has, and whether each record has its anchor, and since when. Its answer is kept on the plate (`data-sources`: `agree`, `differ` or `single`) and is not shown yet. Until it is, the plate closes on what the first source says, and the check is as good as that source: one that lied could have a record that was never anchored shown as checked.
 
 ## The fingerprint
 
-The file behind the QR is published here with its SHA-256 hash, each release in a folder of its own under `releases/`. A page cannot carry its own hash, since writing it in would change the bytes. So when the page opens from the web, the device reads the file it received, hashes it and shows the result in the footer, the same way it hashes every record. Compare that number with `SHA256SUMS`.
+The file behind the QR is published here with its SHA-256 hash, each release in a folder of its own under `releases/`. A page cannot carry its own hash, since writing it in would change the bytes. So when the page opens from the web, the device asks for the file once more, hashes what it gets and shows the result in the footer. Compare that number with `SHA256SUMS`.
+
+That number tells a copy from the published file when nobody is hiding the difference: an old file, a wrong upload. It is no defence against whoever serves the page, since the number is computed and shown by the file that was served, and a file changed on purpose shows the number it likes. To be sure of a copy, download it and hash it yourself.
 
 To check a copy of the file, in the folder of its release:
 
@@ -87,9 +100,11 @@ npm run release -- <n>
 
 ## What the page never does
 
-- It talks only to Ethereum through a public RPC and to Swarm through public gateways. No server of ours. The one exception is a holder's ENS avatar, which the page loads from wherever that holder keeps the image.
+- It reads Ethereum, through the visitor's wallet or the RPCs it lists, and Swarm, through public gateways (see Who the page asks). No server of ours.
+- When a twin has moved to an address with an ENS name, the page asks ENS for the name and the avatar through the same source, and loads the avatar from wherever its holder keeps it: an address of their choosing, ipfs.io or arweave.net, and for an NFT its contract and the metadata that contract names. Whoever serves it sees that the page was opened.
+- It follows no off-chain lookup (CCIP-Read). A name kept off-chain is not resolved, and its holder is shown by address.
 - It sets no cookies and keeps nothing on the device.
-- What follows `#` in the link stays on the device: the page reads it and never sends it.
+- What follows `#` in the link is not sent to whoever serves the page. The network, the contract and the bag number in it are what the page asks Ethereum about, so the source it asks sees them, and the gateways see which records are fetched.
 - Nothing here signs, uploads or moves anything.
 - It runs no script but its own two. What a record says is written as text, and the head of the file carries a Content-Security-Policy that names the two scripts by their SHA-256, so nothing written into the page afterwards can run.
 
@@ -115,12 +130,13 @@ Open the built file with the network, the contract and the bag number after a ha
 | `web/life-grid.ts` | The field behind the footer |
 | `src/lib.ts` | The contract's read side, the link format, downloading a record, and the Swarm reference of a file computed the way Swarm computes it, written here so anyone can read how a record is checked |
 | `src/rails.ts` | Everything the page takes from viem, by name: the read side of Ethereum and ENS, keccak256 |
-| `web/public/config.json` | What the page reads: the RPC and the contract it trusts, the custody address, the gateways in order, the day the storage is paid up to, the links, this repository, the fruits and the CO₂ assumptions |
+| `web/public/config.json` | What the page reads: the RPCs it asks, by network and in order, the contract it trusts, the custody address, the gateways in order, the day the storage is paid up to, the links, this repository, the fruits and the CO₂ assumptions |
 | `test/paint.test.mjs` | The paint functions, given a record whose values are HTML: nothing of it may become an element of the page |
-| `test/check.test.mjs` | The whole check against a gateway and an RPC that lie: bytes that fail it are never read, and a reference is 64 hex digits or nothing |
+| `test/check.test.mjs` | The whole check against gateways, RPCs and a wallet that lie, fail or do not answer: bytes that fail it are never read, a record of any shape leaves the page standing, and a source that fails is not taken for an answer |
 | `test/page.mjs` | The page for the tests: the markup and the script as written, in jsdom |
 | `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed, and the policy that names those two scripts by their hash |
-| `test/releases.test.mjs` | The releases: every folder still holds the file its `SHA256SUMS` and its row in the table name |
+| `scripts/inspect.mjs` | What a browser would run in the single file, parsed as a browser parses it: one policy in the head, the two scripts it names, nothing else that runs or loads from elsewhere. The build asks it of every file it writes |
+| `test/releases.test.mjs` | The releases: every folder still holds the file its `SHA256SUMS` and its row in the table name, and a file still in use passes `scripts/inspect.mjs` |
 | `scripts/release.mjs` | Builds the file and files it as the next release, with its hash and its row in the table. It never writes over a release |
 | `releases/<folder>/` | The published files and their `SHA256SUMS`, one folder per release |
 

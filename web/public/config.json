@@ -1,11 +1,16 @@
 {
-    "_about": "What the page reads, and nothing else: the Ethereum RPC and the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the day the records' storage is paid up to, the links of the footer, the repository that publishes the file, and the content of the fruit card and the arithmetic. A block whose keys are missing is not painted.",
-    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+    "_about": "What the page reads, and nothing else: the Ethereum RPCs it asks, by network and in order (the first that answers is read, and the next is asked whether it says the same; the key in an address is public, and is good only for these contracts), the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the day the records' storage is paid up to, the links of the footer, the repository that publishes the file, and the content of the fruit card and the arithmetic. A block whose keys are missing is not painted.",
+    "rpcs": {
+        "11155111": [
+            "https://eth-sepolia.g.alchemy.com/v2/alch_X-XdU1rCBjrCGNKmGPtj9",
+            "https://ethereum-sepolia-rpc.publicnode.com"
+        ]
+    },
     "contract": "0x240dfbca7064d091149169eff95f764d1e21cea7",
     "custody": "0x607658fddA3c05068237F6151aEf3C9f8aD8c184",
     "gateways": [
         "https://bzz.limo",
-        "https://gateway.ethswarm.org"
+        "https://api.gateway.ethswarm.org"
     ],
     "storage": {
         "until": "2027-01-27"
