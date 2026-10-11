@@ -15,7 +15,7 @@ Content: the six blocks of PRODUCT.md, in their order, with every state the page
 
 Constraints: one file, strict CSP, no server, reduced motion and forced colours respected. The page takes the colourway of the scanned bag, known only when the packing record has been read; it opens neutral.
 
-Chosen with Antonio on 11 Oct 2026: round 1, the front of the bag as the opening; round 2, the photo where the QR sticker sits on the back.
+Chosen with tonytony32 on 11 Oct 2026: round 1, the front of the bag as the opening; round 2, the photo where the QR sticker sits on the back.
 
 Unresolved: how much the art of three colourways may weigh in the file; which three photographs; the plates for pineapple and banana.
 

@@ -2,7 +2,7 @@
 
 <!-- impeccable:product-schema 1 -->
 
-Facts marked (README) are taken from this repository as written on 11 October 2026. Facts marked (Antonio) were confirmed in conversation on that date.
+Facts marked (README) are taken from this repository as written on 11 October 2026. Facts marked (tonytony32) were confirmed in conversation on that date.
 
 ## Platform
 
@@ -30,20 +30,20 @@ No server of Fair Food Data sits between the visitor and the records. The page i
 
 - Six blocks, top to bottom, each filling in as its records arrive: the fruit, the plate (the check), the path (one card per record), the arithmetic of the CO₂, who holds the twin, the footer with the file's fingerprint. The structure is final; the content is not. (README)
 - One file with everything inside: styles, markup, configuration, viem, the page's own code with its types removed, the fonts. A Content-Security-Policy names its two scripts by hash. The build is deterministic and every release is filed with its SHA-256. (README)
-- The file carries no image, so that it weighs as little as it can. The page first shows itself complete in CSS, with the crystal drawn and the colours of the pouch, and loads the art and the photograph last of all, from beside the file (Antonio).
-- The twins are numbered up to 15000 (Antonio).
-- A bag holds 10 g (Antonio).
-- The check is shown as a process, in order: your device asks Ethereum, then Swarm, and then everything fills in (Antonio).
+- The file carries no image, so that it weighs as little as it can. The page first shows itself complete in CSS, with the crystal drawn and the colours of the pouch, and loads the art and the photograph last of all, from beside the file (tonytony32).
+- The twins are numbered up to 15000 (tonytony32).
+- A bag holds 10 g (tonytony32).
+- The check is shown as a process, in order: your device asks Ethereum, then Swarm, and then everything fills in (tonytony32).
 - It sets no cookies, keeps nothing on the device, signs and uploads nothing. (README)
 - A record that fails the check is never read or painted; a record's values are written as text. (README)
 - The fruit of a bag is known only once its packing record has been read and checked, so the page cannot know its colourway when it opens.
-- The final fruits are pineapple, banana and jackfruit (Antonio). The configuration still lists mango, the fruit of the test records.
+- The final fruits are pineapple, banana and jackfruit (tonytony32). The configuration still lists mango, the fruit of the test records.
 
 ## Brand Commitments
 
-- The page looks like the pouch that opened it and takes the colourway of the scanned bag (Antonio). The reference is the jackfruit pouch, front and back.
+- The page looks like the pouch that opened it and takes the colourway of the scanned bag (tonytony32). The reference is the jackfruit pouch, front and back.
 - The pouch's typefaces: Montserrat for the capitals, Fira Sans Condensed for sentences (packaging README).
-- The page shows a photograph of the fresh fruit, from Unsplash, one per fruit (Antonio). The fruit rendered inside the hexagon of the crystal on the pouch is not used: the hexagon is free on the page (Antonio).
+- The page shows a photograph of the fresh fruit, from Unsplash, one per fruit (tonytony32). The fruit rendered inside the hexagon of the crystal on the pouch is not used: the hexagon is free on the page (tonytony32).
 - The Fair Food Data mark and lockup identify the company, not the code (README).
 - Plain, declarative English, as in the README and the page today.
 
