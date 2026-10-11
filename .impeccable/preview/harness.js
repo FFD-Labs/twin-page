@@ -1,7 +1,10 @@
 // A bag that does not exist, for looking at the page. The page in the frame is the real one, as the dev server serves it;
 // what is made up is the network: a wallet that answers for Ethereum and a fetch that answers for Swarm, with records
 // written here, hashed the way Swarm does and anchored. The page's own check runs on them, and passes or fails as it would.
+// The files of the product are the real ones, those of the fruit's folder in products/, named by the packing record as a
+// Notary would name them, and served by the made-up Swarm under their references.
 //   fruit=jackfruit|pineapple|banana|mango   id=<bag number>   art=0 the art is asked for and never comes   art=photo only the photograph   art=none there is none
+//   product=none the packing record names no file   product=bad the description is served with other bytes
 //   state=bad serves other bytes for one record   stop=eth|swarm never answers that read   slow=<ms> per read   h=<frame height>|full
 //   still=1 no transitions and no animations: every state is shown as it ends, for a capture
 import { decodeFunctionData, encodeFunctionResult } from 'viem'
@@ -39,7 +42,27 @@ const put = (record, anchored) => {
 }
 const intake = put({ phase: 'intake', at: '2026-10-01T06:30:00Z', plant_id: 'REC/20261001/9021-1', fruit, kg: 100, supplier: 'Cooperative Nashik 3', sourcing: 'undeclared', farms: [{ zone: 'Nashik', country: 'IN', variety: null, harvested: '2026-09-29', kg: 100 }], delivery_note: 'DN-2610-0147' }, '2026-10-03T08:30:00Z')
 const cycle = put({ phase: 'cycle', at: '2026-10-04T08:00:00Z', plant_id: '5201', machine: 'IND-L-1', start: '2026-10-02T10:00:00Z', end: '2026-10-04T08:00:00Z', min_temperature_c: -38.2, min_pressure_pa: 21.3, kwh: 87.6, loads: [{ trays: 16, kg: 32 }], kg_out: 5.6, moisture_pct: 2.4, inputs: [intake] }, '2026-10-04T17:48:00Z')
-const packing = put({ phase: 'packing', at: '2026-10-05T09:00:00Z', plant_id: 'WH/MO/00057', product: `dried ${fruit}`, bags: 560, bag_g: 10, lot: 'L-1026', inputs: [cycle] }, '2026-10-05T17:48:00Z')
+// ---------- the product: the files of the fruit, as the packing record names them among its documents ----------
+// art=photo: the record names no illustration, and the photograph comes: the page without its artwork
+// art=none: it names no illustration and no photograph, as for a fruit that has none yet
+const kit = { 'product-description.json': 'application/json', 'photo.webp': 'image/webp', 'cover.webp': 'image/webp', 'background.webp': 'image/webp' }
+const left = { photo: ['cover.webp', 'background.webp'], none: ['cover.webp', 'background.webp', 'photo.webp'] }[q.get('art')] ?? []
+const documents = []
+let description = null
+// the folder of the fruit, next to this one in the repository, as the dev server serves it
+const folder = `${import.meta.url.split('/.impeccable/')[0]}/products/${fruit}`
+for (const [name, type] of q.get('product') === 'none' ? [] : Object.entries(kit)) {
+    if (left.includes(name)) continue
+    const response = await real(`${folder}/${name}`)
+    // a fruit with no such file: the dev server answers with a page, not with the file
+    if (!response.ok || response.headers.get('content-type')?.includes('text/html')) continue
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    const ref = swarmHash(bytes)
+    files.set(ref, bytes)
+    documents.push({ name, type, ref: ref.slice(2) })
+    if (name === 'product-description.json') description = ref
+}
+const packing = put({ phase: 'packing', at: '2026-10-05T09:00:00Z', plant_id: 'WH/MO/00057', product: `dried ${fruit}`, bags: 560, bag_g: 10, lot: 'L-1026', documents, inputs: [cycle] }, '2026-10-05T17:48:00Z')
 const head = put({ phase: 'transport', at: '2026-11-02T09:00:00Z', product: `dried ${fruit}`, origin: 'urn:bdf:site:india-1', destination: 'Devcon 8 venue, Mumbai', departure: '2026-10-30T04:00:00Z', arrival: '2026-11-02T09:00:00Z', carrier: 'road courier', tracking: 'TEST-SHIP-0001', inputs: [packing] }, '2026-11-02T17:50:00Z')
 
 // ---------- the network ----------
@@ -62,25 +85,19 @@ w.ethereum = {
         return encodeFunctionResult({ abi, functionName, result: config.custody })
     }
 }
-// what the page is given as its configuration: the real one, with no other RPC to ask, and without the art when art=0
+// what the page is given as its configuration: the real one, with no other RPC to ask
 const served = structuredClone(config)
 served.rpcs = { 11155111: ['https://preview.invalid'] }
 // art=0: the art and the photograph are asked for and do not come, so the page stays as it is before they arrive
 if (q.get('art') === '0') w.Image = class { set src(_) {} }
-// art=photo: the config names no illustration, and the photograph comes: the page without its artwork
-if (q.get('art') === 'photo') delete served.art
-// art=none: the config names no art and no photograph, as for a fruit that has none yet
-if (q.get('art') === 'none') {
-    delete served.art
-    for (const entry of Object.values(served.fruits)) entry.photo = null
-}
 w.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url
     if (url.includes('/bytes/')) {
         if (stop === 'swarm') await never
         await sleep(slow)
         const ref = `0x${url.split('/bytes/')[1]}`
-        const file = q.get('state') === 'bad' && ref === cycle ? new TextEncoder().encode('{"phase":"cycle"}') : files.get(ref)
+        const other = (q.get('state') === 'bad' && ref === cycle) || (q.get('product') === 'bad' && ref === description)
+        const file = other ? new TextEncoder().encode('{"phase":"cycle"}') : files.get(ref)
         return file ? new Response(file, { headers: { 'content-type': 'application/octet-stream' } }) : new Response('not found', { status: 404 })
     }
     if (url.endsWith('config.json')) return new Response(JSON.stringify(served), { headers: { 'content-type': 'application/json' } })

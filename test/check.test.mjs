@@ -14,7 +14,6 @@ const config = {
     rpcs: { 11155111: rpcs, 1: rpcs },
     contract,
     gateways: ['https://gateway.example', 'https://second.example'],
-    fruits: { mango: { name: 'Mango' } },
     co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' }
 }
 
@@ -473,4 +472,390 @@ test('a link to a network the page has no RPC for: a wallet that is on it is not
     assert.match($('notice').textContent, /no RPC for chain 137/)
     assert.deepEqual(asked, [])
     assert.deepEqual(net.calls, [])
+})
+
+// ---------- the files of the product: what a packing record names among its documents ----------
+// A file of the product is on Swarm under its own reference, like a record, and has no anchor of its own: its reference
+// is in a record that has one. The page reads it the way it reads a record, the bytes hashed before they are used.
+
+// The page tries an image before it shows it, and holds it under an address of its own making. Here an image is one when
+// its bytes begin as a WebP file does, which stands for a picture a browser can draw; the bytes behind each address are
+// kept, to tell, with the type the page gave them and whether it let the address go. A picture is 720 px a side, unless
+// its bytes say it is one too large to hold (`webp(mark, size, true)`).
+const pictures = new Map()
+const made = []
+const letGo = new Set()
+const createObjectURL = URL.createObjectURL.bind(URL)
+const revokeObjectURL = URL.revokeObjectURL.bind(URL)
+URL.createObjectURL = (blob) => {
+    const url = createObjectURL(blob)
+    pictures.set(url, blob.first)
+    made.push({ url, type: blob.type })
+    return url
+}
+URL.revokeObjectURL = (url) => {
+    letGo.add(url)
+    revokeObjectURL(url)
+}
+beforeEach(() => {
+    made.length = 0
+    letGo.clear()
+})
+const NodeBlob = globalThis.Blob
+globalThis.Blob = class extends NodeBlob {
+    constructor(parts, options) {
+        super(parts, options)
+        this.first = parts[0]
+    }
+}
+const ascii = (file, from, to) => String.fromCharCode(...file.subarray(from, to))
+globalThis.Image = class {
+    set src(url) {
+        const file = pictures.get(url)
+        const drawn = file && ascii(file, 0, 4) === 'RIFF' && ascii(file, 8, 12) === 'WEBP'
+        this.naturalWidth = this.naturalHeight = drawn && file[21] ? 20000 : 720
+        queueMicrotask(() => (drawn ? this.onload?.() : this.onerror?.()))
+    }
+}
+
+// a file on Swarm under its reference, and what a record says of it
+function file(name, type, content) {
+    const ref = swarmHash(content)
+    net.files.set(ref, content)
+    return { name, type, ref: ref.slice(2) }
+}
+const webp = (mark, size = 64, huge = false) => {
+    const content = new Uint8Array(size)
+    content.set(new TextEncoder().encode('RIFF'), 0)
+    content.set(new TextEncoder().encode('WEBPVP8 '), 8)
+    content[20] = mark
+    content[21] = huge ? 1 : 0
+    return content
+}
+const pineapple = {
+    schema: 'ffd/product-description/1.0',
+    fruit: 'pineapple',
+    name: 'Golden pineapple',
+    nutrition: { energy_kcal: 350, carbohydrate_g: 90, sugars_g: 68, protein_g: 3.5, fat_g: 1, fibre_g: 10, micro: [['Vitamin C', 180, 'mg']], source: 'a public table' },
+    photo: { alt: 'A pineapple cut in half', credit: 'A photographer' }
+}
+const description = (value = pineapple) => file('product-description.json', 'application/json', bytes(value))
+const photo = (content = webp(1)) => file('photo.webp', 'image/webp', content)
+const cover = (content = webp(2)) => file('cover.webp', 'image/webp', content)
+const background = (content = webp(3)) => file('background.webp', 'image/webp', content)
+// a bag of pineapple, 10 g, whose packing record names these documents
+function bag(documents) {
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'pineapple', kg: 20, sourcing: 'rescued' })
+    const cycle = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', start: '2026-09-28T10:00:00Z', end: '2026-09-29T08:00:00Z', loads: [{ trays: 10, kg: 20 }], kg_out: 2, inputs: [intake] })
+    net.head = put({ phase: 'packing', at: '2026-09-30T08:00:00Z', product: 'dried pineapple', bag_g: 10, lot: 'L1', documents, inputs: [cycle] })
+}
+// what a gateway does in place of serving one file, by its reference: every other file it serves as it is
+const but = (document, instead) => (request) => {
+    const ref = `0x${request.url.split('/bytes/')[1]}`
+    if (ref === `0x${document.ref}`) return instead(request)
+    const content = net.files.get(ref)
+    return content ? answer(content, 'application/octet-stream') : new Response('not found', { status: 404 })
+}
+const other = () => answer(bytes({ ...pineapple, name: 'SERVED-BY-THE-GATEWAY' }), 'application/octet-stream')
+const askedFor = (document) => net.asked.filter((url) => url.endsWith(`/bytes/${document.ref}`)).length
+const root = () => document.documentElement
+const art = (side) => root().style.getPropertyValue(`--art-${side}`)
+const label = () => $('fruit-contains').textContent
+
+test('the files of the product: the name and the label from its description, and its three images, each read against its reference', async () => {
+    const files = [description(), photo(), cover(), background()]
+    bag(files)
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches')
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.equal(root().dataset.way, 'pineapple')
+    assert.equal($('fruit-grams').textContent, '10 g per bag')
+    assert.equal($('fruit-contains').hidden, false)
+    assert.match(label(), /Energy35 kcal/)
+    assert.match(label(), /Sugars6\.8\sg/)
+    assert.match($('fruit-origin').textContent, /Vitamin C18 mg180 mg/)
+    assert.match($('fruit-origin').textContent, /Source: a public table\. Photograph: A photographer\./)
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal($('fruit-photo').alt, 'A pineapple cut in half')
+    assert.equal($('fruit-photo').hidden, false)
+    assert.equal($('stage').hidden, false)
+    assert.match(art('front'), /^url\("blob:[^"]+"\)$/)
+    assert.match(art('back'), /^url\("blob:[^"]+"\)$/)
+    assert.equal(root().dataset.art, 'front back')
+    for (const document of files) assert.equal(askedFor(document), 1)
+    // each image is held as the type the page gives it, whatever its record says, and none is let go while it is on screen
+    assert.deepEqual(made.map(({ type }) => type), ['image/webp', 'image/webp', 'image/webp'])
+    assert.equal(letGo.size, 0)
+    clean(document)
+})
+
+test('a bag whose packing record names no file: the fruit the records name, its grams, and nothing else', async () => {
+    bag([])
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('fruit-name').textContent, 'Pineapple')
+    assert.equal(root().dataset.way, 'pineapple')
+    assert.equal($('fruit-grams').textContent, '10 g per bag')
+    assert.equal($('fruit-contains').hidden, true)
+    assert.equal($('stage').hidden, true)
+    assert.equal(art('front'), '')
+    assert.equal(root().dataset.art, undefined)
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 3) // the three records, and no file
+})
+
+test('a first gateway that serves other bytes for a file, and a second that has it: it is read from the second', async () => {
+    const files = [description(), cover()]
+    bag(files)
+    net.instead.set(first, but(files[0], other))
+    await scan()
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.match(label(), /Energy35 kcal/)
+    assert.equal(root().dataset.art, 'front')
+    assert.equal(document.documentElement.outerHTML.includes('SERVED-BY-THE-GATEWAY'), false)
+    clean(document)
+})
+
+test('a description no gateway serves as its reference names it: it is not read, and the label says the grams', async () => {
+    const files = [description(), photo(), cover()]
+    bag(files)
+    for (const gateway of [first, second]) net.instead.set(gateway, but(files[0], other))
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('fruit-name').textContent, 'Pineapple')
+    assert.equal($('fruit-grams').textContent, '10 g per bag')
+    assert.equal($('fruit-contains').hidden, true)
+    assert.equal($('fruit-origin').innerHTML, '')
+    assert.equal(document.documentElement.outerHTML.includes('SERVED-BY-THE-GATEWAY'), false)
+    // the images do not depend on it: each is read against its own reference, and the photograph takes the name for its text
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal($('fruit-photo').alt, 'Pineapple')
+    assert.equal(root().dataset.art, 'front')
+    clean(document)
+})
+
+test('an image no gateway serves as its reference names it: its place stays as it was, and the others come', async () => {
+    const files = [description(), photo(), cover(), background()]
+    bag(files)
+    for (const gateway of [first, second]) net.instead.set(gateway, but(files[2], () => answer(webp(9), 'application/octet-stream')))
+    await scan()
+    assert.equal(art('front'), '')
+    assert.match(art('back'), /^url\("blob:/)
+    assert.equal(root().dataset.art, 'back')
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [2, 1])
+})
+
+test('a file no gateway has, or one heavier than the page takes: it is not shown, and the page is the same without it', async () => {
+    for (const instead of [down, () => answer(webp(1, 1024 * 1024 + 1), 'application/octet-stream')]) {
+        const files = [description(), photo(), cover()]
+        bag(files)
+        for (const gateway of [first, second]) net.instead.set(gateway, but(files[1], instead))
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        assert.equal($('fruit-name').textContent, 'Golden pineapple')
+        assert.equal($('stage').hidden, true)
+        assert.equal($('fruit-photo').hasAttribute('src'), false)
+        assert.equal(root().dataset.art, 'front')
+        // the credit of a photograph that is not shown is not given
+        assert.equal($('fruit-origin').textContent.includes('Photograph'), false)
+    }
+})
+
+test('bytes that are what their reference names and are not an image, or are one too large to hold: nothing is shown in their place', async () => {
+    const files = [photo(bytes('<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.ran=1"/>')), cover(new Uint8Array(0)), background(webp(3, 64, true))]
+    bag(files)
+    await scan()
+    assert.equal($('stage').hidden, true)
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    assert.equal(art('front'), '')
+    assert.equal(art('back'), '')
+    assert.equal(root().dataset.art, undefined)
+    // each was tried as an image of the page's own type, never as what its bytes are, and its address was let go
+    assert.deepEqual(made.map(({ type }) => type), ['image/webp', 'image/webp', 'image/webp'])
+    for (const { url } of made) assert.ok(letGo.has(url))
+    clean(document)
+})
+
+test('a description whose values are HTML: it is read, and its values stay text', async () => {
+    const loud = { ...pineapple, name: hostile('name'), nutrition: { ...pineapple.nutrition, micro: [[hostile('micro'), 1, hostile('unit')]], source: hostile('source') }, photo: { alt: hostile('alt'), credit: hostile('credit') } }
+    bag([description(loud), photo()])
+    await scan()
+    clean(document)
+    assert.equal($('fruit-name').textContent, hostile('name'))
+    assert.equal($('fruit-photo').alt, hostile('alt'))
+    for (const via of ['micro', 'unit', 'source', 'credit']) assert.ok($('fruit-origin').textContent.includes(hostile(via)), via)
+})
+
+for (const [what, content] of [
+    ['is not JSON', bytes('{"schema": ').slice(1, -1)],
+    ['is of a kind the page does not know', bytes({ ...pineapple, schema: 'ffd/product-description/2.0' })],
+    ['has a table whose figures are text', bytes({ ...pineapple, name: undefined, nutrition: { ...pineapple.nutrition, energy_kcal: '350' } })]
+])
+    test(`a description that ${what}: the fruit the records name, and no table`, async () => {
+        bag([file('product-description.json', 'application/json', content)])
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        assert.equal($('fruit-name').textContent, 'Pineapple')
+        assert.equal($('fruit-grams').textContent, '10 g per bag')
+        assert.equal($('fruit-contains').hidden, true)
+        clean(document)
+    })
+
+test('a document that is not a file of the product is not asked for', async () => {
+    const sheet = file('sheet.pdf', 'application/pdf', bytes('%PDF-1.4'))
+    const png = { ...photo(), type: 'image/png' }
+    const twice = cover(webp(7))
+    const files = [sheet, png, { name: 'cover.webp', type: 'image/webp', ref: hostile('ref') }, cover(), twice, { ...background(), name: 'Background.webp' }]
+    bag(files)
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(files.map((document) => (typeof document.ref === 'string' && /^[0-9a-f]{64}$/.test(document.ref) ? askedFor(document) : 0)), [0, 0, 0, 1, 0, 0])
+    assert.equal(root().dataset.art, 'front')
+    assert.equal($('stage').hidden, true)
+    clean(document)
+})
+
+test('the files of a record that did not pass the check are not asked for', async () => {
+    const files = [description(), photo()]
+    net.head = put({ phase: 'packing', at: '2026-09-30T08:00:00Z', product: 'dried pineapple', bag_g: 10, lot: 'L1', documents: files })
+    net.anchors.clear()
+    await scan()
+    assert.match(cards()[0].textContent, /Record not shown/)
+    assert.deepEqual(files.map(askedFor), [0, 0])
+    assert.equal($('fruit-name').textContent, 'This bag')
+})
+
+test('another bag after one with its art: nothing of the first is left on the page', async () => {
+    bag([description(), photo(), cover(), background()])
+    await scan()
+    assert.equal(root().dataset.art, 'front back')
+    const before = made.map(({ url }) => url)
+    net.head = put(packed())
+    await scan()
+    assert.equal(before.length, 3)
+    for (const url of before) assert.ok(letGo.has(url))
+    assert.equal($('fruit-name').textContent, 'Mango')
+    assert.equal(root().dataset.way, 'jackfruit')
+    assert.equal(root().dataset.art, undefined)
+    assert.equal(art('front'), '')
+    assert.equal(art('back'), '')
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    assert.equal($('fruit-photo').alt, '')
+    assert.equal($('fruit-contains').hidden, true)
+})
+
+// ---------- a file that is slow to come ----------
+// the scan, a few turns at a time: for a look at the page while a file is still on its way
+async function turns(count = 60) {
+    for (let i = 0; i < count; i++) {
+        mock.timers.runAll()
+        await new Promise((turn) => setImmediate(turn))
+    }
+}
+// a gateway that holds one file back until the test lets it through
+function slow(document) {
+    let open
+    const gate = new Promise((resolve) => (open = resolve))
+    const held = but(document, async () => {
+        await gate
+        return answer(net.files.get(`0x${document.ref}`), 'application/octet-stream')
+    })
+    for (const gateway of [first, second]) net.instead.set(gateway, held)
+    return open
+}
+
+test('a description that is slow to come: the seal does not wait for it, nor the art, and the label keeps its place until it has come', async () => {
+    const files = [description(), cover(), photo()]
+    bag(files)
+    const open = slow(files[0])
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    await turns()
+    assert.equal(done, false)
+    assert.ok($('hero').classList.contains('verified'))
+    assert.ok($('proof-fold').classList.contains('open'))
+    assert.equal($('co2').hidden, false)
+    assert.equal($('fruit-name').textContent, 'Pineapple')
+    assert.equal($('fruit-grams').textContent, '10 g per bag')
+    assert.equal($('fruit-contains').hidden, false)
+    assert.ok($('fruit-contains').classList.contains('skel-host'))
+    assert.equal(root().dataset.art, 'front')
+    // the photograph waits for it: the description gives it its text
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    open()
+    await turns()
+    await scanning
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.match(label(), /Energy35 kcal/)
+    assert.equal($('fruit-contains').classList.contains('skel-host'), false)
+    assert.equal($('fruit-photo').alt, 'A pineapple cut in half')
+    clean(document)
+})
+
+test('a fruit the page has no pouch for, and a description that is slow to come: the label keeps its place, and then says what the description says', async () => {
+    const durian = { ...pineapple, fruit: 'durian', name: 'Durian' }
+    const files = [description(durian)]
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'durian', kg: 20 })
+    net.head = put({ phase: 'packing', at: '2026-09-30T08:00:00Z', product: 'dried durian', bag_g: 10, lot: 'L1', documents: files, inputs: [intake] })
+    const open = slow(files[0])
+    location.hash = `#11155111:${contract}/1`
+    const scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('fruit-name').textContent, 'Dried durian')
+    assert.equal($('fruit-contains').hidden, false)
+    assert.ok($('fruit-contains').classList.contains('skel-host'))
+    open()
+    await turns()
+    await scanning
+    assert.equal($('fruit-name').textContent, 'Durian')
+    assert.equal(root().dataset.way, undefined)
+    assert.equal($('fruit-grams').textContent, '10 g per bag')
+    assert.match(label(), /Energy35 kcal/)
+})
+
+test('another bag while the files of the first are still on their way: nothing of the first reaches the page', async () => {
+    const files = [description(), cover(), photo()]
+    bag(files)
+    const open = slow(files[0])
+    location.hash = `#11155111:${contract}/1`
+    const scanning = page.main()
+    await turns()
+    assert.equal(root().dataset.art, 'front')
+    const before = made.map(({ url }) => url)
+    net.instead.clear()
+    net.head = put(packed())
+    await scan()
+    open()
+    await turns()
+    await scanning
+    assert.equal($('fruit-name').textContent, 'Mango')
+    assert.equal(root().dataset.way, 'jackfruit')
+    assert.equal(root().dataset.art, undefined)
+    assert.equal(art('front'), '')
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    assert.equal($('fruit-contains').hidden, true)
+    assert.equal(before.length, 2) // the cover, on screen, and the photograph, held until the description comes
+    for (const url of before) assert.ok(letGo.has(url))
+})
+
+test('a photograph with a credit and a description with no table: the credit is said under the label', async () => {
+    const files = [description({ ...pineapple, nutrition: undefined }), photo()]
+    bag(files)
+    await scan()
+    assert.equal($('fruit-contains').hidden, true)
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal($('fruit-origin').textContent, 'Photograph: A photographer.')
+    clean(document)
+})
+
+test('a table with more rows than a label has room for: the page takes the first twelve', async () => {
+    const micro = Array.from({ length: 40 }, (_, i) => [`Mineral ${i + 1}`, i, 'mg'])
+    bag([description({ ...pineapple, nutrition: { ...pineapple.nutrition, micro } })])
+    await scan()
+    assert.equal($('fruit-origin').querySelectorAll('tbody tr').length, 6 + 12)
+    assert.ok($('fruit-origin').textContent.includes('Mineral 12'))
+    assert.equal($('fruit-origin').textContent.includes('Mineral 13'), false)
 })

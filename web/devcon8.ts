@@ -2,6 +2,8 @@
 // verification report. The looks live in devcon8.html; this file reads, checks and paints.
 //
 // Reads ./config.json. The keys of the blocks are optional: a block whose data or assumptions are missing is not painted.
+// What the page says of the fruit is not in the config: the bag's packing record names the files of its product, and the
+// page reads them from Swarm against their references, as it reads the records.
 
 import { NotOfficial, abi, download, hex, parseSticker, swarmHash, type Config } from '../src/lib.ts'
 import './life-grid.ts'
@@ -40,24 +42,27 @@ type Record = {
     arrival?: string
     carrier?: string | null
     tracking?: string | null
+    // the files behind the record, as it names them: read by productFiles, never taken as they come
+    documents?: unknown
     inputs?: Hex[]
 }
 
-// The fruit (block 2).
+// The fruit (block 2): what the description of the bag's product says, when the page can show it.
 type Nutrition = {
     energy_kcal: number
     carbohydrate_g: number
-    sugars_g?: number
+    sugars_g: number
     protein_g: number
     fat_g: number
     fibre_g: number
-    micro?: [string, number, string][]
-    source?: string | null
-    reviewed?: string
+    // the rest of a label, when the description gives it
+    energy_kj: number | null
+    saturated_fat_g: number | null
+    salt_g: number | null
+    micro: [string, number, string][]
+    source: string | null
 }
-type NutritionTable = { basis?: string; fruits: { [fruit: string]: Nutrition } }
-// `way` is the colourway of the fruit's pouch, when it is not the fruit's own name.
-type Fruit = { name: string; way?: string; photo?: string | null; alt?: string; lines?: string[]; nutrition?: Nutrition }
+type Description = { fruit: string | null; name: string | null; nutrition: Nutrition | null; alt: string | null; credit: string | null }
 
 // The arithmetic of block 5.
 type Co2 = {
@@ -77,10 +82,6 @@ type Page = Config & {
     gateways?: string[]
     report?: string | null
     links?: { ethereum?: string; swarm?: string; ens?: string }
-    fruits?: { [fruit: string]: Fruit }
-    // the illustrations of each pouch, by colourway: files kept beside the page, asked for last of all
-    art?: { [way: string]: { front?: string; back?: string } }
-    nutrition?: NutritionTable
     co2?: Co2
     storage?: Storage
     source?: string
@@ -188,20 +189,10 @@ const status = (state: 'checking' | 'verified' | 'mismatch' | 'idle') => {
 
 // ---------- config ----------
 
-// The nutrition table lives in the page itself (<script id="nutrition">), so the page depends on nothing else for it.
-function withNutrition(page: Page): Page {
-    const table = document.getElementById('nutrition')?.textContent
-    if (table) page.nutrition = JSON.parse(table) as NutritionTable
-    if (!page.nutrition || !page.fruits) return page
-    for (const [fruit, entry] of Object.entries(page.nutrition.fruits)) if (page.fruits[fruit]) page.fruits[fruit].nutrition = entry
-    return page
-}
-
 async function loadConfig(): Promise<Page> {
     // The single file carries the config inline; the served page fetches config.json.
     const inline = document.getElementById('config')?.textContent
-    const page = inline ? (JSON.parse(inline) as Page) : ((await (await fetch('./config.json')).json()) as Page)
-    return withNutrition(page)
+    return inline ? (JSON.parse(inline) as Page) : ((await (await fetch('./config.json')).json()) as Page)
 }
 
 // A client reads what its RPC answers and asks no one else. viem would otherwise follow an off-chain lookup (CCIP-Read): a
@@ -433,6 +424,94 @@ function markCheck(li: HTMLElement, event: Event) {
     swap(check as HTMLElement, event.verified ? `✓ Matches its Ethereum anchor of ${date(event.at!)}` : '✗ Does not match any Ethereum anchor')
 }
 
+// ---------- the product: the files the packing record names ----------
+
+// What the page says of the fruit hangs from the bag's packing record: among its documents, four files the page finds by
+// their name, each with the type it must declare. The description says what the bag holds; the other three are the
+// photograph of the fruit and the two illustrations of the twin, taken from the art of its pouch: the cover, which opens
+// the page, and the background of the label. A document under another name, of another type, or whose reference is not
+// one, is not a file of the product, and the page does not ask for it.
+const DESCRIPTION = 'product-description.json'
+const PHOTO = 'photo.webp'
+const COVER = 'cover.webp'
+const BACKGROUND = 'background.webp'
+const PRODUCT_FILES: { [name: string]: string } = { [DESCRIPTION]: 'application/json', [PHOTO]: 'image/webp', [COVER]: 'image/webp', [BACKGROUND]: 'image/webp' }
+
+export function productFiles(events: Event[]) {
+    const files = new Map<string, Hex>()
+    const documents = events.find(e => e.data?.phase === 'packing')?.data?.documents
+    if (!Array.isArray(documents)) return files
+    for (const entry of documents as unknown[]) {
+        if (typeof entry !== 'object' || entry === null) continue
+        const { name, type, ref } = entry as { name?: unknown; type?: unknown; ref?: unknown }
+        if (typeof name !== 'string' || !Object.hasOwn(PRODUCT_FILES, name) || files.has(name) || type !== PRODUCT_FILES[name]) continue
+        try {
+            files.set(name, hex(ref))
+        } catch {
+            // not a reference: there is nothing to ask a gateway for
+        }
+    }
+    return files
+}
+
+// A file of the product, by its reference: the bytes of the first gateway that serves what the reference names. What a
+// gateway serves is hashed the way Swarm does before a byte of it is used, as a record is; the reference is in a record
+// that has its anchor, so the file is the one that record was sealed with. Null when no gateway has it, when none answers,
+// or when it weighs more than the page takes.
+async function fileOf(gateways: string[], ref: Hex) {
+    for (const gateway of gateways) {
+        try {
+            const bytes = await download(gateway, ref)
+            if (swarmHash(bytes) === ref) return bytes
+        } catch {
+            // the next gateway is asked
+        }
+    }
+    return null
+}
+
+const DESCRIPTION_SCHEMA = 'ffd/product-description/1.0'
+const LINE_MOST = 300
+// the rows a table takes beyond its six figures: a label has room for these, and a file could name any number
+const MICRO_MOST = 12
+// a line of text the page can show: a string, not empty, of a length a line has
+const line = (value: unknown) => (typeof value === 'string' && value.trim() !== '' && value.length <= LINE_MOST ? value : null)
+// an amount per 100 g: a number from 0
+const amount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
+
+// What a description says, when the page can show it. Like a record, it is found out here, once, before anything is
+// painted from it: the table is there only when its six figures are numbers, and a name, a text or a credit only when
+// it is a line of text. A description of another kind, or that is not JSON, says nothing.
+export function readDescription(bytes: Uint8Array): Description | null {
+    try {
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { [key: string]: unknown } | null
+        if (typeof value !== 'object' || value === null || value.schema !== DESCRIPTION_SCHEMA) return null
+        const n = (typeof value.nutrition === 'object' && value.nutrition !== null ? value.nutrition : {}) as { [key: string]: unknown }
+        const figures = [n.energy_kcal, n.carbohydrate_g, n.sugars_g, n.protein_g, n.fat_g, n.fibre_g]
+        const micro = (Array.isArray(n.micro) ? n.micro : []).filter((m): m is [string, number, string] => Array.isArray(m) && line(m[0]) !== null && amount(m[1]) && line(m[2]) !== null).slice(0, MICRO_MOST)
+        const [energy_kcal, carbohydrate_g, sugars_g, protein_g, fat_g, fibre_g] = figures as number[]
+        const more = (value: unknown) => (amount(value) ? value : null)
+        const rest = { energy_kj: more(n.energy_kj), saturated_fat_g: more(n.saturated_fat_g), salt_g: more(n.salt_g), micro, source: line(n.source) }
+        const nutrition = figures.every(amount) ? { energy_kcal: energy_kcal!, carbohydrate_g: carbohydrate_g!, sugars_g: sugars_g!, protein_g: protein_g!, fat_g: fat_g!, fibre_g: fibre_g!, ...rest } : null
+        const photo = (typeof value.photo === 'object' && value.photo !== null ? value.photo : {}) as { [key: string]: unknown }
+        return { fruit: line(value.fruit), name: line(value.name), nutrition, alt: line(photo.alt), credit: line(photo.credit) }
+    } catch {
+        return null
+    }
+}
+
+// The product of the bag on screen: the files its packing record names, the gateways to ask for them, and what its
+// description says, which is asked for as soon as the records are read and may come after the seal.
+type Product = { files: Map<string, Hex>; gateways: string[]; description: Promise<Description | null> }
+let product: Product | null = null
+
+function readProduct(gateways: string[], events: Event[]): Product {
+    const files = productFiles(events)
+    const ref = files.get(DESCRIPTION)
+    const description = ref ? fileOf(gateways, ref).then(bytes => (bytes ? readDescription(bytes) : null)) : Promise.resolve(null)
+    return { files, gateways, description }
+}
+
 // ---------- the fruit (block 2) ----------
 
 const g = (value: number) => `${Number(value.toFixed(1))} g`
@@ -445,23 +524,31 @@ function holds(n: Nutrition, grams: number) {
     const scale = grams / 100
     const shown: (readonly [string, string])[] = [
         ['Energy', `${Math.round(n.energy_kcal * scale)} kcal`],
-        ...(n.sugars_g != null ? [['Sugars', g(n.sugars_g * scale)] as const] : []),
+        ['Sugars', g(n.sugars_g * scale)],
         ['Protein', g(n.protein_g * scale)],
         ['Fat', g(n.fat_g * scale)],
         ['Fibre', g(n.fibre_g * scale)]
     ]
     const facts = shown.map(([label, value], i) => `<div style="--i:${i}"><dt>${label}</dt><dd>${value}</dd></div>`).join('')
-    const fmt = (value: number, unit: string) => `${Number(value.toPrecision(3))} ${unit}`
+    // an amount as a label gives it: the energy and anything from a hundred up as a whole number, the rest to three
+    // figures, and "less than" where a label says no more of so little
+    const whole = (value: number, unit: string) => unit === 'kJ' || unit === 'kcal' || value >= 100
+    const fmt = (value: number, unit: string, least = 0) => esc(value < least ? `<${least} ${unit}` : `${whole(value, unit) ? Math.round(value) : Number(value.toPrecision(3))} ${unit}`)
+    // the rows of a label, in its order: the energy in both units, fat and its saturates, carbohydrate and its sugars,
+    // fibre, protein and salt, and after them what else the description names
     const table = ([
-        ['Energy', n.energy_kcal, 'kcal'],
-        ['Carbohydrate', n.carbohydrate_g, 'g'],
-        ...(n.sugars_g != null ? [['of which sugars', n.sugars_g, 'g'] as const] : []),
-        ['Protein', n.protein_g, 'g'],
+        ...(n.energy_kj != null ? [['Energy', n.energy_kj, 'kJ'] as const] : []),
+        [n.energy_kj != null ? '' : 'Energy', n.energy_kcal, 'kcal'],
         ['Fat', n.fat_g, 'g'],
+        ...(n.saturated_fat_g != null ? [['of which saturates', n.saturated_fat_g, 'g', 0.1] as const] : []),
+        ['Carbohydrate', n.carbohydrate_g, 'g'],
+        ['of which sugars', n.sugars_g, 'g'],
         ['Fibre', n.fibre_g, 'g'],
-        ...(n.micro ?? []).map(([label, per100, unit]) => [label, per100, unit] as const)
-    ] as (readonly [string, number, string])[])
-        .map(([label, per100, unit]) => `<tr><th scope="row">${esc(label)}</th><td>${fmt(per100 * scale, unit)}</td><td>${fmt(per100, unit)}</td></tr>`)
+        ['Protein', n.protein_g, 'g'],
+        ...(n.salt_g != null ? [['Salt', n.salt_g, 'g', 0.01] as const] : []),
+        ...n.micro
+    ] as (readonly [string, number, string, number?])[])
+        .map(([label, per100, unit, least]) => `<tr><th scope="row">${esc(label)}</th><td>${fmt(per100 * scale, unit, least)}</td><td>${fmt(per100, unit, least)}</td></tr>`)
         .join('')
     return [
         `<dl class="facts">${facts}</dl>`,
@@ -472,67 +559,75 @@ function holds(n: Nutrition, grams: number) {
     ] as const
 }
 
-const fruitState = { key: null as string | null, grams: null as number | null, named: false }
+// The pouches the page has colours for, by the fruit a record names. Mango, the fruit of the test records, wears the
+// jackfruit pouch.
+const WAYS: { [fruit: string]: string } = { pineapple: 'pineapple', banana: 'banana', jackfruit: 'jackfruit', mango: 'jackfruit' }
 
-function fruitKey(config: Page, events: Event[]): string | null {
-    const keys = Object.keys(config.fruits ?? {})
+// The fruit on screen: its key, what its description said once it came (null when there is none), and the label painted.
+const fruitState = { key: null as string | null, described: undefined as Description | null | undefined, table: null as string | null }
+
+function fruitKey(events: Event[]): string | null {
+    const keys = Object.keys(WAYS)
     const intake = events.find(e => e.data?.phase === 'intake')?.data
-    if (intake?.fruit && keys.includes(intake.fruit)) return intake.fruit
+    if (typeof intake?.fruit === 'string' && keys.includes(intake.fruit)) return intake.fruit
     for (const event of events) {
-        const product = event.data?.product?.toLowerCase()
-        if (!product) continue
-        const hit = keys.find(key => product.includes(key.toLowerCase()) || product.includes((config.fruits?.[key]?.name ?? '').toLowerCase()))
+        const named = event.data?.product?.toLowerCase()
+        const hit = named && keys.find(key => named.includes(key))
         if (hit) return hit
     }
     return null
 }
 
-export function revealFruit(config: Page, events: Event[], final = false) {
-    const key = fruitState.key ?? fruitKey(config, events)
-    const fruit = key ? config.fruits?.[key] : undefined
+// What the fruit card can say. It is painted when the records are in, from what they say: the fruit they name, with the
+// colours of its pouch, and the grams of the bag. And again when the description of the product has come, with the name
+// and the table it gives, or has not, and then the label says the grams and nothing else. `said` is what the
+// description says, null when there is none; it is left out while the description is still awaited, and kept once given.
+export function revealFruit(events: Event[], said?: Description | null) {
+    if (said !== undefined) fruitState.described = said
+    const described = fruitState.described
     const packing = events.find(e => e.data?.phase === 'packing')?.data
-    const product = events.find(e => e.data?.product)?.data?.product
-    if (fruit && !fruitState.named) {
-        fruitState.key = key
-        fruitState.named = true
-        $('fruit-name').textContent = fruit.name
-        $('fruit-name').classList.add('in')
-        $('fruit-lines').innerHTML = (fruit.lines ?? []).filter(Boolean).map(line => `<p class="fruit-line">${esc(line)}</p>`).join('')
-        // the page takes the colourway of the bag's pouch, now that a record that passed the check has named its fruit
-        document.documentElement.dataset.way = fruit.way ?? key!
-        // the photograph keeps its place and comes last, with the art (dress)
-        $('stage').hidden = !fruit.photo
-        $('stage-cap').hidden = true
-    } else if (!fruit && final && !fruitState.named) {
-        fruitState.named = true
-        $('stage').hidden = true
-        $('fruit-name').textContent = cap(product) ?? 'This bag'
-        $('fruit-name').classList.add('in')
-        $('fruit-grams').innerHTML = ''
-        $('fruit-contains').hidden = true
-        $('stage-cap').hidden = true
-    }
+    const named = events.find(e => e.data?.product)?.data?.product
+    const key = (described?.fruit && Object.hasOwn(WAYS, described.fruit) ? described.fruit : null) ?? fruitState.key ?? fruitKey(events)
+    const awaited = described === undefined && !!product?.files.has(DESCRIPTION)
+    fruitState.key = key
+    $('fruit-name').textContent = described?.name ?? cap(key ?? named) ?? 'This bag'
+    $('fruit-name').classList.add('in')
+    $('stage-cap').hidden = true
+    // the page takes the colourway of the bag's pouch, now that a record that passed the check has named its fruit
+    if (key) document.documentElement.dataset.way = WAYS[key]!
+    // the photograph keeps its place and comes last, with the art (dress)
+    $('stage').hidden = !product?.files.has(PHOTO)
     const grams = bagGrams(packing)
-    if (fruit && grams && fruitState.grams !== grams) {
-        fruitState.grams = grams
+    // the label has nothing to say of a bag whose grams are not grams, or whose fruit neither a record nor a description
+    // names; while a description that may name it is awaited, its place is kept
+    const mute = !grams || (!key && !described && !awaited)
+    if (mute || (!awaited && !described?.nutrition)) {
+        fruitState.table = null
+        $('fruit-contains').hidden = true
+        $('fruit-origin').innerHTML = ''
+    }
+    if (!grams || mute) return void ($('fruit-grams').innerHTML = '')
+    if (key || described) {
         $('fruit-grams').textContent = `${grams} g per bag`
         $('fruit-grams').classList.add('in')
-        if (fruit.nutrition) {
-            const [contains, origin] = holds(fruit.nutrition, grams)
-            $('fruit-contains').classList.remove('skel-host')
-            $('fruit-contains').innerHTML = contains
-            $('fruit-origin').innerHTML = origin
-            requestAnimationFrame(() => requestAnimationFrame(() => $('fruit-contains').classList.add('drawn')))
-        } else {
-            $('fruit-contains').hidden = true
-        }
     }
+    // the rows of the label keep their place until the description says what goes in them
+    if (awaited || !described?.nutrition) return
+    const [contains, origin] = holds(described.nutrition, grams)
+    if (fruitState.table === contains + origin) return
+    fruitState.table = contains + origin
+    $('fruit-contains').hidden = false
+    $('fruit-contains').classList.remove('skel-host')
+    $('fruit-contains').innerHTML = contains
+    $('fruit-origin').innerHTML = origin
+    requestAnimationFrame(() => requestAnimationFrame(() => $('fruit-contains').classList.add('drawn')))
 }
 
 function resetFruit() {
     fruitState.key = null
-    fruitState.grams = null
-    fruitState.named = false
+    fruitState.described = undefined
+    fruitState.table = null
+    product = null
     resetEdges()
     $('tri').setAttribute('class', 'tri')
     undress()
@@ -542,12 +637,12 @@ function resetFruit() {
     photo.hidden = true
     photo.classList.remove('in')
     photo.removeAttribute('src')
+    photo.alt = ''
     $('stage-cap').textContent = 'Reading the bag…'
     $('stage-cap').hidden = false
     $('fruit-name').classList.remove('in')
     $('fruit-grams').classList.remove('in')
     $('fruit-name').innerHTML = '<span class="skel name"></span>'
-    $('fruit-lines').innerHTML = ''
     $('fruit-grams').innerHTML = '<span class="skel grams"></span>'
     $('fruit-contains').hidden = false
     $('fruit-contains').classList.remove('drawn')
@@ -733,10 +828,11 @@ async function nameHolder(owner: Address, chainId: number, { transport }: Source
 // ---------- the art: last of all ----------
 
 // The page is complete without an image: the crystal is drawn, the colours are its own, and the photograph has its place
-// kept. When everything else is on screen, and only then, it asks for the illustrations of the bag's pouch and the
-// photograph of its fruit. They are files kept beside the page, named in the configuration, and whoever served the page
-// serves them. One that does not come, or comes too late, leaves the page as it was.
+// kept. When everything else is on screen, and only then, it asks Swarm for the illustrations of the bag's pouch and the
+// photograph of its fruit, by the references the packing record names, and checks each against its reference before
+// it is shown. One that does not come, does not match, or is not an image a browser can draw, leaves the page as it was.
 const ART_WAIT = 20_000
+const PIXELS_MOST = 4096 * 4096
 const arrive = (src: string) =>
     new Promise<string | null>(resolve => {
         const image = new Image()
@@ -745,30 +841,62 @@ const arrive = (src: string) =>
             resolve(value)
         }
         const timer = setTimeout(() => done(null), ART_WAIT)
-        image.onload = () => done(image.src)
+        // a small file can still name a picture too large for a phone to hold: that one is not shown either
+        image.onload = () => done(image.naturalWidth * image.naturalHeight <= PIXELS_MOST ? src : null)
         image.onerror = () => done(null)
-        image.src = new URL(src, document.baseURI).href
+        image.src = src
     })
 
-async function dress(config: Page) {
-    const key = fruitState.key
-    const fruit = key ? config.fruits?.[key] : undefined
+// The images on screen are the bytes that were checked, held by the page under an address of its own making.
+const held = new Set<string>()
+const release = (url: string | null | undefined) => {
+    if (!url || !held.delete(url)) return
+    URL.revokeObjectURL(url)
+}
+
+// An image of the product: its bytes from Swarm, checked against their reference, and then tried as an image.
+async function picture(mine: Product, name: string) {
+    const ref = mine.files.get(name)
+    const bytes = ref ? await fileOf(mine.gateways, ref) : null
+    if (!bytes || product !== mine) return null // it did not come, or another bag is being read
+    const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: PRODUCT_FILES[name]! }))
+    held.add(url)
+    if (await arrive(url)) return url
+    release(url)
+    return null
+}
+
+async function dress() {
+    const mine = product
+    if (!mine) return
     const root = document.documentElement
-    const art = root.dataset.way ? config.art?.[root.dataset.way] : undefined
-    if (!art?.front && !art?.back && !fruit?.photo) return
-    const [front, back, photo] = await Promise.all([art?.front, art?.back, fruit?.photo].map(src => (src ? arrive(src) : null)))
-    if (fruitState.key !== key || !fruit) return // another bag was read meanwhile
-    if (front) root.style.setProperty('--art-front', `url(${JSON.stringify(front)})`)
-    if (back) root.style.setProperty('--art-back', `url(${JSON.stringify(back)})`)
-    if (front || back) root.dataset.art = [front && 'front', back && 'back'].filter(Boolean).join(' ')
-    if (photo) {
+    // each illustration is shown as it comes, and none waits for another file
+    const plate = async (name: string, side: 'front' | 'back') => {
+        const url = await picture(mine, name)
+        if (!url) return
+        if (product !== mine) return release(url) // another bag was read meanwhile
+        root.style.setProperty(`--art-${side}`, `url(${JSON.stringify(url)})`)
+        root.dataset.art = ['front', 'back'].filter(s => s === side || root.dataset.art?.split(' ').includes(s)).join(' ')
+    }
+    // the photograph waits for the description, which gives it its text and names who took it
+    const photograph = async () => {
+        const [url, described] = await Promise.all([picture(mine, PHOTO), mine.description])
+        if (product !== mine) return release(url)
+        if (!url) return void ($('stage').hidden = true) // it did not come: its place is given back
         const img = $<HTMLImageElement>('fruit-photo')
-        img.alt = fruit.alt ?? fruit.name
+        img.alt = described?.alt ?? $('fruit-name').textContent ?? ''
         img.onload = () => img.classList.add('in')
-        img.src = photo
+        img.src = url
         img.hidden = false
         $('stage').classList.add('on')
-    } else if (fruit.photo) $('stage').hidden = true // it did not come: its place is given back
+        // who took it is said with the sources of the label, or under it when the label has none, once the photograph is
+        // there to be credited
+        if (!described?.credit) return
+        const origin = $('fruit-origin')
+        const note = origin.querySelector('.origin-note') ?? origin.appendChild(Object.assign(document.createElement('p'), { className: 'origin-note' }))
+        note.append(`${note.textContent ? ' ' : ''}Photograph: ${described.credit}.`)
+    }
+    await Promise.all([plate(COVER, 'front'), plate(BACKGROUND, 'back'), photograph()])
 }
 
 function undress() {
@@ -777,6 +905,7 @@ function undress() {
     delete root.dataset.art
     root.style.removeProperty('--art-front')
     root.style.removeProperty('--art-back')
+    for (const url of [...held]) release(url)
 }
 
 // ---------- stored until: the date the records' storage is paid up to ----------
@@ -868,7 +997,7 @@ export async function main() {
     }
     // the art comes last: after the check, the fingerprint and every block of the page
     await new Promise(resolve => setTimeout(resolve, Math.max(0, paintedAt - performance.now())))
-    if (run === runs) await dress(config)
+    if (run === runs) await dress()
 }
 
 async function check(config: Page) {
@@ -987,6 +1116,9 @@ async function check(config: Page) {
         }
         row(2, `${events.length} data ${events.length === 1 ? 'record' : 'records'}`)
         row(3, 'verifying…', 'busy')
+        // the files of the product hang from the packing record: its description is asked for now, and the seal does not
+        // wait for it
+        product = readProduct(gateways, events)
 
         // 3 · the result of the check, on each card and on the plate
         for (const event of events) markCheck(cards.get(event.ref)!, event)
@@ -999,7 +1131,12 @@ async function check(config: Page) {
             $('proof-fold').classList.add('open')
             showStoredUntil(config)
         }
-        later(() => revealFruit(config, events, true), 120)
+        const mine = product
+        later(() => {
+            revealFruit(events)
+            // the description fills the label when it has come, now or later
+            void mine.description.then(described => product === mine && revealFruit(events, described))
+        }, 120)
         const lastCard = openPath(path, 1100)
         later(() => renderCo2(config, events), lastCard + UNFOLD_GAP + 120)
         later(twin, lastCard + UNFOLD_GAP + 360)

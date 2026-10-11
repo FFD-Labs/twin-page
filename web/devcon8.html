@@ -17,9 +17,10 @@
               5 · Script      the page's own code, as written in src/lib.ts, web/life-grid.ts and web/devcon8.ts, types removed
               6 · Fonts       the typefaces of the pouch and the one for hashes, inlined so the file is one
 
-            The file carries no image. What it shows of the pouch it draws: the crystal, its window, the colours. The
-            illustrations of the pouch and the photograph of the fruit are files kept beside this one, and the page asks for
-            them last, when everything else is on screen; without them nothing is missing.
+            The file carries no image, and of the fruit only the colours of each pouch. What it shows of the pouch it draws:
+            the crystal, its window, the colours. The name of the fruit, what the bag holds, its photograph and the illustrations of its
+            pouch are files the bag's packing record names: the page reads them from Swarm, each checked against its
+            reference, the images last of all; without them nothing is missing.
 
             The file runs two scripts, 4 and 5, and no other: the Content-Security-Policy in the head names each by its SHA-256
             (added by the build), so nothing written into the page afterwards can run as script.
@@ -28,11 +29,10 @@
               Ethereum        read only, through the first of these that answers: a wallet in the browser, then the RPCs of
                               the config (config: rpcs). The bag's record, the anchors, who holds the twin, ENS names. The
                               next source is then asked whether it says the same
-              Swarm           public gateways, read only: the records themselves, hashed before they are read (config: gateways)
+              Swarm           public gateways, read only: the records themselves, and the files of the product the packing
+                              record names, each hashed before it is read (config: gateways)
               the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
               this file       itself, once more, to show its fingerprint in the footer
-              the art         last of all, from wherever this file was served: the illustrations of the bag's pouch and the
-                              photograph of its fruit (config: art, fruits)
             What the page asks Ethereum about, the bag in the link, is seen by the source it asks. No cookies, no storage,
             no server of ours. Nothing is signed or uploaded.
         -->
@@ -148,7 +148,7 @@
             .twin b[data-len='6'], .twin b[data-len='7'] { font-size: calc(var(--plate) * .037); font-weight: 400; letter-spacing: 0; }
 
             .fruit-name { position: relative; min-height: 1em; font: 500 clamp(1.5rem, 7.4vw, 1.82rem)/1 var(--caps); letter-spacing: .13em; margin-right: -.13em; text-transform: uppercase; }
-            .fruit-name.in, .grams.in, .fruit-line { animation: land var(--t-enter) var(--ease-out) both; }
+            .fruit-name.in, .grams.in { animation: land var(--t-enter) var(--ease-out) both; }
             /* The three reads, in the order they happen, on one line with a diamond at each: your device asks Ethereum, then
                Swarm. While a read is out a spark travels its stretch of the line; when it is back the stretch is drawn. */
             .reads { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); margin: 1.3rem -.25rem 0; padding: 0; list-style: none; }
@@ -239,7 +239,6 @@
             .photo.on .slot { opacity: 0; }
             .stage-cap { position: absolute; inset: auto 0 22%; display: grid; place-content: center; font: 500 .6875rem/1 var(--caps); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-2); animation: reading 1.6s ease-in-out infinite; }
             .label { padding-top: 1.3rem; }
-            .fruit-line { margin-bottom: .8rem; }
             .grams { min-height: .6875rem; font: 500 .6875rem/1 var(--caps); letter-spacing: .2em; text-transform: uppercase; }
             .skel.grams { display: block; width: 14ch; height: .5rem; }
             .facts { margin-top: .75rem; border-top: 1px solid var(--panel-rule); }
@@ -385,18 +384,6 @@
     </head>
     <body>
         <!-- 2 · Markup -->
-        <!-- The nutrition table, per 100 g of the dried product, shared by every bag of that fruit. -->
-        <script type="application/json" id="nutrition">
-        {
-            "basis": "per 100 g of freeze-dried fruit",
-            "fruits": {
-                "pineapple": { "energy_kcal": 350, "carbohydrate_g": 90, "sugars_g": 68, "protein_g": 3.5, "fat_g": 1, "fibre_g": 10, "source": null, "reviewed": "2026-10-11" },
-                "mango":     { "energy_kcal": 340, "carbohydrate_g": 82, "sugars_g": 72, "protein_g": 3, "fat_g": 1.5, "fibre_g": 9,  "micro": [["Vitamin C", 180, "mg"]], "source": null, "reviewed": "2026-10-04" },
-                "banana":    { "energy_kcal": 350, "carbohydrate_g": 88, "sugars_g": 47, "protein_g": 4, "fat_g": 1.5, "fibre_g": 10, "micro": [["Potassium", 1490, "mg"]], "source": null, "reviewed": "2026-10-04" },
-                "jackfruit": { "energy_kcal": 330, "carbohydrate_g": 80, "sugars_g": 64, "protein_g": 6, "fat_g": 1,   "fibre_g": 5,  "micro": [["Vitamin C", 47, "mg"]],  "source": null, "reviewed": "2026-10-04" }
-            }
-        }
-        </script>
         <div class="shell">
             <!-- the lockup of the pouch, as it sits under the zipper -->
             <header class="lockup">
@@ -453,7 +440,6 @@
                         <figcaption class="stage-cap" id="stage-cap">Reading the bag…</figcaption>
                     </figure>
                     <div class="label">
-                        <div id="fruit-lines"></div>
                         <p class="grams" id="fruit-grams"><span class="skel grams"></span></p>
                         <div class="contains skel-host" id="fruit-contains">
                             <dl class="facts" aria-hidden="true"><div><span class="skel"></span></div><div><span class="skel"></span></div><div><span class="skel"></span></div><div><span class="skel"></span></div></dl>

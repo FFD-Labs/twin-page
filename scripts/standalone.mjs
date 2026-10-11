@@ -5,14 +5,14 @@
 // scripts/standalone.mjs` writes dist/devcon8.html. With `--release <folder>` (what scripts/release.mjs passes: the
 // number of the release) the fingerprint line links to the SHA256SUMS of that folder of releases/ on GitHub.
 //
-// The file carries no image. The art of the pouches and the photographs of the fruits are files of their own, which the
-// page asks for last of all from wherever it was served: the build copies the ones the config names beside the file,
-// into dist/, and that folder is what is published.
+// The file carries no image, and of the fruit only the colours of each pouch: the art of the pouches, the photographs and
+// the description of each product are files the packing record of a bag names, and the page reads them from Swarm. What is
+// published is the file alone.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { build } from 'vite'
 import { inspect } from './inspect.mjs'
 
@@ -79,14 +79,9 @@ if (/\.\/(fonts|brand)\/|\.\/favicon/.test(html)) throw Error('a font or a mark 
 const config = JSON.parse(text('web/public/config.json'))
 delete config._about
 if (release && config.source) config.source = `${config.source}/blob/main/releases/${release}/SHA256SUMS`
-// The art and the photographs do not travel in the file: the page asks for them last, from beside itself. So each is a
-// file of web/public/, named by a path that starts at the page, and it is copied beside the file. One that would be
-// loaded from elsewhere stops the build: whoever served it would see the page being opened.
-const beside = [...Object.values(config.art ?? {}).flatMap(way => [way.front, way.back]), ...Object.values(config.fruits ?? {}).map(fruit => fruit.photo)].filter(Boolean)
-for (const file of beside) {
-    if (!file.startsWith('./') || file.includes('..')) throw Error(`an image is loaded from elsewhere: ${file}`)
-    if (!existsSync(resolve(root, 'web/public', file))) throw Error(`an image the config names is not in web/public/: ${file}`)
-}
+// The config says nothing of the fruit: what the page shows of it comes from Swarm, by the references of the bag's packing
+// record. A key that did would be a leftover the page no longer reads, and the build stops rather than publish it.
+for (const key of ['art', 'fruits', 'nutrition']) if (key in config) throw Error(`the config says something about the fruit: ${key}`)
 
 // The two scripts as they sit between their tags, to the byte: the policy names each by the hash of exactly this text.
 const scripts = { library: `\n${libraries}\n        `, page: `\n${ours}\n        ` }
@@ -126,8 +121,4 @@ if (Buffer.from(html).indexOf('<meta charset="utf-8" />') + '<meta charset="utf-
 mkdirSync(resolve(root, 'dist'), { recursive: true })
 const name = 'devcon8.html'
 writeFileSync(resolve(root, 'dist', name), html)
-for (const file of beside) {
-    mkdirSync(dirname(resolve(root, 'dist', file)), { recursive: true })
-    cpSync(resolve(root, 'web/public', file), resolve(root, 'dist', file))
-}
-console.log(`dist/${name} · ${(html.length / 1024).toFixed(0)} kB${beside.length ? `, and ${beside.length} images beside it` : ''}`)
+console.log(`dist/${name} · ${(html.length / 1024).toFixed(0)} kB`)

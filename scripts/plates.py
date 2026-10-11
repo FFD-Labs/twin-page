@@ -12,7 +12,8 @@ there, not the fruit the pouch prints in it.
     uv run scripts/plates.py <folder of the flat art> jackfruit
 
 The flat art is the `_build/source/` folder of the pouch's print files, which is not in this repository: one PNG per panel,
-3392 x 5056, `<fruit>-front.png` and `<fruit>-back.png`. The plates are written to web/public/art/.
+3392 x 5056, `<fruit>-front.png` and `<fruit>-back.png`. The plates are written to products/<fruit>/, under the names a
+packing record gives them among its documents: the front is cover.webp and the back is background.webp.
 """
 import sys
 from pathlib import Path
@@ -20,7 +21,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-OUT = Path(__file__).resolve().parent.parent / "web" / "public" / "art"
+OUT = Path(__file__).resolve().parent.parent / "products"
+NAMES = {"front": "cover.webp", "back": "background.webp"}
 
 # The window of each front, measured on its art: the six corners of the fruit inside the hexagon, in pixels of the flat
 # art, from the top one clockwise. A fruit that is not here has no plate yet.
@@ -69,7 +71,7 @@ def plate(source, fruit, side):
         ImageDraw.Draw(hole).polygon(grow(window, 10), fill=0)
         hole = hole.filter(ImageFilter.GaussianBlur(2.2))
         rgba[..., 3] = (rgba[..., 3].astype(np.float32) * np.asarray(hole) / 255).astype(np.uint8)
-    target = OUT / f"{fruit}-{side}.webp"
+    target = OUT / fruit / NAMES[side]
     if window and fruit != "jackfruit":
         placed(rgba, window, target)
         return
@@ -109,9 +111,9 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
         sys.exit(__doc__)
     source = Path(sys.argv[1])
-    OUT.mkdir(parents=True, exist_ok=True)
     for fruit in sys.argv[2:]:
         if fruit not in WINDOWS:
             sys.exit(f"{fruit}: the window of its front is not measured yet (WINDOWS)")
+        (OUT / fruit).mkdir(parents=True, exist_ok=True)
         for side in ("front", "back"):
             plate(source, fruit, side)
