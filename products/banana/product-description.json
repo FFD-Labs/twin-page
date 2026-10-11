@@ -3,16 +3,19 @@
   "fruit": "banana",
   "name": "Banana",
   "nutrition": {
-    "basis": "per 100 g of freeze-dried fruit",
-    "energy_kcal": 350,
-    "carbohydrate_g": 88,
+    "basis": "per 100 g of freeze-dried fruit, at 3 % final moisture",
+    "energy_kj": 1512,
+    "energy_kcal": 361,
+    "fat_g": 1.3,
+    "saturated_fat_g": 0.4,
+    "carbohydrate_g": 78,
     "sugars_g": 47,
-    "protein_g": 4,
-    "fat_g": 1.5,
     "fibre_g": 10,
-    "micro": [["Potassium", 1490, "mg"]],
-    "source": null,
-    "reviewed": "2026-10-04"
+    "protein_g": 4.2,
+    "salt_g": 0.01,
+    "micro": [["Potassium", 1385, "mg"], ["Magnesium", 104, "mg"], ["Vitamin B6", 1.4, "mg"]],
+    "source": "calculated from USDA FoodData Central values for the fresh fruit",
+    "reviewed": "2026-10-11"
   },
   "photo": {
     "alt": "Ripe bananas, seen from close",

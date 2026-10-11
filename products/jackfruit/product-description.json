@@ -3,16 +3,19 @@
   "fruit": "jackfruit",
   "name": "Jackfruit",
   "nutrition": {
-    "basis": "per 100 g of freeze-dried fruit",
-    "energy_kcal": 330,
+    "basis": "per 100 g of freeze-dried fruit, at 3 % final moisture",
+    "energy_kj": 1570,
+    "energy_kcal": 375,
+    "fat_g": 2.3,
+    "saturated_fat_g": 0.7,
     "carbohydrate_g": 80,
-    "sugars_g": 64,
-    "protein_g": 6,
-    "fat_g": 1,
-    "fibre_g": 5,
-    "micro": [["Vitamin C", 47, "mg"]],
-    "source": null,
-    "reviewed": "2026-10-04"
+    "sugars_g": 70,
+    "fibre_g": 5.5,
+    "protein_g": 6.3,
+    "salt_g": 0.02,
+    "micro": [["Potassium", 1640, "mg"], ["Magnesium", 106, "mg"], ["Vitamin B6", 1.2, "mg"]],
+    "source": "calculated from USDA FoodData Central values for the fresh fruit",
+    "reviewed": "2026-10-11"
   },
   "photo": {
     "alt": "Two jackfruits hanging from the trunk of their tree",

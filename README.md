@@ -114,7 +114,7 @@ What the page says of the fruit is not in the page. The packing record of a bag 
 
 Each is read like a record: asked of the gateways in order by its reference, hashed the way Swarm does, and used only when the bytes give that reference. The reference is inside a record that has its anchor on Ethereum, so the file is the one that record was sealed with. A document under another name, of another type, heavier than 1 MiB, or whose bytes are not what they should be, is not shown, and the page is the same without it. The description is asked for as soon as the records are read and the seal does not wait for it; the images come last of all.
 
-The description is an `ffd/product-description/1.0` file. The page reads `name`, `fruit`, the six figures of `nutrition` (`energy_kcal`, `carbohydrate_g`, `sugars_g`, `protein_g`, `fat_g`, `fibre_g`), with `micro` and `source` when they are there, and `photo.alt` and `photo.credit`. Whatever it says is written as text. Without it the page names the fruit the records name and, when it is one the page has a pouch for, gives the grams of the bag.
+The description is an `ffd/product-description/1.0` file. The page reads `name`, `fruit`, the six figures of `nutrition` (`energy_kcal`, `carbohydrate_g`, `sugars_g`, `protein_g`, `fat_g`, `fibre_g`), with `energy_kj`, `saturated_fat_g`, `salt_g`, `micro` and `source` when they are there, and `photo.alt` and `photo.credit`. The full table is in the order of a label: energy in kJ and kcal, fat and its saturates, carbohydrate and its sugars, fibre, protein and salt. Whatever it says is written as text. Without it the page names the fruit the records name and, when it is one the page has a pouch for, gives the grams of the bag.
 
 ## What the page never does
 
@@ -167,7 +167,8 @@ Open the built file with the network, the contract and the bag number after a ha
 11 October 2026. Work in progress.
 
 - The records the page reads today are test records on a Sepolia contract. The event runs on Ethereum mainnet with real records; the network and the contract in the QR come with that contract.
-- Placeholder: the nutrition figures in `products/` (working values until a public table is cited; those of pineapple are worked out from the fresh fruit), the CO₂ factor and reference scenario (being closed with our partners).
+- The nutrition figures in `products/` are calculated from USDA values for the fresh fruit, at 3 % final moisture; the maker's replace them when they are in.
+- Placeholder: the CO₂ factor and reference scenario (being closed with our partners).
 - The fruits of the bags are pineapple, banana and jackfruit, each with the colours of its pouch. The illustrations are in for pineapple and jackfruit; banana shows the drawn crystal until its own are. The test records are of mango, shown in the jackfruit colourway, and name no file of a product.
 - The bags and their packaging are separate work, not in this repository.
 - The file to use is the one marked current in [Releases](#releases).

@@ -55,6 +55,10 @@ type Nutrition = {
     protein_g: number
     fat_g: number
     fibre_g: number
+    // the rest of a label, when the description gives it
+    energy_kj: number | null
+    saturated_fat_g: number | null
+    salt_g: number | null
     micro: [string, number, string][]
     source: string | null
 }
@@ -486,7 +490,9 @@ export function readDescription(bytes: Uint8Array): Description | null {
         const figures = [n.energy_kcal, n.carbohydrate_g, n.sugars_g, n.protein_g, n.fat_g, n.fibre_g]
         const micro = (Array.isArray(n.micro) ? n.micro : []).filter((m): m is [string, number, string] => Array.isArray(m) && line(m[0]) !== null && amount(m[1]) && line(m[2]) !== null).slice(0, MICRO_MOST)
         const [energy_kcal, carbohydrate_g, sugars_g, protein_g, fat_g, fibre_g] = figures as number[]
-        const nutrition = figures.every(amount) ? { energy_kcal: energy_kcal!, carbohydrate_g: carbohydrate_g!, sugars_g: sugars_g!, protein_g: protein_g!, fat_g: fat_g!, fibre_g: fibre_g!, micro, source: line(n.source) } : null
+        const more = (value: unknown) => (amount(value) ? value : null)
+        const rest = { energy_kj: more(n.energy_kj), saturated_fat_g: more(n.saturated_fat_g), salt_g: more(n.salt_g), micro, source: line(n.source) }
+        const nutrition = figures.every(amount) ? { energy_kcal: energy_kcal!, carbohydrate_g: carbohydrate_g!, sugars_g: sugars_g!, protein_g: protein_g!, fat_g: fat_g!, fibre_g: fibre_g!, ...rest } : null
         const photo = (typeof value.photo === 'object' && value.photo !== null ? value.photo : {}) as { [key: string]: unknown }
         return { fruit: line(value.fruit), name: line(value.name), nutrition, alt: line(photo.alt), credit: line(photo.credit) }
     } catch {
@@ -524,17 +530,25 @@ function holds(n: Nutrition, grams: number) {
         ['Fibre', g(n.fibre_g * scale)]
     ]
     const facts = shown.map(([label, value], i) => `<div style="--i:${i}"><dt>${label}</dt><dd>${value}</dd></div>`).join('')
-    const fmt = (value: number, unit: string) => esc(`${Number(value.toPrecision(3))} ${unit}`)
+    // an amount as a label gives it: the energy and anything from a hundred up as a whole number, the rest to three
+    // figures, and "less than" where a label says no more of so little
+    const whole = (value: number, unit: string) => unit === 'kJ' || unit === 'kcal' || value >= 100
+    const fmt = (value: number, unit: string, least = 0) => esc(value < least ? `<${least} ${unit}` : `${whole(value, unit) ? Math.round(value) : Number(value.toPrecision(3))} ${unit}`)
+    // the rows of a label, in its order: the energy in both units, fat and its saturates, carbohydrate and its sugars,
+    // fibre, protein and salt, and after them what else the description names
     const table = ([
-        ['Energy', n.energy_kcal, 'kcal'],
+        ...(n.energy_kj != null ? [['Energy', n.energy_kj, 'kJ'] as const] : []),
+        [n.energy_kj != null ? '' : 'Energy', n.energy_kcal, 'kcal'],
+        ['Fat', n.fat_g, 'g'],
+        ...(n.saturated_fat_g != null ? [['of which saturates', n.saturated_fat_g, 'g', 0.1] as const] : []),
         ['Carbohydrate', n.carbohydrate_g, 'g'],
         ['of which sugars', n.sugars_g, 'g'],
-        ['Protein', n.protein_g, 'g'],
-        ['Fat', n.fat_g, 'g'],
         ['Fibre', n.fibre_g, 'g'],
+        ['Protein', n.protein_g, 'g'],
+        ...(n.salt_g != null ? [['Salt', n.salt_g, 'g', 0.01] as const] : []),
         ...n.micro
-    ] as (readonly [string, number, string])[])
-        .map(([label, per100, unit]) => `<tr><th scope="row">${esc(label)}</th><td>${fmt(per100 * scale, unit)}</td><td>${fmt(per100, unit)}</td></tr>`)
+    ] as (readonly [string, number, string, number?])[])
+        .map(([label, per100, unit, least]) => `<tr><th scope="row">${esc(label)}</th><td>${fmt(per100 * scale, unit, least)}</td><td>${fmt(per100, unit, least)}</td></tr>`)
         .join('')
     return [
         `<dl class="facts">${facts}</dl>`,
