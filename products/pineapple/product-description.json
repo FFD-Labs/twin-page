@@ -1,5 +1,6 @@
 {
   "schema": "ffd/product-description/1.0",
+  "standards": { "gs1_voc": "1.16" },
   "fruit": "pineapple",
   "name": "Pineapple",
   "nutrition": {

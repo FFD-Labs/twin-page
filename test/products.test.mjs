@@ -33,6 +33,14 @@ for (const fruit of readdirSync(root)) {
         if (files.includes('photo.webp')) assert.ok(described.alt && described.credit)
     })
 
+    test(`${fruit}: its description is plain JSON that names the version of the GS1 vocabulary its table follows`, () => {
+        const file = read('product-description.json')
+        assert.notEqual(file[0], 0xef, 'a byte order mark')
+        const said = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file))
+        assert.equal(said.schema, 'ffd/product-description/1.0')
+        assert.match(said.standards.gs1_voc, /^\d+\.\d+$/)
+    })
+
     for (const name of images.filter((image) => files.includes(image)))
         test(`${fruit}: ${name} is a WebP the page takes`, () => {
             const file = read(name)
