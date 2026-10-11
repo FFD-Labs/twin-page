@@ -1,0 +1,20 @@
+{
+  "schema": "ffd/product-description/1.0",
+  "fruit": "pineapple",
+  "name": "Pineapple",
+  "nutrition": {
+    "basis": "per 100 g of freeze-dried fruit",
+    "energy_kcal": 350,
+    "carbohydrate_g": 90,
+    "sugars_g": 68,
+    "protein_g": 3.5,
+    "fat_g": 1,
+    "fibre_g": 10,
+    "source": null,
+    "reviewed": "2026-10-11"
+  },
+  "photo": {
+    "alt": "A pineapple cut in half along its length, on a yellow ground",
+    "credit": "Vino Li, Unsplash"
+  }
+}

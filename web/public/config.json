@@ -1,5 +1,5 @@
 {
-    "_about": "What the page reads, and nothing else: the Ethereum RPCs it asks, by network and in order (the first that answers is read, and the next is asked whether it says the same; the key in an address is public, and is good only for these contracts), the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the day the records' storage is paid up to, the links of the footer, the repository that publishes the file, the art of each pouch by colourway (files kept beside the page, asked for last of all), and the content of the fruit and the arithmetic. The fruits of the bags are pineapple, banana and jackfruit; mango is the fruit of the test records on Sepolia, shown in the jackfruit colourway. A block whose keys are missing is not painted.",
+    "_about": "What the page reads, and nothing else: the Ethereum RPCs it asks, by network and in order (the first that answers is read, and the next is asked whether it says the same; the key in an address is public, and is good only for these contracts), the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the day the records' storage is paid up to, the links of the footer, the repository that publishes the file, and the arithmetic of the CO2. What the page says of the fruit is not here: its name, what the bag holds, its photograph and the art of its pouch are files the bag's packing record names, read from Swarm against their references. A block whose keys are missing is not painted.",
     "rpcs": {
         "11155111": [
             "https://eth-sepolia.g.alchemy.com/v2/alch_X-XdU1rCBjrCGNKmGPtj9",
@@ -21,42 +21,6 @@
         "ens": "https://fairfooddata.eth.limo"
     },
     "source": "https://github.com/FFD-Labs/twin-page",
-    "art": {
-        "pineapple": {
-            "front": "./art/pineapple-front.webp",
-            "back": "./art/pineapple-back.webp"
-        },
-        "jackfruit": {
-            "front": "./art/jackfruit-front.webp",
-            "back": "./art/jackfruit-back.webp"
-        }
-    },
-    "fruits": {
-        "pineapple": {
-            "name": "Pineapple",
-            "photo": "./photos/pineapple.webp",
-            "alt": "A pineapple cut in half along its length, on a yellow ground",
-            "lines": []
-        },
-        "banana": {
-            "name": "Banana",
-            "photo": "./photos/banana.webp",
-            "alt": "Ripe bananas, seen from close",
-            "lines": []
-        },
-        "jackfruit": {
-            "name": "Jackfruit",
-            "photo": "./photos/jackfruit.webp",
-            "alt": "Two jackfruits hanging from the trunk of their tree",
-            "lines": []
-        },
-        "mango": {
-            "name": "Mango",
-            "way": "jackfruit",
-            "photo": null,
-            "lines": []
-        }
-    },
     "co2": {
         "factor_kg_per_kg": 0.6,
         "factor_source": "source to cite",

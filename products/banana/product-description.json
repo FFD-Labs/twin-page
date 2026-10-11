@@ -1,0 +1,21 @@
+{
+  "schema": "ffd/product-description/1.0",
+  "fruit": "banana",
+  "name": "Banana",
+  "nutrition": {
+    "basis": "per 100 g of freeze-dried fruit",
+    "energy_kcal": 350,
+    "carbohydrate_g": 88,
+    "sugars_g": 47,
+    "protein_g": 4,
+    "fat_g": 1.5,
+    "fibre_g": 10,
+    "micro": [["Potassium", 1490, "mg"]],
+    "source": null,
+    "reviewed": "2026-10-04"
+  },
+  "photo": {
+    "alt": "Ripe bananas, seen from close",
+    "credit": "Clemens Posch, Unsplash"
+  }
+}
