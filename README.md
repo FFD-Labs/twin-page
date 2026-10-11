@@ -86,7 +86,8 @@ The first two were named by their date and keep their folder and their tag, sinc
 | Release | Date | Folder | Tag | SHA-256 of `devcon8.html` | Status |
 |---|---|---|---|---|---|
 | 0.1 | 9 Oct 2026 | `releases/2026-10-09/` | `2026-10-09` | `c9840efe1f223e1d199b2f6039be5573bdefd9685378a51631ac4f4f32e2ed87` | withdrawn |
-| 0.2 | 10 Oct 2026 | `releases/2026-10-10/` | `2026-10-10` | `0e6f48570feedab7d29b1b6a741eabf1366ea2a4aacd201b3052f54eee69d95e` | current |
+| 0.2 | 10 Oct 2026 | `releases/2026-10-10/` | `2026-10-10` | `0e6f48570feedab7d29b1b6a741eabf1366ea2a4aacd201b3052f54eee69d95e` | superseded |
+| 0.3 | 11 Oct 2026 | `releases/0.3/` | `v0.3` | `804395a26c31d6739ecacdd80b0fc210a9f1b5e0e566341f4aee44630428b1fd` | current |
 
 The file to use is the one marked current. A superseded one has a newer file after it and nothing known against it. Release 0.1 is withdrawn: it painted a record before checking it and wrote one of its values into the page as it came, so a gateway or an RPC that lied could run script in it. Its file stays here with its hash so that a copy of it can be recognised; do not use it.
 
