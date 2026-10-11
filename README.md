@@ -2,7 +2,7 @@
 
 The page a bag opens. A visitor scans the QR code on a bag of freeze-dried fruit and this page reads the bag's records, anchored on Ethereum and stored on Swarm, and checks them on the visitor's own device: every record is hashed again and compared with the reference its anchor names. No server of ours sits in between.
 
-The page is one HTML file with everything inside: the script, the fonts and the configuration. It is being built for Devcon 8 (Mumbai, 2 to 6 November 2026). The structure is final; the content is not (see Status).
+The page is one HTML file with everything it needs inside: the script, the fonts and the configuration. It carries no image: what it shows of the pouch it draws, and the illustrations of the pouch and the photograph of the fruit are files kept beside it, which it asks for last of all. It is complete without them. It is being built for Devcon 8 (Mumbai, 2 to 6 November 2026). The structure is final; the content is not (see Status).
 
 The published file reads like the source. It opens with a map of what it contains and what it talks to, and then comes in six marked parts: the styles, the markup, the configuration as JSON, the library (viem, bundled and minified from npm, unchanged), the page's own code exactly as written here with only the types removed, and the fonts. Anyone can read it top to bottom with view source.
 
@@ -16,7 +16,7 @@ devcon8.html#11155111:0x240dfbca7064d091149169eff95f764d1e21cea7/1
 ```
 
    Bags 1 to 20 exist on that Sepolia test contract. The page reads Ethereum and Swarm, so it needs an internet connection.
-3. What you should see, in order: the fruit card, empty while it reads; the plate reading Ethereum, then Swarm, then matching the two, with the triangle lighting up edge by edge; the border closing and the line "Your device just checked this bag with Ethereum and Swarm."; the fruit card filling in; the four records of the path, one after another; the arithmetic of the CO₂; and who holds the twin. Opened from the web, the footer also shows the fingerprint of the file, which you can compare with the `SHA256SUMS` of its release; a file opened from a folder has none to show, so hash it yourself (see The fingerprint).
+3. What you should see, in order: the front of the pouch, its crystal drawn as an outline while the page reads; under it a line that goes from your device to Ethereum and on to Swarm, each stretch drawn as its read comes back, while the frame of the hexagon at the heart of the crystal is drawn with them; the hexagon closing, the crystal taking the colours of the bag's pouch, and the line "Your device just checked this bag with Ethereum and Swarm."; the fruit and what the bag holds; the four records of the path, one after another down one line; the arithmetic of the CO₂; who holds the twin; and, last of all, the art of the pouch and the photograph of the fruit, when the page was opened from where they are kept.
 
 ## The link
 
@@ -30,12 +30,12 @@ https://fairfooddata.eth.limo/devcon8.html#<chainId>:<contract>/<id>
 
 ## What the page shows
 
-Top to bottom, each block filling in as its records arrive.
+Top to bottom, each block filling in as its records arrive. The page looks like the pouch that opened it: it opens in ivory and teal, and takes the colourway of the bag's pouch once a record that passed the check has named its fruit.
 
 | Block | What it shows | Where it comes from |
 |---|---|---|
-| The fruit | The name, the grams per bag, what the bag holds (energy, sugars, protein, fat, fibre) and the full table per 100 g | The packing record names the product; the nutrition table is in the page |
-| The plate | The twin's number, with the date its records are paid up to on Swarm under it, and the three reads at the vertices of a triangle: the scan on top, Ethereum (the bag's latest record and who holds it) and Swarm (the records) at the base. Local is the device hashing every record and comparing it with its anchor. Each edge draws as its read completes; the border closes when every record matches and the sealing line appears | Ethereum and Swarm, read by the device |
+| The front | The front of the pouch: its lockup and its crystal, with the twin's number inside the hexagon at its heart, the name of the fruit, and the three reads on one line, in the order they happen: your device asks Ethereum (the bag's latest record and who holds it), then Swarm (the records), and hashes every record to compare it with its anchor. Each read draws its stretch of the line and two edges of the hexagon; the hexagon closes when every record matches and the sealing line appears, with the date the records are paid up to on Swarm under it. The crystal is drawn by the page: an outline, then the colours of the pouch, and the pouch's own illustration when it arrives | Ethereum and Swarm, read by the device |
+| The fruit | The back of the pouch: the photograph of the fruit where the QR sticker sits, and in the label panel the grams per bag, what the bag holds (energy, sugars, protein, fat, fibre) and the full table per 100 g | The packing record names the product; the photograph and the nutrition table are in the page |
 | The path | One card per record: received, freeze-dried, packed, delivered. The data rows, the check against the record's Ethereum anchor with the anchor's date, a link to the Ethereum anchor (its block, or the transaction once found) and to the file on Swarm, and the raw record | The records on Swarm |
 | The arithmetic | If this fruit was rescued: the grams in the bag, the fresh fruit they came from and the CO₂e that stays out of the air, every assumption in view | The cycle and packing records, and the factors in the configuration |
 | The twin | Who holds the bag's twin: the jazzicon of its address, as its wallet draws it, or its ENS name and avatar when it has them | Ethereum and ENS |
@@ -65,6 +65,8 @@ To check a copy of the file, in the folder of its release:
 ```
 cd releases/<folder> && shasum -a 256 -c SHA256SUMS
 ```
+
+A release is the file. The art and the photographs are published beside the page from `web/public/` and are not part of what a release's hash covers; the page works the same without them.
 
 To check that a published file is what its source builds: with Node 24 and the lockfile, the build gives the same bytes every time. Build from the tag of the release and name its folder, since the file links to its own; the page's own code is not compiled, only stripped of its types, so the file's last script is the three source files one after another.
 
@@ -102,6 +104,7 @@ npm run release -- <n>
 ## What the page never does
 
 - It reads Ethereum, through the visitor's wallet or the RPCs it lists, and Swarm, through public gateways (see Who the page asks). No server of ours.
+- It loads no image until everything else is on screen. Then it asks whoever served the page for the art of the bag's pouch and the photograph of its fruit, files kept beside it and named in the configuration. They see what they saw when they served the page, and which fruit the bag holds. A copy opened from a folder that does not have them shows the drawn crystal, and nothing is missing.
 - When a twin has moved to an address with an ENS name, the page asks ENS for the name and the avatar through the same source, and loads the avatar from wherever its holder keeps it: an address of their choosing, ipfs.io or arweave.net, and for an NFT its contract and the metadata that contract names. Whoever serves it sees that the page was opened.
 - It follows no off-chain lookup (CCIP-Read). A name kept off-chain is not resolved, and its holder is shown by address.
 - It sets no cookies and keeps nothing on the device.
@@ -135,7 +138,10 @@ Open the built file with the network, the contract and the bag number after a ha
 | `test/paint.test.mjs` | The paint functions, given a record whose values are HTML: nothing of it may become an element of the page |
 | `test/check.test.mjs` | The whole check against gateways, RPCs and a wallet that lie, fail or do not answer: bytes that fail it are never read, a record of any shape leaves the page standing, and a source that fails is not taken for an answer |
 | `test/page.mjs` | The page for the tests: the markup and the script as written, in jsdom |
-| `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed, and the policy that names those two scripts by their hash |
+| `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts and marks inlined, the config, the library as one compact script, the page's code with its types removed, and the policy that names those two scripts by their hash. The file carries no image: the art and the photographs the config names are copied beside it, into `dist/`, and the build stops if one of them would be loaded from elsewhere |
+| `web/public/art/` | The plates: the illustrations of the pouch, front and back, with their ground made clear. They are published beside the page, which asks for them last. Each has a note of where it comes from beside it |
+| `web/public/photos/` | The photographs of the fruits, one each, square. Published beside the page like the art, with a note of where each comes from beside it |
+| `scripts/plates.py` | Makes the plates from the flat art of the pouch, which is kept with the packaging and not here: `uv run scripts/plates.py <folder of the flat art> pineapple jackfruit`. Every front is placed in one frame, so that the page draws one window for all of them |
 | `scripts/inspect.mjs` | What a browser would run in the single file, parsed as a browser parses it: one policy in the head, the two scripts it names, nothing else that runs or loads from elsewhere. The build asks it of every file it writes |
 | `test/releases.test.mjs` | The releases: every folder still holds the file its `SHA256SUMS` and its row in the table name, and a file still in use passes `scripts/inspect.mjs` |
 | `scripts/release.mjs` | Builds the file and files it as the next release, with its hash and its row in the table. It never writes over a release |
@@ -143,10 +149,11 @@ Open the built file with the network, the contract and the bag number after a ha
 
 ## Status
 
-10 October 2026. Work in progress.
+11 October 2026. Work in progress.
 
 - The records the page reads today are test records on a Sepolia contract. The event runs on Ethereum mainnet with real records; the network and the contract in the QR come with that contract.
-- Placeholder: the fruit photos, the nutrition figures (working values until a public table is cited), the CO₂ factor and reference scenario (being closed with our partners), the colours of the frame around the fruit card.
+- Placeholder: the nutrition figures (working values until a public table is cited, and none yet for pineapple), the CO₂ factor and reference scenario (being closed with our partners).
+- The fruits of the bags are pineapple, banana and jackfruit, each with the colours of its pouch. The illustrations are in for pineapple and jackfruit; banana shows the drawn crystal until its own are. The test records are of mango, shown in the jackfruit colourway.
 - The bags and their packaging are separate work, not in this repository.
 - The file to use is the one marked current in [Releases](#releases).
 
@@ -156,4 +163,4 @@ Apache 2.0, see `LICENSE`. The code is yours to use, copy and change, with the n
 
 The name Fair Food Data, its mark and the lockups in `web/public/brand/` are not covered by the license: they identify us, not the code. A copy of the page for another twin takes the code and leaves the mark.
 
-What comes from others keeps its own license: viem (MIT), and the three typefaces, Host Grotesk, Spline Sans Mono and Spectral (SIL Open Font License 1.1).
+What comes from others keeps its own license: viem (MIT), and the three typefaces, Montserrat, Fira Sans Condensed and Spline Sans Mono (SIL Open Font License 1.1). The photographs of the fruits are from Unsplash, under its license: the pineapple by Vino Li, the bananas by Clemens Posch, the jackfruit by Antonio Castellano.

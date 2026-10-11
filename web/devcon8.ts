@@ -43,7 +43,7 @@ type Record = {
     inputs?: Hex[]
 }
 
-// Editorial card of the fruit (block 3).
+// The fruit (block 2).
 type Nutrition = {
     energy_kcal: number
     carbohydrate_g: number
@@ -56,7 +56,8 @@ type Nutrition = {
     reviewed?: string
 }
 type NutritionTable = { basis?: string; fruits: { [fruit: string]: Nutrition } }
-type Fruit = { name: string; photo?: string | null; alt?: string; lines?: string[]; nutrition?: Nutrition }
+// `way` is the colourway of the fruit's pouch, when it is not the fruit's own name.
+type Fruit = { name: string; way?: string; photo?: string | null; alt?: string; lines?: string[]; nutrition?: Nutrition }
 
 // The arithmetic of block 5.
 type Co2 = {
@@ -77,6 +78,8 @@ type Page = Config & {
     report?: string | null
     links?: { ethereum?: string; swarm?: string; ens?: string }
     fruits?: { [fruit: string]: Fruit }
+    // the illustrations of each pouch, by colourway: files kept beside the page, asked for last of all
+    art?: { [way: string]: { front?: string; back?: string } }
     nutrition?: NutritionTable
     co2?: Co2
     storage?: Storage
@@ -169,7 +172,7 @@ const swap = (el: HTMLElement, text: string) => {
     )
 }
 
-// The three reads of the plate, one at each vertex of the triangle: what each read gave.
+// The three reads under the crystal: what each read gave. Each draws its stretch of the line and its two edges of the window's frame.
 const row = (step: number, value: string, state: 'busy' | 'lit' | 'idle' | 'bad' = 'lit') => {
     const li = $(`step-${step}`)
     li.classList.remove('busy', 'lit', 'idle', 'bad')
@@ -360,7 +363,6 @@ function card(event: Event, explorer: string | undefined) {
     // A record that did not pass the check was not read: its card carries the reference the page asked for and nothing of what arrived.
     if (!event.verified)
         return `
-        <p class="stage"><span class="num"></span> · not read</p>
         <h2>Record not shown</h2>
         <p class="check pending">Checking against its Ethereum anchor…</p>
         <details><summary>Reference</summary><p>Swarm <code>${esc(event.ref)}</code></p></details>`
@@ -374,7 +376,6 @@ function card(event: Event, explorer: string | undefined) {
     if (!data) {
         const raw = event.raw ?? ''
         return `
-        <p class="stage"><span class="num"></span> · not understood</p>
         <h2>Record not understood</h2>
         <div class="chips"><span class="chip wait">A kind this page does not know</span></div>${links}
         <details><summary>Raw record</summary><pre>${esc(raw.length > RAW_SHOWN ? `${raw.slice(0, RAW_SHOWN)}…` : raw)}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
@@ -382,7 +383,6 @@ function card(event: Event, explorer: string | undefined) {
     const { title, twin, rows: list } = steps[data.phase](data)
     const correction = typeof data.version === 'number' && data.version > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
     return `
-        <p class="stage"><span class="num"></span> · ${esc(data.phase)}</p>
         <h2>${esc(title)}</h2>
         ${twin ? '<p class="twin-born">This bag’s twin starts here.</p>' : ''}
         ${correction ? `<div class="chips">${correction}</div>` : ''}
@@ -390,7 +390,7 @@ function card(event: Event, explorer: string | undefined) {
         <details><summary>Raw record</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
 
-// Cards are painted as their record arrives and kept in the order of the events; the numbers follow.
+// Cards are painted as their record arrives and kept in the order of the events.
 const UNFOLD_GAP = 220
 const laterTimers = new Set<ReturnType<typeof setTimeout>>()
 const later = (fn: () => void, ms: number) => laterTimers.add(setTimeout(fn, ms))
@@ -404,7 +404,7 @@ const resetLater = () => {
     laterTimers.clear()
 }
 
-// The tile beside a card: the day and the month the record gives. A record that was not read, or not understood, has no date to give.
+// The station of a card on the line: the day and the month the record gives. A record that was not read, or not understood, has no date to give.
 function tile({ data, verified }: Event) {
     if (!data) return `<span class="tile"><b>${verified ? '?' : '✗'}</b></span>`
     const when = new Date(data.at)
@@ -422,7 +422,6 @@ export function placeCard(path: HTMLOListElement, events: Event[], event: Event,
     const next = events[index + 1]
     const before = next ? path.querySelector<HTMLLIElement>(`li[data-ref="${next.ref}"]`) : null
     path.insertBefore(li, before)
-    path.querySelectorAll<HTMLElement>('.num').forEach((n, i) => swap(n, String(i + 1).padStart(2, '0')))
     return li
 }
 
@@ -434,43 +433,24 @@ function markCheck(li: HTMLElement, event: Event) {
     swap(check as HTMLElement, event.verified ? `✓ Matches its Ethereum anchor of ${date(event.at!)}` : '✗ Does not match any Ethereum anchor')
 }
 
-// ---------- the fruit card (block 3) ----------
+// ---------- the fruit (block 2) ----------
 
 const g = (value: number) => `${Number(value.toFixed(1))} g`
 // The grams of a bag as its packing record gives them: a positive number, or none. Anything else in that field is not grams,
 // and the two blocks that compute with them, the fruit card and the arithmetic, are not painted from it.
 const bagGrams = (packing?: Record | null) => (typeof packing?.bag_g === 'number' && Number.isFinite(packing.bag_g) && packing.bag_g > 0 ? packing.bag_g : null)
 
-// The donut of what the bag holds: sugars on their own, the rest of the carbohydrate, protein, fat, fibre, and what is left of the weight as minerals.
-function donut(n: Nutrition, grams: number) {
+// What the bag holds, as the rows of its label: the energy, then sugars, protein, fat and fibre, scaled to the grams of the bag.
+function holds(n: Nutrition, grams: number) {
     const scale = grams / 100
-    const sugars = (n.sugars_g ?? 0) * scale
-    const shown: (readonly [string, number])[] = [
-        ['Sugars', sugars],
-        ['Protein', n.protein_g * scale],
-        ['Fat', n.fat_g * scale],
-        ['Fibre', n.fibre_g * scale]
+    const shown: (readonly [string, string])[] = [
+        ['Energy', `${Math.round(n.energy_kcal * scale)} kcal`],
+        ...(n.sugars_g != null ? [['Sugars', g(n.sugars_g * scale)] as const] : []),
+        ['Protein', g(n.protein_g * scale)],
+        ['Fat', g(n.fat_g * scale)],
+        ['Fibre', g(n.fibre_g * scale)]
     ]
-    const otherCarb = Math.max(0, n.carbohydrate_g * scale - sugars)
-    const minerals = Math.max(0, grams - shown.reduce((total, [, value]) => total + value, 0) - otherCarb)
-    const arcsData: (readonly [string, number, string])[] = [
-        ...shown.filter(([, value]) => value > 0).map(([label, value], i) => [label, value, `seg-${i + 1}`] as const),
-        ['Rest', otherCarb + minerals, 'seg-6']
-    ]
-    const r = 44, c = 2 * Math.PI * r
-    let offset = 0
-    const arcs = arcsData
-        .map(([, value, cls], i) => {
-            const len = (value / grams) * c
-            const arc = `<circle class="seg ${cls}" style="--i:${i}" cx="56" cy="56" r="${r}" stroke-dasharray="${len.toFixed(2)} ${(c - len).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"/>`
-            offset += len
-            return arc
-        })
-        .join('')
-    const legend = shown
-        .filter(([, value]) => value > 0)
-        .map(([label, value], i) => `<li style="--i:${i}"><i class="sw seg-${i + 1}"></i><span class="lb">${label}</span><span class="val">${g(value)}</span></li>`)
-        .join('')
+    const facts = shown.map(([label, value], i) => `<div style="--i:${i}"><dt>${label}</dt><dd>${value}</dd></div>`).join('')
     const fmt = (value: number, unit: string) => `${Number(value.toPrecision(3))} ${unit}`
     const table = ([
         ['Energy', n.energy_kcal, 'kcal'],
@@ -484,12 +464,7 @@ function donut(n: Nutrition, grams: number) {
         .map(([label, per100, unit]) => `<tr><th scope="row">${esc(label)}</th><td>${fmt(per100 * scale, unit)}</td><td>${fmt(per100, unit)}</td></tr>`)
         .join('')
     return [
-        `<svg class="donut" viewBox="0 0 112 112" role="img" aria-label="What this bag holds, by weight">
-                <circle class="track" cx="56" cy="56" r="${r}"/>${arcs}
-                <text class="kcal" x="56" y="54" text-anchor="middle">${Math.round(n.energy_kcal * scale)}</text>
-                <text class="unit" x="56" y="68" text-anchor="middle">kcal</text>
-            </svg>
-            <ul class="legend">${legend}</ul>`,
+        `<dl class="facts">${facts}</dl>`,
         `<details class="origin"><summary>Full table and sources</summary>
             <table class="nutri"><thead><tr><th></th><th scope="col">this bag · ${grams} g</th><th scope="col">per 100 g</th></tr></thead><tbody>${table}</tbody></table>
             <p class="origin-note">Figures for 100 g of the dried fruit, as published, scaled to the ${grams} g of this bag.${n.source ? ` Source: ${esc(n.source)}.` : ''}</p>
@@ -523,16 +498,14 @@ export function revealFruit(config: Page, events: Event[], final = false) {
         $('fruit-name').textContent = fruit.name
         $('fruit-name').classList.add('in')
         $('fruit-lines').innerHTML = (fruit.lines ?? []).filter(Boolean).map(line => `<p class="fruit-line">${esc(line)}</p>`).join('')
-        const photo = $<HTMLImageElement>('fruit-photo')
-        if (fruit.photo) {
-            photo.alt = fruit.alt ?? fruit.name
-            photo.onload = () => photo.classList.add('in')
-            photo.src = fruit.photo
-            photo.hidden = false
-        }
+        // the page takes the colourway of the bag's pouch, now that a record that passed the check has named its fruit
+        document.documentElement.dataset.way = fruit.way ?? key!
+        // the photograph keeps its place and comes last, with the art (dress)
+        $('stage').hidden = !fruit.photo
         $('stage-cap').hidden = true
     } else if (!fruit && final && !fruitState.named) {
         fruitState.named = true
+        $('stage').hidden = true
         $('fruit-name').textContent = cap(product) ?? 'This bag'
         $('fruit-name').classList.add('in')
         $('fruit-grams').innerHTML = ''
@@ -545,7 +518,7 @@ export function revealFruit(config: Page, events: Event[], final = false) {
         $('fruit-grams').textContent = `${grams} g per bag`
         $('fruit-grams').classList.add('in')
         if (fruit.nutrition) {
-            const [contains, origin] = donut(fruit.nutrition, grams)
+            const [contains, origin] = holds(fruit.nutrition, grams)
             $('fruit-contains').classList.remove('skel-host')
             $('fruit-contains').innerHTML = contains
             $('fruit-origin').innerHTML = origin
@@ -562,6 +535,9 @@ function resetFruit() {
     fruitState.named = false
     resetEdges()
     $('tri').setAttribute('class', 'tri')
+    undress()
+    $('stage').hidden = false
+    $('stage').classList.remove('on')
     const photo = $<HTMLImageElement>('fruit-photo')
     photo.hidden = true
     photo.classList.remove('in')
@@ -577,7 +553,7 @@ function resetFruit() {
     $('fruit-contains').classList.remove('drawn')
     $('fruit-contains').classList.add('skel-host')
     $('fruit-contains').innerHTML =
-        '<svg class="donut" viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="44"/></svg><ul class="legend skel-legend" aria-hidden="true"><li><span class="skel"></span></li><li><span class="skel"></span></li><li><span class="skel"></span></li><li><span class="skel"></span></li></ul>'
+        '<dl class="facts" aria-hidden="true"><div><span class="skel"></span></div><div><span class="skel"></span></div><div><span class="skel"></span></div><div><span class="skel"></span></div></dl>'
     $('fruit-origin').innerHTML = ''
 }
 
@@ -606,7 +582,7 @@ export function renderCo2(config: Page, events: Event[]) {
     const leaf = '<svg class="leaf" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4c-9 .4-15.2 6.2-16 16 9.8-.8 15.6-7 16-16z"/><path class="rib" d="M5.5 18.5 17 7"/></svg>'
     $('co2').innerHTML = `
         <div class="card co2-card">
-            <p class="stage">${String(events.length + 1).padStart(2, '0')} · if this fruit was rescued</p>
+            <div class="orn" aria-hidden="true"><i></i></div>
             <h2>What a rescued bag would avoid</h2>
             ${co2.label ? `<div class="chips"><span class="chip">${esc(co2.label)}</span></div>` : ''}
             <p class="lead">${lead}</p>
@@ -754,6 +730,55 @@ async function nameHolder(owner: Address, chainId: number, { transport }: Source
     }
 }
 
+// ---------- the art: last of all ----------
+
+// The page is complete without an image: the crystal is drawn, the colours are its own, and the photograph has its place
+// kept. When everything else is on screen, and only then, it asks for the illustrations of the bag's pouch and the
+// photograph of its fruit. They are files kept beside the page, named in the configuration, and whoever served the page
+// serves them. One that does not come, or comes too late, leaves the page as it was.
+const ART_WAIT = 20_000
+const arrive = (src: string) =>
+    new Promise<string | null>(resolve => {
+        const image = new Image()
+        const done = (value: string | null) => {
+            clearTimeout(timer)
+            resolve(value)
+        }
+        const timer = setTimeout(() => done(null), ART_WAIT)
+        image.onload = () => done(image.src)
+        image.onerror = () => done(null)
+        image.src = new URL(src, document.baseURI).href
+    })
+
+async function dress(config: Page) {
+    const key = fruitState.key
+    const fruit = key ? config.fruits?.[key] : undefined
+    const root = document.documentElement
+    const art = root.dataset.way ? config.art?.[root.dataset.way] : undefined
+    if (!art?.front && !art?.back && !fruit?.photo) return
+    const [front, back, photo] = await Promise.all([art?.front, art?.back, fruit?.photo].map(src => (src ? arrive(src) : null)))
+    if (fruitState.key !== key || !fruit) return // another bag was read meanwhile
+    if (front) root.style.setProperty('--art-front', `url(${JSON.stringify(front)})`)
+    if (back) root.style.setProperty('--art-back', `url(${JSON.stringify(back)})`)
+    if (front || back) root.dataset.art = [front && 'front', back && 'back'].filter(Boolean).join(' ')
+    if (photo) {
+        const img = $<HTMLImageElement>('fruit-photo')
+        img.alt = fruit.alt ?? fruit.name
+        img.onload = () => img.classList.add('in')
+        img.src = photo
+        img.hidden = false
+        $('stage').classList.add('on')
+    } else if (fruit.photo) $('stage').hidden = true // it did not come: its place is given back
+}
+
+function undress() {
+    const root = document.documentElement
+    delete root.dataset.way
+    delete root.dataset.art
+    root.style.removeProperty('--art-front')
+    root.style.removeProperty('--art-back')
+}
+
 // ---------- stored until: the date the records' storage is paid up to ----------
 
 // The date comes with the configuration (storage.until), kept by whoever keeps the postage batch paid; the page reads it from nowhere else.
@@ -820,6 +845,7 @@ export function reset() {
     row(3, 'waiting', 'idle')
     $('step-2').classList.remove('idle')
     $('step-3').classList.remove('idle')
+    paintedAt = 0
     status('checking')
     $('hero').hidden = false
     $('fruit').hidden = false
@@ -827,14 +853,22 @@ export function reset() {
 
 // ---------- the check ----------
 
+// When the last block the check left for later is due on screen: the fruit, the cards opening, the arithmetic, the holder.
+let paintedAt = 0
+let runs = 0
+
 export async function main() {
+    const run = ++runs
     reset()
     const config = await loadConfig()
     try {
         await check(config)
     } finally {
-        void fingerprint(config) // after the records, since it may read the page's own bytes again
+        await fingerprint(config) // after the records, since it may read the page's own bytes again
     }
+    // the art comes last: after the check, the fingerprint and every block of the page
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, paintedAt - performance.now())))
+    if (run === runs) await dress(config)
 }
 
 async function check(config: Page) {
@@ -854,7 +888,8 @@ async function check(config: Page) {
         hideLead()
         return notice('This link is incomplete.', 'Scan the QR code on the bag again. The link may have been cut short when it was copied.')
     }
-    $('twin-id').textContent = `#${parsed.id}`
+    $('twin-id').textContent = String(parsed.id)
+    $('twin-id').dataset.len = String(String(parsed.id).length)
     document.title = `Twin #${parsed.id}`
 
     try {
@@ -968,6 +1003,7 @@ async function check(config: Page) {
         const lastCard = openPath(path, 1100)
         later(() => renderCo2(config, events), lastCard + UNFOLD_GAP + 120)
         later(twin, lastCard + UNFOLD_GAP + 360)
+        paintedAt = performance.now() + lastCard + UNFOLD_GAP + 900
 
         void Promise.all(
             events.map(async event => {

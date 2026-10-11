@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-mode="dark">
+<html lang="en">
     <head>
         <meta charset="utf-8" />
         <!--
@@ -10,12 +10,16 @@
 
             How this file is laid out, top to bottom:
               1 · Styles      the page's own CSS, in the order of the blocks on screen
-              2 · Markup      the fruit card, the twin's plate, the path, the arithmetic, the holder, the footer
+              2 · Markup      the front of the bag with the check, the fruit, the path, the arithmetic, the holder, the footer
               3 · Config      the addresses the page reads from, as JSON (added by the build)
               4 · Library     viem, bundled and minified from npm, unchanged: what the page takes from it is the list in
                               src/rails.ts (added by the build)
               5 · Script      the page's own code, as written in src/lib.ts, web/life-grid.ts and web/devcon8.ts, types removed
-              6 · Fonts       the three typefaces, inlined so the file is one
+              6 · Fonts       the typefaces of the pouch and the one for hashes, inlined so the file is one
+
+            The file carries no image. What it shows of the pouch it draws: the crystal, its window, the colours. The
+            illustrations of the pouch and the photograph of the fruit are files kept beside this one, and the page asks for
+            them last, when everything else is on screen; without them nothing is missing.
 
             The file runs two scripts, 4 and 5, and no other: the Content-Security-Policy in the head names each by its SHA-256
             (added by the build), so nothing written into the page afterwards can run as script.
@@ -27,11 +31,13 @@
               Swarm           public gateways, read only: the records themselves, hashed before they are read (config: gateways)
               the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
               this file       itself, once more, to show its fingerprint in the footer
+              the art         last of all, from wherever this file was served: the illustrations of the bag's pouch and the
+                              photograph of its fruit (config: art, fruits)
             What the page asks Ethereum about, the bag in the link, is seen by the source it asks. No cookies, no storage,
             no server of ours. Nothing is signed or uploaded.
         -->
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#0b0e14" />
+        <meta name="theme-color" content="#FBE8D3" />
         <meta name="robots" content="noindex" />
         <title>Twin</title>
         <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -40,323 +46,345 @@
 
             :root {
                 /* invariants */
-                --verified: #00E676; --ease-out: cubic-bezier(.23, 1, .32, 1); --ease-in-out: cubic-bezier(.77, 0, .175, 1); --t-press: .12s; --t-hover: .15s; --t-state: .32s; --t-enter: .42s; --t-draw: .36s; --r: 3px;
-                --display: 'Host Grotesk', 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+                --ease-out: cubic-bezier(.23, 1, .32, 1); --ease-in-out: cubic-bezier(.77, 0, .175, 1); --t-press: .12s; --t-hover: .15s; --t-state: .32s; --t-enter: .42s; --t-draw: .36s; --t-way: .9s;
+                --caps: 'Montserrat', 'Avenir Next', 'Century Gothic', sans-serif;
+                --text: 'Fira Sans Condensed', 'Arial Narrow', 'Roboto Condensed', 'Spline Sans Mono', sans-serif;
                 --mono: 'Spline Sans Mono', ui-monospace, Menlo, Consolas, monospace;
-                --serif: 'Spectral', Georgia, 'Times New Roman', serif;
-                /* dark, the canonical mode */
-                --bg: #0b0e14; --bg-2: #0e131b; --panel: #10151e; --panel-2: #141b25; --line: #222b38; --line-soft: #161d27;
-                --ink: #E9EEF4; --ink-dim: #9AA7B5; --ink-faint: #76838F;
-                --accent: #2CB3C9; --accent-bright: #6FD3E4; --accent-deep: #0A3540; --accent-ink: #0b0e14; --glow: rgba(44, 179, 201, .42);
-                --grad-a: #1199A8; --grad-b: #00E676; --grad: linear-gradient(135deg, var(--grad-a), var(--grad-b));
-                --wait: #E8C37A; --wait-line: #4a3d22; --wait-bg: rgba(232, 195, 122, .07);
-                --grid-minor: rgba(90, 190, 210, .05); --grid-major: rgba(90, 190, 210, .10);
-
-                --bad: #FF6B6B;
-
-                --eth: #627EEA; --swarm: #FF8A00;
-
-                --devcon-indigo-1: #171240; --devcon-indigo-2: #261D66; --devcon-indigo-3: #0F0C2A;
-                --devcon-ink: #F2EEFF; --devcon-dim: rgba(242, 238, 255, .72); --devcon-line: rgba(201, 186, 255, .45); --devcon-line-soft: rgba(201, 186, 255, .2);
-                --devcon-prism-a: rgba(255, 128, 160, .26); --devcon-prism-b: rgba(255, 222, 128, .26); --devcon-prism-c: rgba(128, 214, 255, .26);
+                /* The page looks like the pouch that opened it. It opens in the pair of the jackfruit pouch, ivory and teal, and
+                   takes the colourway of the scanned bag when its packing record names the fruit (data-way on the root). */
+                --ground: #FBE8D3; --ink: #16383B; --ink-2: #3F5E5E; --rule: rgb(22 56 59 / .28); --rule-soft: rgb(22 56 59 / .13);
+                /* the crystal, drawn: its facets from light to deep, the two warm ones below, the arch behind it; and its window,
+                   with the ink of what is set inside and of the frame the reads draw around it */
+                --facet-1: #A9C3B8; --facet-2: #6A9690; --facet-3: #2F6062; --facet-4: #F0D9AC; --facet-5: #DFC592; --arch: #D5DDCC;
+                --light: #FFF8E9; --window-ink: #16383B;
+                /* the label panel is white on every pouch, and what sits on it is read on white */
+                --panel: #FFFFFF; --panel-ink: #16383B; --panel-ink-2: #3F5E5E; --panel-rule: rgb(22 56 59 / .22); --panel-tint: #F3F1EC;
+                --glyph-a: #69A69B; --glyph-b: #2A5E61; --glyph-c: #173F43;
+                --bad: #A3361F; --wait: #7A5310;
+                --foot: #16383B; --foot-ink: #FBE8D3; --foot-ink-2: #B5CAC0; --foot-rule: rgb(251 232 211 / .24); --grad-a: #69A69B; --grad-b: #E9C98F;
+                --eth: #A9B8F5; --swarm: #FFB25C;
+                /* the art of the pouch, when it has arrived (set by the script, last of all) */
+                --art-front: none; --art-back: none;
+                color-scheme: light;
+            }
+            :root[data-way='pineapple'] {
+                --ground: #FBEAE0; --ink: #36182F; --ink-2: #624458; --rule: rgb(54 24 47 / .28); --rule-soft: rgb(54 24 47 / .13);
+                --facet-1: #D3C0EA; --facet-2: #A88BD3; --facet-3: #6A4BA0; --facet-4: #F8D6BC; --facet-5: #EFC0A2; --arch: #EBDCEE;
+                --light: #FFF6EF; --window-ink: #36182F;
+                --panel-ink: #36182F; --panel-ink-2: #624458; --panel-rule: rgb(54 24 47 / .22); --panel-tint: #F4F0F2;
+                --glyph-a: #A58AD2; --glyph-b: #5F4494; --glyph-c: #3C2566;
+                --foot: #36182F; --foot-ink: #FBEAE0; --foot-ink-2: #D2BCCB; --foot-rule: rgb(251 234 224 / .24); --grad-a: #A58AD2; --grad-b: #F2C79A;
+            }
+            :root[data-way='banana'] {
+                --ground: #3F2143; --ink: #F8DDD6; --ink-2: #D3B9C9; --rule: rgb(248 221 214 / .34); --rule-soft: rgb(248 221 214 / .16);
+                --facet-1: #B9A0DA; --facet-2: #8A6DB6; --facet-3: #5E4089; --facet-4: #F4CBA0; --facet-5: #DCA97C; --arch: #5C3562;
+                --light: #FBE6D8; --window-ink: #3A1B3F;
+                --panel-ink: #3A1B3F; --panel-ink-2: #694B6C; --panel-rule: rgb(58 27 63 / .22); --panel-tint: #F4F0F4;
+                --glyph-a: #E6D8F3; --glyph-b: #B8A0D8; --glyph-c: #8A6EB4;
+                --bad: #FFA08C; --wait: #F1D08C;
+                --foot: #2B132F; --foot-ink: #F8DDD6; --foot-ink-2: #C9AEC2; --foot-rule: rgb(248 221 214 / .24); --grad-a: #B8A0D8; --grad-b: #F2C79A;
+                color-scheme: dark;
             }
             * { box-sizing: border-box; margin: 0; }
-            html { -webkit-text-size-adjust: 100%; }
-            body {
-                background: var(--bg); color: var(--ink); font: 16px/1.5 var(--display); min-height: 100vh; -webkit-font-smoothing: antialiased;
-                background-image:
-                    linear-gradient(var(--grid-major) 1px, transparent 1px), linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
-                    linear-gradient(var(--grid-minor) 1px, transparent 1px), linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
-                background-size: 160px 160px, 160px 160px, 32px 32px, 32px 32px;
-            }
+            /* the art of the pouch is wider than a phone, as it is wider than the pouch's own live area: the page is cut at the screen's edge */
+            html { -webkit-text-size-adjust: 100%; background: var(--ground); overflow-x: hidden; overflow-x: clip; scrollbar-color: var(--ink-2) transparent; transition: background-color var(--t-way) var(--ease-out); }
+            body { background: var(--ground); color: var(--ink); font: 400 1rem/1.4 var(--text); min-height: 100vh; overflow-x: hidden; overflow-x: clip; -webkit-font-smoothing: antialiased; font-variant-numeric: lining-nums;
+                transition: background-color var(--t-way) var(--ease-out), color var(--t-way) var(--ease-out); }
             a { color: inherit; text-decoration: none; }
             [hidden] { display: none !important; }
-            :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+            ::selection { background: var(--ink); color: var(--ground); }
+            :focus-visible { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 2px; }
             :focus:not(:focus-visible) { outline: none; }
-            .ac { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
-            .shell { max-width: 40rem; margin: 0 auto; padding: 0 1rem 2.5rem; }
+            .shell { --plate: min(122.5vw, 36rem); max-width: 30rem; margin: 0 auto; padding: 0 1rem 3rem; }
 
-            /* 2 · the twin's plate */
-            .twin-plate { position: relative; margin-top: 1.4rem; padding: 1.05rem 1.1rem 1.2rem; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); transition: border-color .28s var(--ease-out); }
+            /* the marks of the pouch: its small capitals, the rule with a diamond, and the diamond alone, hollow until its read is back */
+            .caps { font-family: var(--caps); font-weight: 500; text-transform: uppercase; }
+            .orn { display: flex; justify-content: center; align-items: center; gap: .32rem; }
+            .orn::before, .orn::after { content: ''; width: 1.4rem; height: 1px; background: currentColor; }
+            .orn i { width: .44rem; height: .44rem; background: currentColor; transform: scaleY(.62) rotate(45deg); }
+            .mark { display: block; width: .44rem; height: .44rem; flex: none; border: 1px solid currentColor; transform: rotate(45deg); transition: background-color var(--t-state) var(--ease-out), border-color var(--t-state) var(--ease-out), color var(--t-state) var(--ease-out); }
 
-            .trace { position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); overflow: visible; pointer-events: none; }
-            .trace rect { fill: none; stroke: url(#plate-grad); stroke-width: 1.5px; x: .75px; y: .75px; width: calc(100% - 1.5px); height: calc(100% - 1.5px); rx: calc(var(--r) + 1px);
-                stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1s var(--ease-in-out); }
-            .twin-title { margin: 0; font-weight: 500; font-size: clamp(1.9rem, 8vw, 2.4rem); letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
-            .twin-plate.verified { border-color: transparent; transition-delay: .9s; }
-            .twin-plate.verified .trace rect { stroke-dashoffset: 0; }
+            /* 1 · the front of the bag: the lockup, the crystal with the twin inside its window, the three reads */
+            .lockup { padding-top: 1.5rem; text-align: center; }
+            .lockup svg { display: block; width: 1.06rem; height: 1.75rem; margin: 0 auto .75rem; }
+            .lockup .g-a { fill: var(--glyph-a); } .lockup .g-b { fill: var(--glyph-b); } .lockup .g-c { fill: var(--glyph-c); opacity: .72; }
+            .lockup path { transition: fill var(--t-way) var(--ease-out); }
+            .devcon { font: 400 1.31rem/1 var(--caps); letter-spacing: .56em; margin-right: -.56em; }
+            .city { margin: .56rem -.3em 0 0; font: 500 .6875rem/1 var(--caps); letter-spacing: .3em; }
 
-            .stored-slot { min-height: 1.05rem; margin: .5rem 0 0; }
-            .stored { display: inline-block; font: 600 .6rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); text-decoration: none; white-space: nowrap; animation: appear var(--t-enter) var(--ease-out) .38s both; transition: color var(--t-hover) var(--ease-out); }
-            .stored b { font-weight: 600; color: var(--ink-dim); transition: color var(--t-hover) var(--ease-out), border-color var(--t-hover) var(--ease-out); }
-
-            .reads-stage { position: relative; height: 15rem; margin-top: 1.2rem; }
-            .tri { position: absolute; left: 50%; top: 2.9rem; width: 178px; height: 159px; transform: translateX(-50%); overflow: visible; }
-            .stage-cap { position: absolute; left: .8rem; bottom: .6rem; z-index: 1; margin: 0; font: 500 .62rem var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--devcon-dim); }
-            .tri .trk { fill: none; stroke: var(--line); stroke-width: 1.2; }
-            .tri .edge { fill: none; stroke: url(#tri-grad); stroke-width: 1.8; stroke-dasharray: 90; stroke-dashoffset: 90; transition: stroke-dashoffset var(--t-draw) var(--ease-out); }
+            .twin-plate { position: relative; margin-top: .65rem; text-align: center; }
+            .crystal { position: relative; left: 50%; width: var(--plate); aspect-ratio: 820 / 1065; margin: 0 0 calc(var(--plate) * -.403); transform: translateX(-50%); pointer-events: none; }
+            .crystal svg, .crystal .plate { position: absolute; inset: 0; width: 100%; height: 100%; }
+            /* The crystal is drawn, not loaded. While the bag is read it is an outline; when a record that passed the check
+               names the fruit its facets take the colours of that pouch; and when the art of the pouch arrives, last of all,
+               the art takes its place. Every stage is the page, not a wait for the next. */
+            .drawn path, .drawn polygon { transition: fill var(--t-way) var(--ease-out), stroke var(--t-way) var(--ease-out), opacity 1.1s var(--ease-out); }
+            .drawn .arch, .drawn .facets path { fill: transparent; stroke: var(--rule); stroke-width: 1.7; stroke-linejoin: round; }
+            .drawn .stars { fill: var(--rule); stroke: none; }
+            .drawn .window { fill: var(--light); stroke: none; }
+            :root[data-way] .drawn .facets path { stroke: var(--ground); }
+            :root[data-way] .drawn .arch { fill: var(--arch); stroke: transparent; }
+            :root[data-way] .drawn .f-1 { fill: var(--facet-1); } :root[data-way] .drawn .f-2 { fill: var(--facet-2); } :root[data-way] .drawn .f-3 { fill: var(--facet-3); }
+            :root[data-way] .drawn .f-4 { fill: var(--facet-4); } :root[data-way] .drawn .f-5 { fill: var(--facet-5); }
+            /* a bag whose records did not all match keeps a crystal that is washed out */
+            :root[data-way] .twin-plate:not(.verified) .drawn .facets, :root[data-way] .twin-plate:not(.verified) .drawn .arch { opacity: .4; }
+            .drawn .facets, .drawn .arch, .drawn .stars { transition: opacity 1.1s var(--ease-out); }
+            :root[data-art~='front'] .drawn .facets, :root[data-art~='front'] .drawn .arch, :root[data-art~='front'] .drawn .stars { opacity: 0; }
+            .plate { background: var(--art-front) center / contain no-repeat; opacity: 0; filter: saturate(.2) blur(3px); transition: opacity 1.1s var(--ease-out), filter 1.3s var(--ease-out); }
+            :root[data-art~='front'] .plate { opacity: .5; filter: saturate(.2); }
+            :root[data-art~='front'] .verified .plate { opacity: 1; filter: none; }
+            /* the window's frame, drawn by the reads from the top down: Ethereum its roof, Swarm its walls, and your device closes it below */
+            .tri .trk { fill: none; stroke: var(--rule); stroke-width: 1.7; }
+            .tri .edge { fill: none; stroke: var(--window-ink); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset var(--t-draw) var(--ease-out), stroke var(--t-way) var(--ease-out); }
             .tri.e1 .e-eth, .tri.e2 .e-swarm, .tri.e3 .e-anchor { stroke-dashoffset: 0; }
+            .tri.bad .e-anchor { stroke: var(--bad); stroke-dasharray: .09 .07; }
+            /* the twin's number, in the window: the bags go up to 15000, and five figures must sit inside it as one does */
+            .twin { position: absolute; left: 40.36%; top: 32.64%; width: 19.35%; height: 18.76%; display: grid; place-content: center; justify-items: center; color: var(--window-ink); transition: color var(--t-way) var(--ease-out); }
+            .twin small { font: 500 .625rem/1 var(--caps); letter-spacing: .26em; margin-right: -.26em; text-transform: uppercase; opacity: .78; }
+            .twin b { margin-top: .3rem; font: 300 calc(var(--plate) * .084)/1 var(--caps); letter-spacing: -.02em; }
+            .twin b[data-len='3'] { font-size: calc(var(--plate) * .068); }
+            .twin b[data-len='4'] { font-size: calc(var(--plate) * .056); font-weight: 400; letter-spacing: -.01em; }
+            .twin b[data-len='5'] { font-size: calc(var(--plate) * .046); font-weight: 400; letter-spacing: 0; }
+            .twin b[data-len='6'], .twin b[data-len='7'] { font-size: calc(var(--plate) * .037); font-weight: 400; letter-spacing: 0; }
 
-            .tri .vx .grad { fill: url(#tri-grad); }
-            .tri .vx .cover { fill: var(--panel); stroke: var(--ink-faint); stroke-width: 1; transition: opacity var(--t-state) var(--ease-out); }
-            .tri .vx .gl { fill: var(--ink-faint); transition: fill var(--t-state) var(--ease-out); }
-            .tri.e1 .v-eth .cover, .tri.e2 .v-swarm .cover, .tri.e3 .v-scan .cover { opacity: 0; }
-            .tri.e1 .v-eth .gl, .tri.e2 .v-swarm .gl, .tri.e3 .v-scan .gl { fill: var(--accent-ink); }
-            .tri.bad .e-anchor { stroke: var(--bad); }
-            .tri.bad .v-scan .grad { fill: var(--bad); }
-            .reads { list-style: none; padding: 0; margin: 0; }
-            .reads li { position: absolute; display: grid; gap: .22rem; }
-            .reads .k { font: 600 .6rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); transition: color .28s var(--ease-out); }
-            .reads .v { font: .82rem var(--mono); letter-spacing: .01em; text-transform: none; color: var(--ink-faint); font-variant-numeric: tabular-nums; transition: color .28s var(--ease-out); }
-            .reads li.busy .v { color: var(--ink-dim); animation: reading 1.2s ease-in-out infinite; }
+            .fruit-name { position: relative; min-height: 1em; font: 500 clamp(1.5rem, 7.4vw, 1.82rem)/1 var(--caps); letter-spacing: .13em; margin-right: -.13em; text-transform: uppercase; }
+            .fruit-name.in, .grams.in, .fruit-line { animation: land var(--t-enter) var(--ease-out) both; }
+            /* The three reads, in the order they happen, on one line with a diamond at each: your device asks Ethereum, then
+               Swarm. While a read is out a spark travels its stretch of the line; when it is back the stretch is drawn. */
+            .reads { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); margin: 1.3rem -.25rem 0; padding: 0; list-style: none; }
+            .reads li { position: relative; display: grid; justify-items: center; align-content: start; gap: .5rem; padding: 0 .2rem; }
+            .reads .mark { position: relative; z-index: 1; background: var(--ground); transition: background-color var(--t-state) var(--ease-out), border-color var(--t-state) var(--ease-out), color var(--t-state) var(--ease-out); }
+            .reads li + li::before, .reads li + li::after { content: ''; position: absolute; right: 50%; top: calc(.22rem - .5px); width: 100%; height: 1px; }
+            .reads li + li::before { background: var(--rule); }
+            .reads li + li::after { background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform .5s var(--ease-out); }
+            .reads li.lit::after, .reads li.bad::after { transform: none; }
+            .reads li.busy::after { transform: none; background: linear-gradient(90deg, transparent, var(--ink) 55%, transparent) 0 0 / 38% 100% no-repeat; animation: spark .95s cubic-bezier(.45, 0, .2, 1) infinite; }
+            @keyframes spark { from { background-position: -60% 0; } to { background-position: 160% 0; } }
+            .reads .k { font: 500 .6875rem/1 var(--caps); letter-spacing: .16em; margin-right: -.16em; text-transform: uppercase; white-space: nowrap; }
+            .reads .v { font: 400 .94rem/1.15 var(--text); color: var(--ink-2); font-variant-numeric: tabular-nums; text-wrap: balance; transition: color var(--t-state) var(--ease-out); }
+            .reads li.busy .mark { animation: reading 1.2s ease-in-out infinite; }
+            .reads li.busy .v { animation: reading 1.2s ease-in-out infinite; }
             @keyframes reading { 50% { opacity: .3; } }
-            .reads li.lit .k { color: var(--ink-dim); }
+            .reads li.lit .mark { background: currentColor; }
             .reads li.lit .v { color: var(--ink); }
-            .reads li.bad .v { color: var(--bad); }
-            .reads li.idle .v { color: var(--ink-faint); }
-            .reads .l-scan { left: 50%; top: 0; transform: translateX(-50%); text-align: center; white-space: nowrap; }
-            .reads .l-eth { left: 0; bottom: 0; }
-            .reads .l-swarm { right: 0; bottom: 0; text-align: right; }
+            .reads li.bad .mark, .reads li.bad .v { color: var(--bad); }
+            .reads li.bad .mark { background: currentColor; }
+
             .proof-fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s var(--ease-in-out) .45s; }
             .proof-fold.open { grid-template-rows: 1fr; }
-            .proof-clip { min-height: 0; overflow: clip; display: flow-root; } 
-            .proof { margin: 1.1rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line-soft); font: 1.1rem/1.42 var(--serif); color: var(--ink); text-wrap: pretty; opacity: 0; transform: translateY(6px);
-                transition: opacity var(--t-enter) var(--ease-out) .7s, transform var(--t-enter) var(--ease-out) .7s; }
-            .proof-fold.open .proof { opacity: 1; transform: none; }
-            .proof .hi { color: var(--accent); }
-            .notice { margin-top: 1.5rem; animation: land var(--t-enter) var(--ease-out); padding: .85rem 1rem; border: 1px solid var(--wait-line); background: var(--wait-bg); color: var(--wait); border-radius: var(--r); font-size: .92rem; line-height: 1.45; }
-            .notice strong { font-weight: 600; color: var(--ink); }
-            .notice .btn { margin-top: .7rem; color: var(--ink); }
-            .notice .tried { font: .7rem var(--mono); color: var(--ink-faint); letter-spacing: .02em; }
-            .notice details { color: var(--ink-faint); }
+            .proof-clip { min-height: 0; overflow: clip; display: flow-root; }
+            .proof-clip > * { opacity: 0; transform: translateY(6px); transition: opacity var(--t-enter) var(--ease-out) .7s, transform var(--t-enter) var(--ease-out) .7s; }
+            .proof-fold.open .proof-clip > * { opacity: 1; transform: none; }
+            .proof-clip .orn { margin-top: 1.5rem; }
+            .proof { max-width: 17.5rem; margin: .8rem auto 0; font: 400 1.09rem/1.32 var(--text); text-wrap: balance; }
+            .stored-slot { min-height: .6rem; margin-top: .75rem; }
+            .stored { display: inline-block; font: 500 .6875rem/1 var(--caps); letter-spacing: .22em; margin-right: -.22em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+            .stored b { font-weight: 500; }
 
-            /* shared: cards, rows, chips, buttons, disclosures */
-            .card { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem; }
-            .stage { font: .64rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); }
-            h2 { font-size: 1.25rem; font-weight: 500; letter-spacing: -.015em; line-height: 1.15; margin: .25rem 0 .45rem; }
-            .lead { color: var(--ink-dim); font-size: .95rem; line-height: 1.45; margin: .1rem 0 .6rem; max-width: 46ch; }
-            .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .4rem; }
-            .chip { display: inline-flex; align-items: center; gap: .4rem; font: 600 .6rem var(--mono); letter-spacing: .09em; text-transform: uppercase; padding: .16rem .45rem; border: 1px solid var(--line); border-radius: 2px; color: var(--ink-dim); white-space: nowrap; line-height: 1.3; }
-            .chip::before { content: ''; width: 6px; height: 6px; flex: none; border: 1px solid currentColor; }
-            .chip.wait { color: var(--wait); border-color: var(--wait-line); }
-            .chip.wait::before { background: currentColor; }
-            .row { display: grid; grid-template-columns: 8.6rem 1fr; gap: 1rem; align-items: baseline; padding: .6rem 0; border-bottom: 1px solid var(--line-soft); }
-            .row .k { font: .64rem var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint); }
-            .row .v { font: .92rem var(--mono); text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; word-break: break-word; }
-            .links { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; }
-            .btn { display: inline-flex; align-items: center; gap: .5rem; font: 600 .72rem var(--mono); letter-spacing: .03em; padding: .5rem .8rem; border-radius: var(--r); border: 1px solid var(--line); color: var(--ink); background: none; cursor: pointer;
-                transition: filter .15s var(--ease-out), border-color .15s var(--ease-out), color .15s var(--ease-out), transform .12s var(--ease-out); }
+            /* shared: the label panel of the back of the bag, white with a keyline inside its edge, and what is set on it */
+            .card, .label, .notice { min-width: 0; background: var(--panel); color: var(--panel-ink); border-radius: .7rem; box-shadow: inset 0 0 0 .3rem var(--panel), inset 0 0 0 calc(.3rem + 1px) var(--panel-ink); padding: 1.35rem 1.3rem 1.15rem; text-align: left; }
+            h2 { font: 500 .94rem/1.25 var(--caps); letter-spacing: .16em; text-transform: uppercase; }
+            .lead { margin-top: .5rem; color: var(--ink-2); }
+            .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .7rem; }
+            .chip { display: inline-flex; align-items: center; gap: .45rem; padding: .32rem .55rem; border: 1px solid currentColor; border-radius: .25rem; font: 500 .6875rem/1.2 var(--caps); letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+            .chip.wait { color: var(--wait); }
+            .row { display: grid; grid-template-columns: 7.3rem 1fr; gap: .9rem; align-items: baseline; padding: .6rem 0; border-bottom: 1px solid var(--panel-rule); }
+            .row .k { font: 500 .6875rem/1.3 var(--caps); letter-spacing: .13em; text-transform: uppercase; }
+            .row .v { text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+            .links { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .9rem; }
+            .btn { display: inline-flex; align-items: center; min-height: 2.5rem; padding: 0 .7rem; border: 1px solid currentColor; border-radius: .3rem; background: none; color: inherit; cursor: pointer;
+                font: 400 .94rem/1 var(--text); white-space: nowrap;
+                transition: background-color var(--t-hover) var(--ease-out), color var(--t-hover) var(--ease-out), transform var(--t-press) var(--ease-out); }
             .btn:active { transform: scale(.98); }
-            .btn-primary { min-height: 44px; padding: .8rem 1.2rem; font-size: .8rem; border-color: transparent; background: var(--grad); background-origin: border-box; color: var(--accent-ink); }
-            details { margin-top: .7rem; font: .7rem var(--mono); color: var(--ink-faint); }
-            summary { cursor: pointer; letter-spacing: .02em; }
-            summary::marker { color: var(--accent); }
+            details { margin-top: .9rem; font-size: .92rem; color: var(--panel-ink-2); }
+            summary { cursor: pointer; padding: .3rem 0; text-decoration: underline; text-decoration-color: var(--panel-rule); text-underline-offset: .2em; }
+            summary::marker { font-size: .7em; }
             @supports (interpolate-size: allow-keywords) {
                 :root { interpolate-size: allow-keywords; }
                 details::details-content { height: 0; overflow: clip; transition: height .25s var(--ease-out), content-visibility .25s allow-discrete; }
                 details[open]::details-content { height: auto; }
             }
-            pre { margin-top: .5rem; padding: .7rem; background: var(--bg); border: 1px solid var(--line-soft); border-radius: var(--r); white-space: pre-wrap; word-break: break-all; color: var(--ink-dim); line-height: 1.5; }
+            pre, code { font: .7rem/1.55 var(--mono); }
+            pre { margin-top: .5rem; padding: .7rem .75rem; background: var(--panel-tint); border-radius: .3rem; white-space: pre-wrap; word-break: break-all; color: var(--panel-ink); }
             code { word-break: break-all; }
-
-            /* 3 · the fruit card */
-            #fruit { margin-top: 1.6rem; }
-            .fruit-card[data-skin='devcon'] { position: relative; padding: 1.7rem 1.1rem 1.2rem; border-radius: var(--r); color: var(--devcon-ink); border: 1px solid var(--devcon-line);
-                outline: 1px solid var(--devcon-line-soft); outline-offset: -6px;
-                background: linear-gradient(160deg, var(--devcon-indigo-2), var(--devcon-indigo-1) 48%, var(--devcon-indigo-3)); }
-            .fruit-card::before, .fruit-card::after { content: ''; position: absolute; width: 14px; height: 14px; border: 0 solid var(--devcon-line); }
-            .fruit-card::before { top: -1px; left: -1px; border-top-width: 1px; border-left-width: 1px; box-shadow: inset 4px 4px 0 -3px var(--devcon-line-soft); }
-            .fruit-card::after { bottom: -1px; right: -1px; border-bottom-width: 1px; border-right-width: 1px; box-shadow: inset -4px -4px 0 -3px var(--devcon-line-soft); }
-            .fruit-card .tag { position: absolute; top: -.6rem; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: .55rem; padding: 0 .6rem; background: var(--devcon-indigo-2);
-                font: 600 .62rem var(--mono); letter-spacing: .22em; text-transform: uppercase; white-space: nowrap; color: var(--devcon-ink); }
-            .fruit-card .tag::before, .fruit-card .tag::after { content: ''; width: 5px; height: 5px; background: var(--devcon-line); transform: rotate(45deg); }
-            .fruit-card .photo { position: relative; display: block; margin: 0; aspect-ratio: 16 / 10; border-radius: var(--r); overflow: hidden; background: var(--devcon-indigo-3); border: 1px solid var(--devcon-line-soft); }
-            .fruit-card .photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
-            .fruit-card .photo::after { content: ''; position: absolute; inset: -20%; pointer-events: none; mix-blend-mode: screen;
-                background: linear-gradient(112deg, transparent 40%, var(--devcon-prism-a) 46%, var(--devcon-prism-b) 50%, var(--devcon-prism-c) 54%, transparent 60%); }
-            .fruit-name { font-size: 1.8rem; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; margin: 1rem 0 0; min-height: 2.1rem; }
-            .fruit-name.in, .grams.in, .fruit-line, .fruit-card .origin { animation: land var(--t-enter) var(--ease-out) both; }
-            .grams.in { animation-delay: .08s; }
-            .fruit-card .origin { animation-delay: .32s; }
-
-            .skel { display: inline-block; height: .7em; border-radius: 2px; background: var(--devcon-line-soft); vertical-align: middle; }
-            .skel.name { width: 7ch; height: .78em; }
-            .skel.grams { display: block; width: 18ch; height: .72em; margin: 0; position: relative; top: .2em; }
-            .skel-legend li { grid-template-columns: 1fr; padding: .36rem 0; }
-            .skel-legend .skel { width: 72%; height: .62rem; }
-            .skel-legend li:nth-child(2) .skel { width: 86%; } .skel-legend li:nth-child(3) .skel { width: 58%; } .skel-legend li:nth-child(4) .skel { width: 64%; } .skel-legend li:nth-child(5) .skel { width: 48%; }
-            #fruit-origin:empty { min-height: 1.7rem; }
-            .fruit-line { font: 1.02rem/1.5 var(--serif); color: var(--devcon-dim); margin-top: .2rem; max-width: 40ch; }
-            .grams { margin-top: 1rem; font: 500 .66rem/1.15 var(--mono); min-height: 1.15em; letter-spacing: .14em; text-transform: uppercase; color: var(--devcon-dim); }
-
-            .contains { display: grid; grid-template-columns: 112px 1fr; gap: .4rem 1.1rem; align-items: center; margin-top: .7rem; min-height: 7rem; }
-            .donut { width: 112px; height: 112px; transform: rotate(-90deg); }
-            .donut .track { fill: none; stroke: var(--devcon-line-soft); stroke-width: 10; }
-            .donut .seg { fill: none; stroke: currentColor; stroke-width: 10; color: var(--devcon-ink); transition: stroke-dasharray .55s var(--ease-out); transition-delay: calc(var(--i, 0) * 50ms); }
-            .contains:not(.drawn) .seg { stroke-dasharray: 0 276.46; }
-            .donut text { transform: rotate(90deg); transform-origin: 56px 56px; fill: var(--devcon-ink); }
-            .donut .kcal { font: 500 1.35rem var(--display); letter-spacing: -.03em; }
-            .donut .unit { font: .5rem var(--mono); letter-spacing: .12em; text-transform: uppercase; fill: var(--devcon-dim); }
-            .seg-1 { opacity: 1; } .seg-2 { opacity: .76; } .seg-3 { opacity: .56; } .seg-4 { opacity: .4; } .seg-5 { opacity: .26; } .seg-6 { opacity: .14; }
-            .legend { list-style: none; padding: 0; margin: 0; font: .78rem var(--mono); color: var(--devcon-ink); }
-            .legend li { display: grid; grid-template-columns: 8px 1fr auto; gap: .55rem; align-items: baseline; padding: .22rem 0; }
-            .contains:not(.skel-host) .legend li { animation: land var(--t-enter) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
-            .legend .sw { width: 8px; height: 8px; background: currentColor; align-self: center; }
-            .legend .sw.none { background: none; border: 1px solid var(--devcon-line); }
-            .legend .lb { color: var(--devcon-dim); }
-            .legend .lb small { display: block; font-size: .62rem; letter-spacing: .02em; color: var(--devcon-dim); opacity: .8; }
-            .legend .val { font-variant-numeric: tabular-nums; }
-            .fruit-card .origin { margin-top: .8rem; color: var(--devcon-dim); }
-            .fruit-card .photo img { transition: opacity .3s var(--ease-out), filter .3s var(--ease-out); }
-            .fruit-card .photo img.in { opacity: 1; filter: blur(0); }
-            .fruit-card .photo img:not(.in) { opacity: 0; filter: blur(6px); }
-            .fruit-card .origin summary { font-size: .68rem; letter-spacing: .04em; }
-            .fruit-card .origin summary::marker { color: var(--devcon-line); }
-            .origin-note { margin: .5rem 0 .2rem; font: .78rem/1.45 var(--display); color: var(--devcon-dim); }
-            .nutri { width: 100%; margin-top: .6rem; border-collapse: collapse; font: .76rem var(--mono); font-variant-numeric: tabular-nums; }
-            .nutri th, .nutri td { padding: .32rem 0; border-bottom: 1px solid var(--devcon-line-soft); text-align: right; font-weight: 400; }
-            .nutri th[scope='row'] { text-align: left; color: var(--devcon-dim); }
-            .nutri thead th { font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; color: var(--devcon-dim); padding-bottom: .4rem; }
-            .nutri td { color: var(--devcon-ink); padding-left: 1rem; white-space: nowrap; }
-            .nutri td:first-of-type { font-weight: 600; }
-
-            /* 4 · the path, one card per record */
-            #path { list-style: none; padding: 0; margin-top: 2.2rem; }
-            .step { position: relative; padding-left: 3.65rem; }
-
-            .step .unfold { display: grid; grid-template-rows: 0fr; overflow-x: visible; overflow-y: clip; transition: grid-template-rows .5s var(--ease-in-out); }
-            .step.open .unfold { grid-template-rows: 1fr; }
-            .step .unfold-in { position: relative; min-height: 0; padding-bottom: 1.5rem; opacity: 0; transform: translateY(6px); transition: opacity var(--t-enter) var(--ease-out) .12s, transform var(--t-enter) var(--ease-out) .12s; }
-            .step.open .unfold-in { opacity: 1; transform: none; }
+            details p { margin-top: .5rem; }
+            .skel { display: inline-block; height: .6em; border-radius: 99px; background: var(--rule-soft); vertical-align: middle; }
+            .skel.name { width: 9ch; }
             @keyframes land { from { opacity: 0; transform: translateY(6px); } }
             @keyframes appear { from { opacity: 0; } }
-
             .swap { transition: opacity var(--t-hover) var(--ease-out), filter var(--t-hover) var(--ease-out); }
             .swap.out { opacity: 0; filter: blur(2px); }
 
-            .step::before { content: ''; position: absolute; left: calc(1.375rem - 1px); top: 2.95rem; bottom: 0; width: 2px; background: color-mix(in oklab, var(--line) 70%, var(--ink-faint)); }
+            .notice { margin-top: 2rem; animation: land var(--t-enter) var(--ease-out); }
+            .notice strong { display: block; margin-bottom: .5rem; font: 500 .82rem/1.4 var(--caps); letter-spacing: .14em; text-transform: uppercase; text-wrap: balance; }
+            .notice br:first-of-type { display: none; }
+            .notice .btn { margin-top: .9rem; }
+            .notice .tried { font: .7rem var(--mono); color: var(--panel-ink-2); }
+
+            /* 2 · the back of the bag: the fruit. Its photograph sits where the QR sticker does, and what the bag holds in the
+               label panel under it, with the art of the back at both sides */
+            .fruit { position: relative; isolation: isolate; margin-top: 3.4rem; padding: 0 2.1rem; }
+            .fruit .back { position: absolute; z-index: -1; left: 50%; top: -2.4rem; bottom: -.6rem; width: calc(var(--plate) * 1.2); transform: translateX(-50%); pointer-events: none;
+                background: var(--art-back) top center / 100% auto no-repeat; opacity: 0; transition: opacity 1.1s var(--ease-out) .2s;
+                -webkit-mask-image: linear-gradient(#000 calc(100% - 4.5rem), transparent); mask-image: linear-gradient(#000 calc(100% - 4.5rem), transparent); }
+            :root[data-art~='back'] .fruit .back { opacity: 1; }
+            .photo { position: relative; aspect-ratio: 1; margin: 0 0 .85rem; padding: .44rem; border-radius: .95rem; box-shadow: inset 0 0 0 1px var(--rule); transition: background-color .7s var(--ease-out), box-shadow .7s var(--ease-out); }
+            .photo.on { background: var(--panel); box-shadow: inset 0 0 0 1px transparent; }
+            .photo img { position: relative; display: block; width: 100%; height: 100%; object-fit: cover; border-radius: .55rem; transition: opacity .7s var(--ease-out), filter .7s var(--ease-out); }
+            .photo img.in { opacity: 1; filter: none; }
+            .photo img:not(.in) { opacity: 0; filter: blur(6px); }
+            /* the place of the photograph is kept from the start: it is the last thing to arrive, and nothing moves when it does */
+            .photo .slot { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--rule); stroke-width: .6; transition: opacity .7s var(--ease-out); }
+            .photo .slot .dot { fill: var(--rule); stroke: none; }
+            .photo.on .slot { opacity: 0; }
+            .stage-cap { position: absolute; inset: auto 0 22%; display: grid; place-content: center; font: 500 .6875rem/1 var(--caps); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-2); animation: reading 1.6s ease-in-out infinite; }
+            .label { padding-top: 1.3rem; }
+            .fruit-line { margin-bottom: .8rem; }
+            .grams { min-height: .6875rem; font: 500 .6875rem/1 var(--caps); letter-spacing: .2em; text-transform: uppercase; }
+            .skel.grams { display: block; width: 14ch; height: .5rem; }
+            .facts { margin-top: .75rem; border-top: 1px solid var(--panel-rule); }
+            .facts div { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .56rem 0; border-bottom: 1px solid var(--panel-rule); }
+            .contains:not(.skel-host) .facts div { animation: land var(--t-enter) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+            .facts dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+            .skel-host .skel { width: 38%; height: .5rem; }
+            .skel-host div:nth-child(even) .skel { width: 52%; }
+            .origin-note { margin-top: .6rem; font-size: .9rem; }
+            .nutri { width: 100%; margin-top: .4rem; border-collapse: collapse; font-size: .92rem; font-variant-numeric: tabular-nums; color: var(--panel-ink); }
+            .nutri th, .nutri td { padding: .36rem 0; border-bottom: 1px solid var(--panel-rule); text-align: right; font-weight: 400; }
+            .nutri th[scope='row'] { text-align: left; }
+            .nutri thead th { padding-bottom: .5rem; font: 500 .625rem/1.3 var(--caps); letter-spacing: .1em; text-transform: uppercase; }
+            .nutri td { padding-left: .9rem; white-space: nowrap; }
+            .made { margin: 1.7rem -.16em 0 0; text-align: center; font: 500 .69rem/1 var(--caps); letter-spacing: .16em; text-transform: uppercase; }
+
+            /* 3 · the path: one line from the first record to the last, a diamond at each, and the line is drawn only where the record matched its anchor */
+            #path { list-style: none; padding: 0; margin-top: 3.2rem; }
+            .step { position: relative; padding-left: 2.2rem; }
+            .step .unfold { display: grid; grid-template-rows: 0fr; overflow-x: visible; overflow-y: clip; transition: grid-template-rows .5s var(--ease-in-out); }
+            .step.open .unfold { grid-template-rows: 1fr; }
+            .step .unfold-in { position: relative; min-height: 0; padding-bottom: 1.9rem; opacity: 0; transform: translateY(6px); transition: opacity var(--t-enter) var(--ease-out) .12s, transform var(--t-enter) var(--ease-out) .12s; }
+            .step.open .unfold-in { opacity: 1; transform: none; }
+            .step::before { content: ''; position: absolute; left: calc(.5rem - .5px); top: .95rem; bottom: -.1rem; width: 1px; background: var(--ink); transform: scaleY(0); transform-origin: top; transition: transform .7s var(--ease-in-out) .35s, background-color var(--t-way) var(--ease-out); }
+            .step.open.ok::before { transform: scaleY(1); }
+            .step.open.bad::before { transform: scaleY(1); width: 0; background: none; border-left: 1px dashed var(--bad); }
             .step:last-child::before { display: none; }
-            .step .tile { position: absolute; left: -3.65rem; top: 0; width: 2.75rem; height: 2.75rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .1rem;
-                border: 1px solid var(--line); border-radius: var(--r); background: var(--grad); background-origin: border-box; box-shadow: inset 0 0 0 1.5rem var(--panel); color: var(--ink);
-                transition: box-shadow var(--t-state) var(--ease-out), border-color var(--t-state) var(--ease-out), color var(--t-state) var(--ease-out); }
-            .step .tile b { font: 600 1.45rem/1 var(--display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-            .step .tile span { font: 700 .52rem/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; opacity: .72; }
-
-            .step .tile { color: var(--ink-dim); }
-            .step.ok .tile { border-color: transparent; box-shadow: inset 0 0 0 0 var(--panel); color: var(--accent-ink); }
-            .step.bad .tile { border-color: color-mix(in oklab, var(--bad) 45%, var(--line)); color: var(--bad); background: var(--panel); }
-            .twin-born { font: .68rem var(--mono); letter-spacing: .02em; color: var(--accent); margin: -.15rem 0 .55rem; }
-            .check { margin-top: .85rem; font: .76rem var(--mono); line-height: 1.4; transition: color var(--t-state) var(--ease-out), opacity var(--t-hover) var(--ease-out), filter var(--t-hover) var(--ease-out); }
-            .check.pending { color: var(--ink-faint); }
-            .check.ok { color: var(--grad-b); }
+            .step .tile { position: relative; display: flex; align-items: baseline; gap: .38em; height: 1rem; margin-bottom: .7rem; font: 500 .6875rem/1rem var(--caps); letter-spacing: .2em; text-transform: uppercase; }
+            .step .tile b { font-weight: 500; }
+            .step .tile::before { content: ''; position: absolute; left: calc(-1.7rem - .25rem); top: .25rem; width: .5rem; height: .5rem; border: 1px solid var(--ink); background: var(--ground); transform: rotate(45deg); transition: background-color var(--t-state) var(--ease-out) .2s, border-color var(--t-state) var(--ease-out); }
+            .step.ok .tile::before { background: var(--ink); }
+            .step.bad .tile, .step.bad .tile::before { color: var(--bad); border-color: var(--bad); }
+            .twin-born { margin-top: .35rem; color: var(--panel-ink-2); }
+            .card h2 + .row, .card .twin-born + .row, .card .chips + .row { margin-top: .75rem; border-top: 1px solid var(--panel-rule); }
+            .check { margin-top: .9rem; line-height: 1.3; transition: color var(--t-state) var(--ease-out), opacity var(--t-hover) var(--ease-out), filter var(--t-hover) var(--ease-out); }
+            .check.pending { color: var(--panel-ink-2); }
             .check.bad { color: var(--bad); }
+            :root[data-way='banana'] .card .check.bad, :root[data-way='banana'] .card .chip.wait { color: #8E2A17; }
+            @media (hover: hover) and (pointer: fine) { .btn:hover { background: currentColor; } .card .btn:hover, .notice .btn:hover { background: var(--panel-ink); color: var(--panel); } }
 
-            /* 5 · the arithmetic */
-            #co2 { margin-top: .4rem; }
-            #co2 .card, #twin .card { animation: land var(--t-enter) var(--ease-out) both; }
-            .avoid { display: grid; grid-template-columns: 136px 1fr; gap: 1.1rem; align-items: center; margin: 1.1rem 0 .2rem; }
-            .ring { width: 136px; height: 136px; }
-            .ring .bagarc, .ring .arc { fill: none; stroke-width: 6; stroke-linecap: butt; transform: rotate(-90deg); transform-origin: 60px 60px; }
-            .ring .bagarc { stroke: var(--line); }
-            .ring .arc { stroke: url(#ffd-grad); transition: stroke-dasharray .7s var(--ease-out) .25s; }
+            /* 4 · the arithmetic, set on the ground of the bag like the lines of its front */
+            #co2 { margin-top: 1.6rem; }
+            #co2 .card { background: none; box-shadow: none; padding: 0; color: var(--ink); animation: land var(--t-enter) var(--ease-out) both; }
+            #co2 h2 { margin-top: 1.1rem; text-align: center; text-wrap: balance; }
+            #co2 .lead { max-width: 21rem; margin: .7rem auto 0; text-align: center; text-wrap: balance; }
+            #co2 .chips { justify-content: center; }
+            .avoid { display: grid; grid-template-columns: 7.6rem 1fr; gap: 1.2rem; align-items: center; margin: 1.6rem 0 .2rem; }
+            .ring { width: 7.6rem; height: 7.6rem; }
+            .ring .bagarc, .ring .arc { fill: none; stroke-width: 2.5; stroke-linecap: butt; transform: rotate(-90deg); transform-origin: 60px 60px; }
+            .ring .bagarc { stroke: var(--rule); }
+            .ring .arc { stroke: var(--ink); transition: stroke-dasharray .7s var(--ease-out) .25s; }
             #co2:not(.drawn) .ring .arc { stroke-dasharray: 0 314.16; }
-            .ring .times { font: 500 1.75rem var(--display); letter-spacing: -.04em; fill: url(#ffd-grad); }
-            .avoid-lead { font-weight: 500; font-size: 1.1rem; line-height: 1.25; letter-spacing: -.015em; max-width: 20ch; text-wrap: balance; }
-            .ledger { list-style: none; padding: 0; margin: 1.1rem 0 0; border-top: 1px solid var(--line-soft); }
-            .ledger li { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: baseline; padding: .5rem 0; border-bottom: 1px solid var(--line-soft); animation: land var(--t-enter) var(--ease-out) both; animation-delay: calc(.15s + var(--i, 0) * 60ms); }
-            .ledger .amt { font: 500 1.35rem/1 var(--display); letter-spacing: -.025em; color: var(--ink); font-variant-numeric: tabular-nums; }
-            .ledger .amt small { font: .62rem var(--mono); letter-spacing: 0; margin-left: .2rem; color: var(--ink-dim); }
-            .ledger .op { padding: .3rem 0; }
-            .ledger .op b { font: 500 .8rem var(--mono); letter-spacing: .02em; color: var(--accent); }
-            .ledger .lb { font: .6rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); text-align: right; line-height: 1.35; }
-            .ledger .total { border-bottom: 0; padding-top: .7rem; }
-            .ledger .total .amt { font-size: 1.85rem; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
-            .ledger .total .amt small { -webkit-text-fill-color: var(--ink-dim); color: var(--ink-dim); }
-            .ledger .total .lb { color: var(--ink-dim); }
-            .leaf { width: 18px; height: 18px; vertical-align: -3px; margin-right: .4rem; fill: url(#ffd-grad); }
-            .leaf .rib { fill: none; stroke: var(--bg-2); stroke-width: 1.3; stroke-linecap: round; }
-            .avoid-key { list-style: none; padding: 0; margin: .55rem 0 0; font: .66rem var(--mono); letter-spacing: .03em; color: var(--ink-dim); }
-            .avoid-key li { display: flex; align-items: center; gap: .5rem; padding: .12rem 0; }
-            .avoid-key .sw { width: 8px; height: 8px; flex: none; }
-            .avoid-key .sw.bag { background: var(--line); }
-            .avoid-key .sw.green { background: var(--grad); background-origin: border-box; }
-            .closing { margin-top: .9rem; font-size: .9rem; color: var(--ink-dim); }
+            .ring .times { font: 300 1.5rem var(--caps); letter-spacing: -.01em; fill: var(--ink); }
+            .avoid-lead { font-size: 1.12rem; line-height: 1.28; max-width: 15rem; text-wrap: balance; }
+            .leaf { width: 1rem; height: 1rem; vertical-align: -.12rem; margin-right: .35rem; fill: var(--ink); }
+            .leaf .rib { fill: none; stroke: var(--ground); stroke-width: 1.3; stroke-linecap: round; }
+            .avoid-key { list-style: none; padding: 0; margin: .6rem 0 0; font-size: .9rem; color: var(--ink-2); }
+            .avoid-key li { display: flex; align-items: center; gap: .5rem; padding: .1rem 0; }
+            .avoid-key .sw { width: .5rem; height: .5rem; flex: none; transform: rotate(45deg); }
+            .avoid-key .sw.bag { border: 1px solid var(--ink-2); }
+            .avoid-key .sw.green { background: var(--ink); }
+            .ledger { list-style: none; padding: 0; margin: 1.3rem 0 0; border-top: 1px solid var(--rule); }
+            .ledger li { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: baseline; padding: .55rem 0; border-bottom: 1px solid var(--rule); animation: land var(--t-enter) var(--ease-out) both; animation-delay: calc(.15s + var(--i, 0) * 60ms); }
+            .ledger .amt { font: 300 1.5rem/1 var(--caps); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+            .ledger .amt small { margin-left: .3rem; font: 400 .9rem var(--text); letter-spacing: 0; color: var(--ink-2); }
+            .ledger .op { padding: .4rem 0; }
+            .ledger .op b { font: 400 1rem var(--text); font-variant-numeric: tabular-nums; }
+            .ledger .lb { text-align: right; font-size: .94rem; line-height: 1.25; color: var(--ink-2); }
+            .ledger .total { padding-top: .8rem; }
+            .ledger .total .amt { font-size: 2.1rem; }
+            .ledger .total .lb { color: var(--ink); }
+            #co2 details { color: var(--ink-2); }
+            #co2 summary { text-decoration-color: var(--rule); }
+            #co2 pre { background: none; padding: .2rem 0 0; color: var(--ink-2); }
+            .closing { margin-top: 1rem; color: var(--ink-2); }
 
-            /* 6 · who holds the twin */
-            #twin { margin-top: 1.6rem; }
-            .holder-line { display: flex; align-items: center; gap: .85rem; padding: .85rem 1rem; }
-            .holder-line .pic { display: block; width: 40px; height: 40px; flex: none; border: 1px solid var(--line); border-radius: var(--r); object-fit: cover; background: var(--bg); }
-            .holder-line .pic.blank { background: repeating-linear-gradient(45deg, var(--line) 0 1px, transparent 1px 6px); }
-            .holder-line .pic.jazz, .holder-line img.pic { border-radius: 50%; }
-            .holder-line .pic.jazz { border: 0; overflow: hidden; }
+            /* 5 · who holds the twin */
+            #twin { margin-top: 2.4rem; }
+            #twin .card { animation: land var(--t-enter) var(--ease-out) both; }
+            .holder-line { display: flex; align-items: center; gap: .85rem; padding: 1.05rem 1.2rem; }
+            .holder-line .pic { display: block; width: 2.5rem; height: 2.5rem; flex: none; border-radius: 50%; object-fit: cover; background: var(--panel-tint); }
+            .holder-line .pic.blank { border: 1px dashed var(--panel-ink-2); background: none; }
+            .holder-line .pic.jazz { overflow: hidden; }
             .holder-line .pic.jazz svg { display: block; }
             .holder-line .pic.arrives { opacity: 0; transition: opacity var(--t-enter) var(--ease-out); }
             .holder-line .pic.arrives.in { opacity: 1; }
-            .holder-line .who { flex: 1; min-width: 0; margin: 0; font: .95rem var(--display); color: var(--ink-dim); }
-            .holder-line .who b { font-weight: 500; color: var(--ink); }
+            .holder-line .who { flex: 1; min-width: 0; color: var(--panel-ink-2); }
+            .holder-line .who b { font-weight: 400; color: var(--panel-ink); }
             .holder-line .who .addr { font: .85rem var(--mono); }
-            .holder-line .go { font: 600 .66rem var(--mono); letter-spacing: .04em; color: var(--ink-faint); white-space: nowrap; border-bottom: 1px solid var(--line); transition: color var(--t-hover) var(--ease-out), border-color var(--t-hover) var(--ease-out); }
+            .holder-line .go { font: 500 .6875rem/1 var(--caps); letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; padding: .6rem 0; border-bottom: 1px solid var(--panel-rule); transition: border-color var(--t-hover) var(--ease-out); }
 
-            /* 7 · the footer, with the Game of Life behind it */
-            #final { margin-top: 3rem; padding: 2.6rem 0 1.8rem; border-top: 1px solid var(--line); background: color-mix(in oklab, var(--bg-2) 80%, transparent); text-align: center; }
-            .foot-in { max-width: 40rem; margin: 0 auto; padding: 0 1rem; }
+            /* 6 · the footer, in the ink of the bag, with the Game of Life behind it */
+            #final { --ink: var(--foot-ink); --ink-2: var(--foot-ink-2); --rule: var(--foot-rule); margin-top: 1rem; padding: 3.2rem 0 2rem; background: var(--foot); color: var(--ink); text-align: center; transition: background-color var(--t-way) var(--ease-out); }
+            .foot-in { max-width: 30rem; margin: 0 auto; padding: 0 1rem; }
             .life-grid { display: block; width: 100%; height: 0; pointer-events: none; }
-
+            #final .say { margin: 0 auto; max-width: 16rem; font-size: 1.09rem; line-height: 1.32; text-wrap: balance; }
+            .chain { display: flex; justify-content: center; flex-wrap: wrap; gap: .6rem; margin-top: 1.7rem; }
+            .chain .plate-link { display: inline-flex; align-items: center; gap: .6rem; min-height: 2.75rem; padding: 0 1.1rem; border: 1px solid var(--rule); border-radius: .3rem;
+                font: 500 .6875rem/1 var(--caps); letter-spacing: .18em; text-transform: uppercase; transition: color var(--t-hover) var(--ease-out), border-color var(--t-hover) var(--ease-out), transform var(--t-press) var(--ease-out); }
+            .plate-link svg { flex: none; fill: currentColor; }
+            .chain-eth svg { width: .7rem; height: 1.12rem; }
+            .chain-swarm svg { width: .94rem; height: .94rem; }
+            .plate-link:active { transform: scale(.98); }
+            .home { display: inline-flex; flex-direction: column; align-items: center; gap: .5rem; margin-top: 2rem; }
+            .home .lockup-ffd { display: block; height: 2.5rem; width: auto; }
+            .home span { font: .72rem var(--mono); letter-spacing: .02em; color: var(--ink-2); border-bottom: 1px solid var(--rule); transition: border-color var(--t-hover) var(--ease-out), color var(--t-hover) var(--ease-out); }
             .colophon { margin: 2.4rem 0 0; text-align: left; }
-            .colophon .fact { display: grid; grid-template-columns: 6.4rem minmax(0, 1fr); gap: .3rem 1rem; align-items: baseline; padding: .7rem 0; border-top: 1px solid var(--line-soft); }
-            .colophon dt { font: 600 .6rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); }
-            .colophon dd { margin: 0; min-width: 0; font: .74rem/1.55 var(--mono); letter-spacing: .01em; color: var(--ink-dim); }
+            .colophon .fact { display: grid; grid-template-columns: 7.3rem minmax(0, 1fr); gap: .3rem 1rem; align-items: baseline; padding: .8rem 0; border-top: 1px solid var(--rule); }
+            .colophon dt { font: 500 .6875rem/1.4 var(--caps); letter-spacing: .16em; text-transform: uppercase; }
+            .colophon dd { margin: 0; min-width: 0; font-size: .92rem; color: var(--ink-2); }
             .colophon code { display: block; color: var(--ink); font-variant-numeric: tabular-nums; }
             .colophon code span { display: inline-block; margin-right: .75ch; }
-            .colophon .note { display: block; margin-top: .3rem; color: var(--ink-faint); }
-            .colophon a { color: var(--ink-dim); border-bottom: 1px solid var(--line); transition: color var(--t-hover) var(--ease-out), border-color var(--t-hover) var(--ease-out); }
-            #final .say { margin: 0 auto; max-width: 30ch; font-size: .98rem; letter-spacing: -.01em; color: var(--ink-dim); text-wrap: balance; }
-
-            .chain { display: flex; justify-content: center; flex-wrap: wrap; gap: .6rem; margin-top: 1.7rem; }
-            .plate { display: inline-flex; align-items: center; gap: .6rem; min-height: 44px; padding: 0 1.05rem; border: 1px solid var(--line); border-radius: var(--r); background: color-mix(in oklab, var(--panel) 72%, transparent);
-                font: 600 .82rem var(--mono); letter-spacing: .02em; color: var(--ink); transition: color .15s var(--ease-out), border-color .15s var(--ease-out), transform .12s var(--ease-out); }
-            .plate svg { flex: none; fill: currentColor; color: var(--ink-dim); transition: color .15s var(--ease-out); }
-            .chain-eth svg { width: 11px; height: 18px; }
-            .chain-swarm svg { width: 15px; height: 15px; }
-            .plate:active { transform: scale(.98); }
-            .home { display: inline-flex; flex-direction: column; align-items: center; gap: .4rem; margin-top: 1.7rem; color: var(--accent); }
-            .home .lockup { display: block; height: 40px; width: auto; }
-            .home span { font: .72rem var(--mono); letter-spacing: .03em; border-bottom: 1px solid color-mix(in oklab, var(--accent) 40%, transparent); transition: border-color .15s var(--ease-out); }
+            .colophon .note { display: block; margin-top: .35rem; }
+            .colophon a { border-bottom: 1px solid var(--rule); transition: color var(--t-hover) var(--ease-out), border-color var(--t-hover) var(--ease-out); }
 
             @media (hover: hover) and (pointer: fine) {
-                .btn:hover { border-color: var(--accent); color: var(--accent); }
-                .btn-primary:hover { color: var(--accent-ink); filter: brightness(1.12); }
-                .chain-eth:hover, .chain-eth:hover svg { color: var(--eth); }
-                .chain-swarm:hover, .chain-swarm:hover svg { color: var(--swarm); }
-                .plate:hover { border-color: color-mix(in oklab, currentColor 55%, var(--line)); }
-                .home:hover span { border-color: var(--accent); }
-                .colophon a:hover { color: var(--accent); border-color: var(--accent); }
-                .holder-line .go:hover { color: var(--accent); border-color: var(--accent); }
+                .chain-eth:hover { color: var(--eth); border-color: currentColor; }
+                .chain-swarm:hover { color: var(--swarm); border-color: currentColor; }
+                .home:hover span, .colophon a:hover { color: var(--ink); border-color: var(--ink); }
+                .holder-line .go:hover { border-color: var(--panel-ink); }
             }
-            @media (max-width: 440px) {
-                .row { grid-template-columns: 5.6rem 1fr; gap: .6rem; }
-                .card { padding: .9rem; }
-                .step .btn { font-size: .66rem; padding: .45rem .65rem; }
-                .step .links { gap: .4rem; }
-                .contains { grid-template-columns: 96px 1fr; gap: .4rem .8rem; }
-                .donut { width: 96px; height: 96px; }
-                .avoid { grid-template-columns: 116px 1fr; gap: .9rem; }
-                .ring { width: 116px; height: 116px; }
+            @media (max-width: 22.5rem) {
+                .fruit { padding: 0 1.2rem; }
+                .row { grid-template-columns: 5.4rem 1fr; gap: .6rem; }
+                .card, .label, .notice { padding: 1.2rem 1.05rem 1rem; }
+                .avoid { grid-template-columns: 6.4rem 1fr; gap: .9rem; }
+                .ring { width: 6.4rem; height: 6.4rem; }
                 .colophon .fact { grid-template-columns: 1fr; gap: .25rem; }
             }
             @media (prefers-reduced-motion: reduce) {
                 * { animation: none !important; transition-property: color, background-color, background, border-color, opacity, filter !important; transition-duration: .15s !important; }
-                .tri .edge { transition: none; }
-                .step .unfold, .proof-fold, .trace rect { transition: none; }
-                .btn:active { transform: none; }
+                .tri .edge, .step::before, .reads li + li::after { transition: none; }
+                .reads li.busy::after { background: none; }
+                .step .unfold, .proof-fold { transition: none; }
+                .btn:active, .plate-link:active { transform: none; }
             }
-            @media (forced-colors: active) { .life-grid { display: none; } }
+            @media (forced-colors: active) {
+                .life-grid { display: none; }
+                .card, .label, .notice, .photo { border: 1px solid CanvasText; }
+                .mark, .step .tile::before { forced-color-adjust: none; }
+            }
         </style>
     </head>
     <body>
         <!-- 2 · Markup -->
-        <!-- SVG cannot read var() in stroke: the brand gradient is declared once per page with the token values -->
-        <svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><linearGradient id="ffd-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--grad-a)" /><stop offset="1" stop-color="var(--grad-b)" /></linearGradient></defs></svg>
         <!-- The nutrition table, per 100 g of the dried product, shared by every bag of that fruit. -->
         <script type="application/json" id="nutrition">
         {
@@ -369,46 +397,69 @@
         }
         </script>
         <div class="shell">
+            <!-- the lockup of the pouch, as it sits under the zipper -->
+            <header class="lockup">
+                <svg viewBox="420 80 1080 1760" aria-hidden="true"><path class="g-a" d="m420.2 976.3 539.8 319.1v-564.5-650.3z"/><path class="g-b" d="m960 80.6v650.3 564.5l539.8-319.1z"/><path class="g-c" d="m959.8 730.9-539.8 245.4 539.8 319.1 539.9-319.1z"/><path class="g-a" d="m420 1078.7 539.8 760.7v-441.8z"/><path class="g-b" d="m959.8 1397.6v441.8l540.2-760.7z"/></svg>
+                <p class="devcon">DEVCON</p>
+                <p class="city">MUMBAI 2026</p>
+            </header>
             <main>
-                <!-- 1 · the fruit card -->
-                <section class="fruit-card" id="fruit" data-skin="devcon">
-                    <span class="tag">Devcon 8 India</span>
+                <!-- 1 · the front of the bag: the proof. The crystal of the pouch, its window cut clear, and the twin inside it. -->
+                <section class="twin-plate" id="hero" aria-live="polite">
+                    <figure class="crystal">
+                        <!-- the crystal, drawn: the arch behind it, its eight facets around the window, and the window's light -->
+                        <svg class="drawn" viewBox="0 0 820 1065" aria-hidden="true">
+                            <path class="arch" d="M228 336A182 182 0 0 1 592 336Z" />
+                            <path class="stars" d="M288 232l5 8-5 8-5-8zM527 214l6 9-6 9-6-9zM556 286l4 6-4 6-4-6zM262 296l4 6-4 6-4-6z" />
+                            <g class="facets">
+                                <path class="f-1" d="M410 38 185 439H261.5L410 174.3Z" /><path class="f-2" d="M410 38 635 439H558.5L410 174.3Z" />
+                                <path class="f-2" d="M410 174.3 261.5 439H410Z" /><path class="f-3" d="M410 174.3 558.5 439H410Z" />
+                                <path class="f-4" d="M185 439 410 676V595.4L261.5 439Z" /><path class="f-5" d="M635 439 410 676V595.4L558.5 439Z" />
+                                <path class="f-5" d="M261.5 439 410 595.4V439Z" /><path class="f-4" d="M558.5 439 410 595.4V439Z" />
+                            </g>
+                            <polygon class="window" points="411.4,343 494,402 493.5,505.5 411.6,552 327,505.5 327,402" />
+                        </svg>
+                        <!-- the art of the pouch, when it has arrived -->
+                        <div class="plate"></div>
+                        <!-- the frame of the window: Ethereum draws its roof, Swarm its walls, and your device closes it below -->
+                        <svg class="tri" id="tri" viewBox="0 0 820 1065" aria-hidden="true">
+                            <path class="trk" d="M411.4 347.6 489.9 404.2 489.4 503.3 411.6 547.4 331 503.3 331 404.2Z" />
+                            <path class="edge e-eth" pathLength="1" d="M411.4 347.6 331 404.2" /><path class="edge e-eth" pathLength="1" d="M411.4 347.6 489.9 404.2" />
+                            <path class="edge e-swarm" pathLength="1" d="M331 404.2V503.3" /><path class="edge e-swarm" pathLength="1" d="M489.9 404.2 489.4 503.3" />
+                            <path class="edge e-anchor" pathLength="1" d="M331 503.3 411.6 547.4" /><path class="edge e-anchor" pathLength="1" d="M489.4 503.3 411.6 547.4" />
+                        </svg>
+                        <p class="twin"><small>Twin</small><b id="twin-id"></b></p>
+                    </figure>
+                    <h1 class="fruit-name" id="fruit-name"><span class="skel name"></span></h1>
+                    <!-- three reads, set where the pouch says scan, trace, taste, in the order they happen: your device asks Ethereum, then Swarm -->
+                    <ol class="reads" id="load">
+                        <li id="step-3" class="l-scan"><i class="mark"></i><span class="k">Your device</span><span class="v">waiting</span></li>
+                        <li id="step-1" class="l-eth busy"><i class="mark"></i><span class="k">Ethereum</span><span class="v">reading…</span></li>
+                        <li id="step-2" class="l-swarm"><i class="mark"></i><span class="k">Swarm</span><span class="v">waiting</span></li>
+                    </ol>
+                    <div class="proof-fold" id="proof-fold"><div class="proof-clip">
+                        <div class="orn" aria-hidden="true"><i></i></div>
+                        <p class="proof" id="proof">Your device just checked this bag with Ethereum and Swarm.</p>
+                        <p class="stored-slot"><span class="stored" id="alive" hidden>Stored until <b id="alive-until"></b></span></p>
+                    </div></div>
+                </section>
+                <!-- 2 · the back of the bag: the fruit -->
+                <section class="fruit" id="fruit">
+                    <div class="back" aria-hidden="true"></div>
                     <figure class="photo" id="stage">
+                        <svg class="slot" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 37 61.3 43.5V56.5L50 63 38.7 56.5V43.5Z" /><path class="dot" d="M50 46.5 52.5 50 50 53.5 47.5 50Z" /></svg>
                         <img id="fruit-photo" alt="" hidden />
                         <figcaption class="stage-cap" id="stage-cap">Reading the bag…</figcaption>
                     </figure>
-                    <h1 class="fruit-name" id="fruit-name"><span class="skel name"></span></h1>
-                    <div id="fruit-lines"></div>
-                    <p class="grams" id="fruit-grams"><span class="skel grams"></span></p>
-                    <div class="contains skel-host" id="fruit-contains">
-                        <svg class="donut" viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="44"/></svg>
-                        <ul class="legend skel-legend" aria-hidden="true"><li><span class="skel"></span></li><li><span class="skel"></span></li><li><span class="skel"></span></li><li><span class="skel"></span></li></ul>
+                    <div class="label">
+                        <div id="fruit-lines"></div>
+                        <p class="grams" id="fruit-grams"><span class="skel grams"></span></p>
+                        <div class="contains skel-host" id="fruit-contains">
+                            <dl class="facts" aria-hidden="true"><div><span class="skel"></span></div><div><span class="skel"></span></div><div><span class="skel"></span></div><div><span class="skel"></span></div></dl>
+                        </div>
+                        <div id="fruit-origin"></div>
                     </div>
-                    <div id="fruit-origin"></div>
-                </section>
-                <!-- 2 · the twin's plate: the proof. -->
-                <section class="twin-plate" id="hero" aria-live="polite">
-                    <h2 class="twin-title">Twin <span class="ac" id="twin-id"></span></h2>
-                    <p class="stored-slot"><span class="stored" id="alive" hidden>Stored until <b id="alive-until"></b></span></p>
-                    <div class="reads-stage">
-                        <!-- the triangle: your scan on top, Ethereum and Swarm below, each vertex a tile with its glyph and its read beside it. -->
-                    <svg class="tri" id="tri" viewBox="0 0 112 100" aria-hidden="true">
-                        <defs><linearGradient id="tri-grad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="112" y2="100"><stop offset="0" stop-color="var(--grad-a)" /><stop offset="1" stop-color="var(--grad-b)" /></linearGradient></defs>
-                        <path class="trk" d="M56 14 L14 86" /><path class="trk" d="M56 14 L98 86" /><path class="trk" d="M14 86 L98 86" />
-                        <path class="edge e-eth" d="M56 14 L14 86" /><path class="edge e-swarm" d="M56 14 L98 86" /><path class="edge e-anchor" d="M14 86 L98 86" />
-                        <g class="vx v-scan"><rect class="t grad" x="47" y="5" width="18" height="18" /><rect class="t cover" x="47" y="5" width="18" height="18" /><svg class="gl" x="50.5" y="8.5" width="11" height="11" viewBox="0 0 12 12"><path fill-rule="evenodd" d="M0 0h12v12H0zM1.8 1.8v8.4h8.4V1.8z"/><rect x="3.6" y="3.6" width="4.8" height="4.8"/></svg></g>
-                        <g class="vx v-eth"><rect class="t grad" x="5" y="77" width="18" height="18" /><rect class="t cover" x="5" y="77" width="18" height="18" /><svg class="gl" x="8.5" y="80.5" width="11" height="11" viewBox="420 80 1080 1760"><path d="m959.8 730.9-539.8 245.4 539.8 319.1 539.9-319.1z" opacity=".6"/><path d="m420.2 976.3 539.8 319.1v-564.5-650.3z" opacity=".45"/><path d="m960 80.6v650.3 564.5l539.8-319.1z" opacity=".8"/><path d="m420 1078.7 539.8 760.7v-441.8z" opacity=".45"/><path d="m959.8 1397.6v441.8l540.2-760.7z" opacity=".8"/></svg></g>
-                        <g class="vx v-swarm"><rect class="t grad" x="89" y="77" width="18" height="18" /><rect class="t cover" x="89" y="77" width="18" height="18" /><svg class="gl" x="92.5" y="80.5" width="11" height="11" viewBox="0 0 1115 1115"><polygon points="0 665.01 0 965 260 1115 520 964.99 520 664.96 260 515 0 665.01"/><polygon points="855 515 595 665 595 964.99 855 1115 1115 964.99 1115 664.95 855 515"/><polygon points="817.32 300.27 687.41 225.02 687.28 75.04 557.5 0 297.68 150.01 297.68 450 557.5 600 817.32 450 817.32 300.27"/><polygon points="817.32 300.27 947.23 224.97 947.23 75 817.52 0 687.28 75.04 817.52 149.87 817.32 300.27"/></svg></g>
-                    </svg>
-                        <!-- three reads, three vertices -->
-                        <ol class="reads" id="load">
-                            <li id="step-1" class="l-eth busy"><span class="k">Ethereum</span><span class="v">reading…</span></li>
-                            <li id="step-2" class="l-swarm"><span class="k">Swarm</span><span class="v">waiting</span></li>
-                            <li id="step-3" class="l-scan"><span class="k">Local</span><span class="v">waiting</span></li>
-                        </ol>
-                    </div>
-                    <div class="proof-fold" id="proof-fold"><div class="proof-clip"><p class="proof" id="proof">Your device just checked this bag with Ethereum and Swarm.</p></div></div>
-                    <svg class="trace" aria-hidden="true"><defs><linearGradient id="plate-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--grad-a)" /><stop offset="1" stop-color="var(--grad-b)" /></linearGradient></defs><rect pathLength="1" width="100%" height="100%" /></svg>
+                    <p class="made">Made of fruit. Nothing else.</p>
                 </section>
                 <noscript><p class="notice">This page needs JavaScript: your device, not a server, reads Ethereum and Swarm.</p></noscript>
                 <div class="notice" id="notice" hidden></div>
@@ -422,10 +473,10 @@
                 <div class="foot-in">
                     <p class="say">Anchored on Ethereum. Stored on Swarm. Living on public rails.</p>
                     <div class="chain">
-                        <a class="plate chain-eth" id="eth-link" href="https://ethereum.org" target="_blank" rel="noopener"><svg viewBox="420 80 1080 1760" aria-hidden="true"><path d="m959.8 730.9-539.8 245.4 539.8 319.1 539.9-319.1z" opacity=".6"/><path d="m420.2 976.3 539.8 319.1v-564.5-650.3z" opacity=".45"/><path d="m960 80.6v650.3 564.5l539.8-319.1z" opacity=".8"/><path d="m420 1078.7 539.8 760.7v-441.8z" opacity=".45"/><path d="m959.8 1397.6v441.8l540.2-760.7z" opacity=".8"/></svg>Ethereum</a>
-                        <a class="plate chain-swarm" id="swarm-link" href="https://www.ethswarm.org" target="_blank" rel="noopener"><svg viewBox="0 0 1115 1115" aria-hidden="true"><polygon points="0 665.01 0 965 260 1115 520 964.99 520 664.96 260 515 0 665.01"/><polygon points="855 515 595 665 595 964.99 855 1115 1115 964.99 1115 664.95 855 515"/><polygon points="817.32 300.27 687.41 225.02 687.28 75.04 557.5 0 297.68 150.01 297.68 450 557.5 600 817.32 450 817.32 300.27"/><polygon points="817.32 300.27 947.23 224.97 947.23 75 817.52 0 687.28 75.04 817.52 149.87 817.32 300.27"/></svg>Swarm</a>
+                        <a class="plate-link chain-eth" id="eth-link" href="https://ethereum.org" target="_blank" rel="noopener"><svg viewBox="420 80 1080 1760" aria-hidden="true"><path d="m959.8 730.9-539.8 245.4 539.8 319.1 539.9-319.1z" opacity=".6"/><path d="m420.2 976.3 539.8 319.1v-564.5-650.3z" opacity=".45"/><path d="m960 80.6v650.3 564.5l539.8-319.1z" opacity=".8"/><path d="m420 1078.7 539.8 760.7v-441.8z" opacity=".45"/><path d="m959.8 1397.6v441.8l540.2-760.7z" opacity=".8"/></svg>Ethereum</a>
+                        <a class="plate-link chain-swarm" id="swarm-link" href="https://www.ethswarm.org" target="_blank" rel="noopener"><svg viewBox="0 0 1115 1115" aria-hidden="true"><polygon points="0 665.01 0 965 260 1115 520 964.99 520 664.96 260 515 0 665.01"/><polygon points="855 515 595 665 595 964.99 855 1115 1115 964.99 1115 664.95 855 515"/><polygon points="817.32 300.27 687.41 225.02 687.28 75.04 557.5 0 297.68 150.01 297.68 450 557.5 600 817.32 450 817.32 300.27"/><polygon points="817.32 300.27 947.23 224.97 947.23 75 817.52 0 687.28 75.04 817.52 149.87 817.32 300.27"/></svg>Swarm</a>
                     </div>
-                    <a class="home" id="ens-link" href="https://fairfooddata.eth.limo" target="_blank" rel="noopener"><img class="lockup" src="./brand/ffd-lockup-dark.svg" width="255" height="64" alt="Fair Food Data" /><span>fairfooddata.eth.limo</span></a>
+                    <a class="home" id="ens-link" href="https://fairfooddata.eth.limo" target="_blank" rel="noopener"><img class="lockup-ffd" src="./brand/ffd-lockup-dark.svg" width="255" height="64" alt="Fair Food Data" /><span>fairfooddata.eth.limo</span></a>
                     <!-- the colophon: the small print as rows, key and value. -->
                     <dl class="colophon">
                         <div class="fact" id="fingerprint" hidden><dt>Fingerprint</dt><dd><code id="fp-hash"></code><span class="note">Computed by your device from the file it received. The same number is published, with the source, at <a id="fp-source" target="_blank" rel="noopener"></a>.</span></dd></div>
@@ -434,11 +485,13 @@
                 </div>
         </footer>
         <script type="module" src="./devcon8.ts"></script>
-        <!-- 6 · Fonts: Host Grotesk for the words, Spline Sans Mono for the data, Spectral for the one editorial line -->
+        <!-- 6 · Fonts: Montserrat for the capitals and Fira Sans Condensed for the sentences, as on the pouch; Spline Sans Mono for hashes and raw records -->
         <style>
-            @font-face { font-family: 'Host Grotesk'; src: url('./fonts/host-grotesk-var.woff2') format('woff2-variations'); font-weight: 100 900; font-display: swap; }
+            @font-face { font-family: 'Montserrat'; src: url('./fonts/montserrat-300.woff2') format('woff2'); font-weight: 300; font-display: swap; }
+            @font-face { font-family: 'Montserrat'; src: url('./fonts/montserrat-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+            @font-face { font-family: 'Montserrat'; src: url('./fonts/montserrat-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+            @font-face { font-family: 'Fira Sans Condensed'; src: url('./fonts/fira-sans-condensed-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
             @font-face { font-family: 'Spline Sans Mono'; src: url('./fonts/spline-sans-mono-var.woff2') format('woff2-variations'); font-weight: 300 700; font-display: swap; }
-            @font-face { font-family: 'Spectral'; src: url('./fonts/spectral-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
         </style>
     </body>
 </html>
