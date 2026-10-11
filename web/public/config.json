@@ -5,7 +5,7 @@
     "custody": "0x607658fddA3c05068237F6151aEf3C9f8aD8c184",
     "gateways": [
         "https://bzz.limo",
-        "https://gateway.ethswarm.org"
+        "https://api.gateway.ethswarm.org"
     ],
     "storage": {
         "until": "2027-01-27"

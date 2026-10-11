@@ -18,10 +18,37 @@ export function hex(ref: unknown) {
     return (ref.startsWith('0x') ? ref : `0x${ref}`).toLowerCase() as Hex
 }
 
+// A record is small. The page waits this long for a gateway and takes this much from it, and no more: one that is slow
+// or serves something else is left for the next.
+const WAIT = 12_000
+const MOST = 1024 * 1024
+
 export async function download(gateway: string, ref: Hex) {
-    const response = await fetch(`${gateway}/bytes/${ref.slice(2)}`)
+    const response = await fetch(`${gateway}/bytes/${ref.slice(2)}`, { signal: AbortSignal.timeout(WAIT) })
     if (!response.ok) throw Error(`download failed: ${response.status}`)
-    return new Uint8Array(await response.arrayBuffer())
+    const large = () => Error(`download failed: more than ${MOST} bytes`)
+    if (Number(response.headers.get('content-length')) > MOST) throw large()
+    // the length a gateway declares is its word: the bytes are counted as they come
+    const reader = response.body?.getReader()
+    const parts: Uint8Array[] = []
+    let size = 0
+    while (reader) {
+        const { done, value } = await reader.read()
+        if (done) break
+        size += value.length
+        if (size > MOST) {
+            void reader.cancel()
+            throw large()
+        }
+        parts.push(value)
+    }
+    const bytes = new Uint8Array(size)
+    let offset = 0
+    for (const part of parts) {
+        bytes.set(part, offset)
+        offset += part.length
+    }
+    return bytes
 }
 
 // The Swarm reference of a file, computed the way Swarm computes it, so the page can check the bytes it downloaded against the reference the anchor names.

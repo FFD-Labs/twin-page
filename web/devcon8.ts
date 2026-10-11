@@ -808,18 +808,26 @@ async function check(config: Page) {
         const cards = new Map<Hex, HTMLElement>()
         const queue: Hex[] = [run]
         const seen = new Set<Hex>()
+        // What a gateway serves is hashed as it lands, and the first bytes that give the reference are the record. A gateway
+        // that serves other bytes is passed over like one that does not answer. `bytes` is null when gateways answered and
+        // none of them had the record; when none answered at all, that is the network, and it is thrown.
         const fetchBytes = async (ref: Hex) => {
             let last: unknown
+            let other: string | null = null
             for (const gateway of gateways) {
                 tried.add(gateway)
                 try {
                     const bytes = await download(gateway, ref)
-                    served = gateway
-                    return { bytes, gateway }
+                    if (swarmHash(bytes) === ref) {
+                        served = gateway
+                        return { bytes, gateway }
+                    }
+                    other ??= gateway
                 } catch (error) {
                     last = error
                 }
             }
+            if (other) return { bytes: null, gateway: other }
             throw last instanceof Error ? last : Error('no gateway answered')
         }
         while (queue.length) {
@@ -829,8 +837,8 @@ async function check(config: Page) {
             const { bytes, gateway } = await fetchBytes(ref)
             const [anchored, block] = await reader.anchoredAt(ref)
             const at = anchored ? new Date(Number(anchored) * 1000).toISOString() : null
-            const verified = at !== null && swarmHash(bytes) === ref
-            const data = verified ? (JSON.parse(new TextDecoder().decode(bytes)) as Record | null) : null
+            const data = at !== null && bytes ? (JSON.parse(new TextDecoder().decode(bytes)) as Record | null) : null
+            const verified = at !== null && bytes !== null
             if (verified && !data) throw Error(`record ${ref} is empty`)
             const event: Event = { ref, at, block, data, gateway, verified, tx: null }
             events.push(event)
