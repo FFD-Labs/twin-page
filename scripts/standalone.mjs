@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import { resolve } from 'node:path'
 import { build } from 'vite'
+import { inspect } from './inspect.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const release = process.argv.includes('--release') ? process.argv[process.argv.indexOf('--release') + 1] : null
@@ -99,14 +100,16 @@ if (/<script type="module" src=/.test(html)) throw Error('the script tag was not
 const sha256 = (script) => `'sha256-${createHash('sha256').update(script).digest('base64')}'`
 const policy = `script-src ${sha256(scripts.library)} ${sha256(scripts.page)}; object-src 'none'; base-uri 'none'`
 html = html.replace(/([ \t]*)<meta charset="utf-8" \/>\n/, (charset, indent) => `${charset}${indent}<meta http-equiv="Content-Security-Policy" content="${policy}" />\n`)
-if (!html.includes(`content="${policy}"`)) throw Error('the policy was not placed')
 // What was hashed must be what a browser will hash. It reads the text between the tags after turning every carriage return
 // into a line feed and every NUL into a replacement character, and it would stop a script that does not match its hash.
-for (const [, attributes, script] of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)) {
-    if (attributes.includes('type="application/json"')) continue // data, read by the page and never run
-    if (/[\r\0]/.test(script)) throw Error('a script has a carriage return or a NUL: its hash would not be the one a browser computes')
-    if (!policy.includes(sha256(script))) throw Error('the file has a script the policy does not name')
-}
+for (const script of Object.values(scripts)) if (/[\r\0]/.test(script)) throw Error('a script has a carriage return or a NUL: its hash would not be the one a browser computes')
+// And the policy must be where a browser finds it. That its words are in the file says nothing: inside a comment they are
+// text, and the file would run whatever was written into it. The file is parsed as a browser parses it, and it must have
+// this policy in its head, before any script, with the two scripts it names and nothing else that runs (scripts/inspect.mjs).
+if (inspect(html).policy !== policy) throw Error('the policy in the head is not the one that was written')
+// A browser looks for the encoding in the first 1024 bytes. Past them it takes the server's word, or guesses, and a file
+// read in another encoding is another text: the page's script would not match its hash, and would not run.
+if (Buffer.from(html).indexOf('<meta charset="utf-8" />') + '<meta charset="utf-8" />'.length > 1024 || !html.includes('<meta charset="utf-8" />')) throw Error('the encoding is not declared in the first 1024 bytes')
 
 mkdirSync(resolve(root, 'dist'), { recursive: true })
 const name = 'devcon8.html'

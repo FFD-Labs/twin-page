@@ -1,32 +1,32 @@
 <!doctype html>
-<!--
-    The page a bag opens. Scan the QR code on a bag of freeze-dried fruit and this page reads the bag's records, anchored
-    on Ethereum and stored on Swarm, and checks them on your own device: every record is hashed again and compared with
-    the reference its anchor names. One file, nothing else to load. Source, releases and fingerprints:
-    https://github.com/FFD-Labs/twin-page
-
-    How this file is laid out, top to bottom:
-      1 · Styles      the page's own CSS, in the order of the blocks on screen
-      2 · Markup      the fruit card, the twin's plate, the path, the arithmetic, the holder, the footer
-      3 · Config      the addresses the page reads from, as JSON (added by the build)
-      4 · Library     viem, bundled and minified from npm, unchanged: what the page takes from it is the list in
-                      src/rails.ts (added by the build)
-      5 · Script      the page's own code, as written in src/lib.ts, web/life-grid.ts and web/devcon8.ts, types removed
-      6 · Fonts       the three typefaces, inlined so the file is one
-
-    The file runs two scripts, 4 and 5, and no other: the Content-Security-Policy in the head names each by its SHA-256
-    (added by the build), so nothing written into the page afterwards can run as script.
-
-    What the page talks to, and nothing else:
-      Ethereum        a public RPC, read only: the bag's record, the anchors, who holds the twin, ENS names (config: rpc)
-      Swarm           public gateways, read only: the records themselves (config: gateways)
-      the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
-      this file       itself, once more, to show its fingerprint in the footer
-    Nothing is sent anywhere. No cookies, no storage, no server of ours.
--->
 <html lang="en" data-mode="dark">
     <head>
         <meta charset="utf-8" />
+        <!--
+            The page a bag opens. Scan the QR code on a bag of freeze-dried fruit and this page reads the bag's records, anchored
+            on Ethereum and stored on Swarm, and checks them on your own device: every record is hashed again and compared with
+            the reference its anchor names. One file, nothing else to load. Source, releases and fingerprints:
+            https://github.com/FFD-Labs/twin-page
+
+            How this file is laid out, top to bottom:
+              1 · Styles      the page's own CSS, in the order of the blocks on screen
+              2 · Markup      the fruit card, the twin's plate, the path, the arithmetic, the holder, the footer
+              3 · Config      the addresses the page reads from, as JSON (added by the build)
+              4 · Library     viem, bundled and minified from npm, unchanged: what the page takes from it is the list in
+                              src/rails.ts (added by the build)
+              5 · Script      the page's own code, as written in src/lib.ts, web/life-grid.ts and web/devcon8.ts, types removed
+              6 · Fonts       the three typefaces, inlined so the file is one
+
+            The file runs two scripts, 4 and 5, and no other: the Content-Security-Policy in the head names each by its SHA-256
+            (added by the build), so nothing written into the page afterwards can run as script.
+
+            What the page talks to, and nothing else:
+              Ethereum        a public RPC, read only: the bag's record, the anchors, who holds the twin, ENS names (config: rpc)
+              Swarm           public gateways, read only: the records themselves (config: gateways)
+              the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
+              this file       itself, once more, to show its fingerprint in the footer
+            Nothing is sent anywhere. No cookies, no storage, no server of ours.
+        -->
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#0b0e14" />
         <meta name="robots" content="noindex" />
