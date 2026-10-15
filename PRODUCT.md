@@ -43,7 +43,7 @@ No server of Fair Food Data sits between the visitor and the records. The page i
 
 - The page looks like the pouch that opened it and takes the colourway of the scanned bag (tonytony32). The reference is the jackfruit pouch, front and back.
 - The pouch's typefaces: Montserrat for the capitals, Fira Sans Condensed for sentences (packaging README).
-- The page shows a photograph of the fresh fruit, from Unsplash, one per fruit (tonytony32). The fruit rendered inside the hexagon of the crystal on the pouch is not used: the hexagon is free on the page (tonytony32).
+- The page shows a photograph of the fresh fruit, one per fruit (tonytony32): the pineapples at their plantation in Assam, given by the grower; the bananas and the jackfruit from Unsplash. The fruit rendered inside the hexagon of the crystal on the pouch is not used: the hexagon is free on the page (tonytony32).
 - The Fair Food Data mark and lockup identify the company, not the code (README).
 - Plain, declarative English, as in the README and the page today.
 
