@@ -180,4 +180,4 @@ Apache 2.0, see `LICENSE`. The code is yours to use, copy and change, with the n
 
 The name Fair Food Data, its mark and the lockups in `web/public/brand/` are not covered by the license: they identify us, not the code. A copy of the page for another twin takes the code and leaves the mark.
 
-What comes from others keeps its own license: viem (MIT), and the three typefaces, Montserrat, Fira Sans Condensed and Spline Sans Mono (SIL Open Font License 1.1). The photographs of the fruits are from Unsplash, under its license: the pineapple by Vino Li, the bananas by Clemens Posch, the jackfruit by Antonio Castellano.
+What comes from others keeps its own license: viem (MIT), and the three typefaces, Montserrat, Fira Sans Condensed and Spline Sans Mono (SIL Open Font License 1.1). The photographs of the fruits are from Unsplash, under its license: the pineapple by Vino Li, the bananas by Giorgio Trovato, the jackfruit by Antonio Castellano.
