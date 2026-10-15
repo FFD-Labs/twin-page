@@ -51,7 +51,8 @@ No server of Fair Food Data sits between the visitor and the records. The page i
 
 - Real: the reads and the check, working today against test records on a Sepolia contract (bags 1 to 20).
 - Real: the pouch artwork for three fruits, flat, 3392 × 5056 px, front and back, with its print specification.
-- Placeholder: the nutrition figures, the CO₂ factor and reference scenario, the fruit photos. Nothing may be presented as final until it is. (README)
+- Real: the nutrition figures, from the producer of the freeze-dried fruit, per 5 g as ranges (15 October 2026).
+- Placeholder: the CO₂ factor and reference scenario. Nothing may be presented as final until it is. (README)
 
 ## Product Principles
 
