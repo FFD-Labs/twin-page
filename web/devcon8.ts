@@ -62,7 +62,9 @@ type Nutrition = {
     micro: [string, number, string][]
     source: string | null
 }
-type Description = { fruit: string | null; name: string | null; nutrition: Nutrition | null; alt: string | null; credit: string | null }
+// The two dates of the pouch's label, as the description gives them: `manufactured` and `expires`, a month (`2026-09`) or
+// a day (`2026-09-24`), and null when the description leaves one out or writes it another way.
+type Description = { fruit: string | null; name: string | null; nutrition: Nutrition | null; alt: string | null; credit: string | null; manufactured: string | null; expires: string | null }
 
 // The arithmetic of block 5.
 type Co2 = {
@@ -478,6 +480,9 @@ const MICRO_MOST = 12
 const line = (value: unknown) => (typeof value === 'string' && value.trim() !== '' && value.length <= LINE_MOST ? value : null)
 // an amount per 100 g: a number from 0
 const amount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
+// a date of the label: a month, 2026-09, or a day, 2026-09-24, and nothing else
+const DATE = /^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/
+const labelDate = (value: unknown) => (typeof value === 'string' && DATE.test(value) ? value : null)
 
 // What a description says, when the page can show it. Like a record, it is found out here, once, before anything is
 // painted from it: the table is there only when its six figures are numbers, and a name, a text or a credit only when
@@ -494,7 +499,7 @@ export function readDescription(bytes: Uint8Array): Description | null {
         const rest = { energy_kj: more(n.energy_kj), saturated_fat_g: more(n.saturated_fat_g), salt_g: more(n.salt_g), micro, source: line(n.source) }
         const nutrition = figures.every(amount) ? { energy_kcal: energy_kcal!, carbohydrate_g: carbohydrate_g!, sugars_g: sugars_g!, protein_g: protein_g!, fat_g: fat_g!, fibre_g: fibre_g!, ...rest } : null
         const photo = (typeof value.photo === 'object' && value.photo !== null ? value.photo : {}) as { [key: string]: unknown }
-        return { fruit: line(value.fruit), name: line(value.name), nutrition, alt: line(photo.alt), credit: line(photo.credit) }
+        return { fruit: line(value.fruit), name: line(value.name), nutrition, alt: line(photo.alt), credit: line(photo.credit), manufactured: labelDate(value.manufactured), expires: labelDate(value.expires) }
     } catch {
         return null
     }
@@ -519,8 +524,13 @@ const g = (value: number) => `${Number(value.toFixed(1))} g`
 // and the two blocks that compute with them, the fruit card and the arithmetic, are not painted from it.
 const bagGrams = (packing?: Record | null) => (typeof packing?.bag_g === 'number' && Number.isFinite(packing.bag_g) && packing.bag_g > 0 ? packing.bag_g : null)
 
+// A date of the label as the pouch prints it, SEP/2026: the month and the year, whether the description gives a day or not.
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+const printed = (value: string) => `${MONTHS[Number(value.slice(5, 7)) - 1]}/${value.slice(0, 4)}`
+
 // What the bag holds, as the rows of its label: the energy, then sugars, protein, fat and fibre, scaled to the grams of the bag.
-function holds(n: Nutrition, grams: number) {
+// Under the full table go the two dates of the pouch, when the description gives them.
+function holds(n: Nutrition, grams: number, dates: Pick<Description, 'manufactured' | 'expires'> = { manufactured: null, expires: null }) {
     const scale = grams / 100
     const shown: (readonly [string, string])[] = [
         ['Energy', `${Math.round(n.energy_kcal * scale)} kcal`],
@@ -550,10 +560,13 @@ function holds(n: Nutrition, grams: number) {
     ] as (readonly [string, number, string, number?])[])
         .map(([label, per100, unit, least]) => `<tr><th scope="row">${esc(label)}</th><td>${fmt(per100 * scale, unit, least)}</td><td>${fmt(per100, unit, least)}</td></tr>`)
         .join('')
+    // the dates as the pouch prints them, in its words: Mfg. date and Expiry date
+    const label = [dates.manufactured && `Mfg. date ${printed(dates.manufactured)}`, dates.expires && `Expiry date ${printed(dates.expires)}`].filter(Boolean)
     return [
         `<dl class="facts">${facts}</dl>`,
         `<details class="origin"><summary>Full table and sources</summary>
             <table class="nutri"><thead><tr><th></th><th scope="col">this bag · ${grams} g</th><th scope="col">per 100 g</th></tr></thead><tbody>${table}</tbody></table>
+            ${label.length ? `<p class="origin-dates">${label.join(' · ')}</p>` : ''}
             <p class="origin-note">Figures for 100 g of the dried fruit, as published, scaled to the ${grams} g of this bag.${n.source ? ` Source: ${esc(n.source)}.` : ''}</p>
         </details>`
     ] as const
@@ -613,7 +626,7 @@ export function revealFruit(events: Event[], said?: Description | null) {
     }
     // the rows of the label keep their place until the description says what goes in them
     if (awaited || !described?.nutrition) return
-    const [contains, origin] = holds(described.nutrition, grams)
+    const [contains, origin] = holds(described.nutrition, grams, described)
     if (fruitState.table === contains + origin) return
     fruitState.table = contains + origin
     $('fruit-contains').hidden = false
