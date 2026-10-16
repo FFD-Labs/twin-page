@@ -3,6 +3,8 @@
   "standards": { "gs1_voc": "1.16" },
   "fruit": "banana",
   "name": "Banana",
+  "manufactured": "2026-09",
+  "expires": "2028-08",
   "nutrition": {
     "basis": "per 100 g of freeze-dried fruit, from the producer's figures for a 5 g serving",
     "energy_kj": 1548,

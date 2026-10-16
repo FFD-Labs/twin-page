@@ -3,6 +3,8 @@
   "standards": { "gs1_voc": "1.16" },
   "fruit": "pineapple",
   "name": "Pineapple",
+  "manufactured": "2026-10",
+  "expires": "2028-09",
   "nutrition": {
     "basis": "per 100 g of freeze-dried fruit, from the producer's figures for a 5 g serving",
     "energy_kj": 1569,

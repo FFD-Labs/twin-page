@@ -116,9 +116,11 @@ test('a description gives its name, its table and the text and the credit of its
         name: 'Mango',
         nutrition: { energy_kcal: 340, carbohydrate_g: 82, sugars_g: 72, protein_g: 3, fat_g: 1.5, fibre_g: 9, ...unsaid, micro: [['Vitamin C', 180, 'mg']], source: 'a public table' },
         alt: 'A mango, cut',
-        credit: 'A photographer'
+        credit: 'A photographer',
+        manufactured: null,
+        expires: null
     })
-    assert.deepEqual(described, { fruit: 'mango', name: 'Mango', nutrition: { ...mango.nutrition, ...unsaid, micro: [], source: null }, alt: null, credit: null })
+    assert.deepEqual(described, { fruit: 'mango', name: 'Mango', nutrition: { ...mango.nutrition, ...unsaid, micro: [], source: null }, alt: null, credit: null, manufactured: null, expires: null })
 })
 
 for (const [what, file] of [
@@ -149,7 +151,7 @@ for (const [what, nutrition] of [
 
 test('what a description says that is not a line of text is left out, one thing at a time', () => {
     const odd = { ...mango, name: ['Mango'], fruit: 7, nutrition: { ...mango.nutrition, micro: [['Vitamin C', '180', 'mg'], ['Potassium', 1490, 'mg'], 'iron'], source: { url: 'x' } }, photo: { alt: 'x'.repeat(301), credit: '  ' } }
-    assert.deepEqual(readDescription(bytes(odd)), { fruit: null, name: null, nutrition: { ...mango.nutrition, ...unsaid, micro: [['Potassium', 1490, 'mg']], source: null }, alt: null, credit: null })
+    assert.deepEqual(readDescription(bytes(odd)), { fruit: null, name: null, nutrition: { ...mango.nutrition, ...unsaid, micro: [['Potassium', 1490, 'mg']], source: null }, alt: null, credit: null, manufactured: null, expires: null })
 })
 
 test('a description whose values are HTML paints text, in the name, the table and its note', () => {
@@ -232,4 +234,30 @@ test('a description with the energy in kJ, the saturates and the salt: the full 
 test('a description that leaves them unsaid, or gives them as text: the table has the six figures and no more', () => {
     for (const more of [{}, { energy_kj: '1534', saturated_fat_g: null, salt_g: -1 }])
         assert.deepEqual(tableOf({ ...mango.nutrition, ...more }).map(([label]) => label), ['Energy', 'Fat', 'Carbohydrate', 'of which sugars', 'Fibre', 'Protein'])
+})
+
+// ---------- the dates of the pouch ----------
+test('the two dates of the pouch are read as a month or a day, and anything else is left out', () => {
+    const dated = readDescription(bytes({ ...mango, manufactured: '2026-09', expires: '2028-08-31' }))
+    assert.equal(dated.manufactured, '2026-09')
+    assert.equal(dated.expires, '2028-08-31')
+    const odd = readDescription(bytes({ ...mango, manufactured: 'SEP/2026', expires: 20280831 }))
+    assert.equal(odd.manufactured, null)
+    assert.equal(odd.expires, null)
+    assert.equal(readDescription(bytes({ ...mango, manufactured: '2026-13' })).manufactured, null)
+})
+
+test('the dates go under the full table as the pouch prints them, and the line is not there without them', () => {
+    const packed = packing({ bag_g: 7 })
+    placeCard(document.getElementById('path'), [packed], packed, 'https://explorer.example')
+    revealFruit([packed], readDescription(bytes({ ...mango, manufactured: '2026-09', expires: '2028-08' })))
+    assert.equal($('fruit-origin').querySelector('.origin-dates').textContent, 'Mfg. date SEP/2026 · Expiry date AUG/2028')
+    assert.ok($('fruit-origin').querySelector('.origin-dates').compareDocumentPosition($('fruit-origin').querySelector('.origin-note')) & 4) // DOCUMENT_POSITION_FOLLOWING: the note comes after the dates
+    clean(document)
+    revealFruit([packed], readDescription(bytes({ ...mango, expires: '2028-08-31' })))
+    assert.equal($('fruit-origin').querySelector('.origin-dates').textContent, 'Expiry date AUG/2028')
+    clean(document)
+    revealFruit([packed], readDescription(bytes(mango)))
+    assert.equal($('fruit-origin').querySelector('.origin-dates'), null)
+    clean(document)
 })
