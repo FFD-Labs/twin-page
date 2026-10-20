@@ -859,3 +859,52 @@ test('a table with more rows than a label has room for: the page takes the first
     assert.ok($('fruit-origin').textContent.includes('Mineral 12'))
     assert.equal($('fruit-origin').textContent.includes('Mineral 13'), false)
 })
+
+// The stamp the bag's record names: under the date the storage is paid up to, linked to the page the configuration names for
+// a stamp, with the id in its place. Only the head record's, only in the form a stamp has, and only to an https page.
+test('the stamp of the bag’s record: shown under the date and linked by its id, and not painted without one, in another form or with no page for it', async () => {
+    const inline = $('config')
+    const plain = inline.textContent
+    const stamp = '7ccec48d'.repeat(8)
+    const storage = { until: '2026-12-29', stamp_page: 'https://batch-explorer.github.io/batch/{stamp}' }
+    const shown = async (head, given = storage) => {
+        inline.textContent = JSON.stringify({ ...config, storage: given })
+        net.head = head
+        await scan()
+        return $('alive-stamp').hidden ? null : $('alive-stamp')
+    }
+    try {
+        const link = await shown(put(packed({ stamp })))
+        assert.equal($('alive').hidden, false)
+        assert.equal($('alive-until').textContent, '29 Dec 2026')
+        assert.equal(link?.href, `https://batch-explorer.github.io/batch/${stamp}`)
+        assert.equal(link.title, stamp)
+        assert.equal(link.textContent, 'Swarm stamp 7ccec48d…cec48d ↗')
+        assert.equal(link.target, '_blank')
+        assert.equal(link.rel, 'noopener')
+
+        // a record that names no stamp shows the date alone; so does one whose stamp is only on a record before it
+        assert.equal(await shown(put(packed())), null)
+        assert.equal($('alive').hidden, false)
+        assert.equal(await shown(put(packed({ inputs: [put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, stamp })] }))), null)
+
+        // a stamp in any other form is not painted, and nothing of it becomes an element or an attribute
+        for (const other of [`0x${stamp}`, stamp.toUpperCase(), stamp.slice(2), `${stamp}00`, 7, null, [stamp], { stamp }, hostile('stamp')]) {
+            assert.equal(await shown(put(packed({ stamp: other }))), null)
+        }
+        clean(document)
+
+        // no page for a stamp, one that is not https, or one with no place for the id: the stamp is not painted, the date is
+        assert.equal(await shown(put(packed({ stamp })), { until: '2026-12-29' }), null)
+        assert.equal(await shown(put(packed({ stamp })), { ...storage, stamp_page: 'http://batch-explorer.github.io/batch/{stamp}' }), null)
+        assert.equal(await shown(put(packed({ stamp })), { ...storage, stamp_page: 'https://batch-explorer.github.io/' }), null)
+        assert.equal($('alive').hidden, false)
+
+        // with no date, the stamp is shown alone
+        $('alive').hidden = true
+        assert.ok(await shown(put(packed({ stamp })), { stamp_page: storage.stamp_page }))
+        assert.equal($('alive').hidden, true)
+    } finally {
+        inline.textContent = plain
+    }
+})
