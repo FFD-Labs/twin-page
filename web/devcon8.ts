@@ -44,8 +44,6 @@ type Record = {
     tracking?: string | null
     // the files behind the record, as it names them: read by productFiles, never taken as they come
     documents?: unknown
-    // the postage batch the record was stored with, as it names it: read by showStoredUntil, never taken as it comes
-    stamp?: unknown
     inputs?: Hex[]
 }
 
@@ -79,9 +77,8 @@ type Co2 = {
     closing?: string | null
 }
 
-// The records' storage on Swarm: the day it is paid up to, and the page where a postage batch is looked up by its id, with
-// {stamp} where the id goes. The batch itself is not here: the bag's record names it.
-type Storage = { until?: string; stamp_page?: string }
+// The records' storage on Swarm: the postage batch they live on and the day it is paid up to.
+type Storage = { batch?: Hex; until?: string }
 
 type Page = Config & {
     gateways?: string[]
@@ -924,29 +921,13 @@ function undress() {
     for (const url of [...held]) release(url)
 }
 
-// ---------- stored until: the date the records' storage is paid up to, and the stamp that pays it ----------
-
-// A postage batch id: 64 hex digits in lowercase, with no 0x, as a record names it.
-const STAMP = /^[0-9a-f]{64}$/
+// ---------- stored until: the date the records' storage is paid up to ----------
 
 // The date comes with the configuration (storage.until), kept by whoever keeps the postage batch paid; the page reads it from nowhere else.
-// The stamp is the one the bag's record names, `stamp`: the postage batch its records were stored with, which anyone can look up, and
-// pay for, by its id. It is shown under the date, linked to the page the configuration names for it, when the record names one in the
-// form a stamp has and that page is an https address with a place for the id; a record that names none shows the date alone.
-function showStoredUntil(config: Page, head: Record | null) {
-    if (config.storage?.until) {
-        $('alive-until').textContent = day(config.storage.until)
-        $('alive').hidden = false
-    }
-    const link = $<HTMLAnchorElement>('alive-stamp')
-    link.hidden = true
-    const stamp = head?.stamp
-    const page = config.storage?.stamp_page
-    if (typeof stamp !== 'string' || !STAMP.test(stamp) || !page?.startsWith('https://') || !page.includes('{stamp}')) return
-    link.href = page.replace('{stamp}', stamp)
-    link.title = stamp
-    $('alive-stamp-id').textContent = `${stamp.slice(0, 8)}…${stamp.slice(-6)}`
-    link.hidden = false
+function showStoredUntil(config: Page) {
+    if (!config.storage?.until) return
+    $('alive-until').textContent = day(config.storage.until)
+    $('alive').hidden = false
 }
 
 // ---------- the report ----------
@@ -1161,7 +1142,7 @@ async function check(config: Page) {
         status(allGood ? 'verified' : 'mismatch')
         if (allGood) {
             $('proof-fold').classList.add('open')
-            showStoredUntil(config, events.find(event => event.ref === run)?.data ?? null)
+            showStoredUntil(config)
         }
         const mine = product
         later(() => {
