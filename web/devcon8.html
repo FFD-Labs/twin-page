@@ -177,9 +177,11 @@
             .proof-fold.open .proof-clip > * { opacity: 1; transform: none; }
             .proof-clip .orn { margin-top: 1.5rem; }
             .proof { max-width: 17.5rem; margin: .8rem auto 0; font: 400 1.09rem/1.32 var(--text); text-wrap: balance; }
-            .stored-slot { min-height: .6rem; margin-top: .75rem; }
+            .stored-slot { min-height: .6rem; margin-top: .75rem; display: flex; flex-direction: column; align-items: center; gap: .7rem; }
             .stored { display: inline-block; font: 500 .6875rem/1 var(--caps); letter-spacing: .22em; margin-right: -.22em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
             .stored b { font-weight: 500; }
+            .stamp { padding-bottom: .25rem; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; transition: color var(--t-hover) var(--ease-out), border-color var(--t-hover) var(--ease-out); }
+            .stamp b { text-transform: none; letter-spacing: .08em; }
 
             /* shared: the label panel of the back of the bag, white with a keyline inside its edge, and what is set on it */
             .card, .label, .notice { min-width: 0; background: var(--panel); color: var(--panel-ink); border-radius: .7rem; box-shadow: inset 0 0 0 .3rem var(--panel), inset 0 0 0 calc(.3rem + 1px) var(--panel-ink); padding: 1.35rem 1.3rem 1.15rem; text-align: left; }
@@ -359,7 +361,7 @@
             @media (hover: hover) and (pointer: fine) {
                 .chain-eth:hover { color: var(--eth); border-color: currentColor; }
                 .chain-swarm:hover { color: var(--swarm); border-color: currentColor; }
-                .home:hover span, .colophon a:hover { color: var(--ink); border-color: var(--ink); }
+                .home:hover span, .colophon a:hover, .stamp:hover { color: var(--ink); border-color: var(--ink); }
                 .holder-line .go:hover { border-color: var(--panel-ink); }
             }
             @media (max-width: 22.5rem) {
@@ -430,7 +432,7 @@
                     <div class="proof-fold" id="proof-fold"><div class="proof-clip">
                         <div class="orn" aria-hidden="true"><i></i></div>
                         <p class="proof" id="proof">Your device just checked this bag with Ethereum and Swarm.</p>
-                        <p class="stored-slot"><span class="stored" id="alive" hidden>Stored until <b id="alive-until"></b></span></p>
+                        <p class="stored-slot"><span class="stored" id="alive" hidden>Stored until <b id="alive-until"></b></span><a class="stored stamp" id="alive-stamp" target="_blank" rel="noopener" hidden>Swarm stamp <b id="alive-stamp-id"></b> ↗</a></p>
                     </div></div>
                 </section>
                 <!-- 2 · the back of the bag: the fruit -->
