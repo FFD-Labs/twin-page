@@ -1,5 +1,5 @@
 {
-    "_about": "What the page reads, and nothing else: the Ethereum RPCs it asks, by network and in order (the first that answers is read, and the next is asked whether it says the same; the key in an address is public, and is good only for these contracts), the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the day the records' storage is paid up to and the page where the stamp a record names is looked up, the links of the footer, the repository that publishes the file, and the arithmetic of the CO2. What the page says of the fruit is not here: its name, what the bag holds, its photograph and the art of its pouch are files the bag's packing record names, read from Swarm against their references. A block whose keys are missing is not painted.",
+    "_about": "What the page reads, and nothing else: the Ethereum RPCs it asks, by network and in order (the first that answers is read, and the next is asked whether it says the same; the key in an address is public, and is good only for these contracts), the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the day the records' storage is paid up to, the links of the footer, the repository that publishes the file, and the arithmetic of the CO2. What the page says of the fruit is not here: its name, what the bag holds, its photograph and the art of its pouch are files the bag's packing record names, read from Swarm against their references. A block whose keys are missing is not painted.",
     "rpcs": {
         "11155111": [
             "https://eth-sepolia.g.alchemy.com/v2/alch_X-XdU1rCBjrCGNKmGPtj9",
@@ -13,8 +13,7 @@
         "https://api.gateway.ethswarm.org"
     ],
     "storage": {
-        "until": "2027-01-27",
-        "stamp_page": "https://batch-explorer.github.io/batch/{stamp}"
+        "until": "2027-01-27"
     },
     "links": {
         "ethereum": "https://ethereum.org",
