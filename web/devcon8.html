@@ -86,10 +86,13 @@
                 color-scheme: dark;
             }
             * { box-sizing: border-box; margin: 0; }
-            /* the art of the pouch is wider than a phone, as it is wider than the pouch's own live area: the page is cut at the screen's edge */
-            html { -webkit-text-size-adjust: 100%; background: var(--ground); overflow-x: hidden; overflow-x: clip; scrollbar-color: var(--ink-2) transparent; transition: background-color var(--t-way) var(--ease-out); }
+            /* the art of the pouch is wider than a phone, as it is wider than the pouch's own live area: the page is cut at the screen's edge.
+               Past the ends of the page, where the screen shows through as it bounces, the colours go on: the footer's below it, from
+               the root, and the ground's above the lockup, from a band drawn over the top edge of the page; the scrollbar's track keeps the ground */
+            html { -webkit-text-size-adjust: 100%; background: var(--foot); overflow-x: hidden; overflow-x: clip; scrollbar-color: var(--ink-2) var(--ground); transition: background-color var(--t-way) var(--ease-out); }
             body { background: var(--ground); color: var(--ink); font: 400 1rem/1.4 var(--text); min-height: 100vh; overflow-x: hidden; overflow-x: clip; -webkit-font-smoothing: antialiased; font-variant-numeric: lining-nums;
                 transition: background-color var(--t-way) var(--ease-out), color var(--t-way) var(--ease-out); }
+            body::before { content: ''; position: absolute; left: 0; right: 0; top: -100vh; height: 100vh; background: var(--ground); transition: background-color var(--t-way) var(--ease-out); }
             a { color: inherit; text-decoration: none; }
             [hidden] { display: none !important; }
             ::selection { background: var(--ink); color: var(--ground); }
