@@ -10,12 +10,13 @@ import { clean, hostile, loads, openPage } from './page.mjs'
 
 const contract = '0x240dfbca7064d091149169eff95f764d1e21cea7'
 const rpcs = ['https://rpc.example', 'https://other-rpc.example']
-// the chain the stamps live on, Gnosis, with two RPCs of its own, and the records' storage as the configuration gives it
-const gnosisRpcs = ['https://gnosis.example', 'https://other-gnosis.example']
+// the chain the stamps live on, with two RPCs of its own, and the records' storage as the configuration gives it
+const stampRpcs = ['https://stamp-rpc.example', 'https://other-stamp-rpc.example']
 const storage = { until: '2027-01-27', chain: 100, contract: '0x45a1502382541Cd610CC9068e88727426b696293', block_s: 5, stamp_page: 'https://stamptime.example/?id={stamp}' }
 const config = {
-    rpcs: { 11155111: rpcs, 1: rpcs, 100: gnosisRpcs },
+    rpcs: { 11155111: rpcs, 1: rpcs, 100: stampRpcs },
     contract,
+    chain: 11155111,
     gateways: ['https://gateway.example', 'https://second.example'],
     storage,
     co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' }
@@ -25,8 +26,8 @@ const config = {
 // Both gateways serve the files, unless a test says what one of them does instead (`net.instead`, by its address). Both
 // RPCs say the same, they are on Sepolia and the twin is not created yet, unless a test says otherwise: `net.chain`,
 // `net.owner` (an address, or a function that answers in its place), `net.ens` (what an RPC does when it is asked for a
-// name) and `net.says` (what one RPC answers in place of the other's answer, by its address). The RPCs of Gnosis answer
-// for the stamp (`net.stamp`, below).
+// name) and `net.says` (what one RPC answers in place of the other's answer, by its address). The RPCs of the chain the
+// stamps live on answer for the stamp (`net.stamp`, below).
 const net = { head: null, anchors: new Map(), files: new Map(), asked: [], calls: [], instead: new Map(), says: new Map(), chain: '0xaa36a7', owner: null, ens: null, stamp: { chain: '0x64', remaining: 0n, price: 0n, asked: [] } }
 const [first, second] = config.gateways
 const answer = (body, type) => new Response(body, { headers: { 'content-type': type } })
@@ -67,13 +68,13 @@ globalThis.fetch = async (input, init) => {
     const url = request.url
     const origin = new URL(url).origin
     net.asked.push(url)
-    if (rpcs.includes(origin) || gnosisRpcs.includes(origin)) {
+    if (rpcs.includes(origin) || stampRpcs.includes(origin)) {
         const { id, method, params } = await request.json()
         net.calls.push(`${new URL(url).host} ${method}`)
         try {
             const says = net.says.get(origin)
             // a test may answer with a promise, to hold the answer back
-            const result = await (says ? says(method, params) : gnosisRpcs.includes(origin) ? stampRpc(method, params) : rpc(method, params))
+            const result = await (says ? says(method, params) : stampRpcs.includes(origin) ? stampRpc(method, params) : rpc(method, params))
             return answer(JSON.stringify({ jsonrpc: '2.0', id, result }), 'application/json')
         } catch (error) {
             if (error instanceof Response) return error
@@ -395,6 +396,77 @@ test('another bag in the link: the page is loaded again, not left under the seal
     await new Promise((turn) => setImmediate(turn))
     assert.equal(loads.length, before + 1)
     assert.match(loads.at(-1), /navigation/)
+})
+
+// ---------- the footer: the contract, on the explorer of its network ----------
+// The last row of the footer is the contract: the one the page trusts, from the configuration (`chain` and `contract`), in
+// every state, and once the link's contract has proved one of Fair Food Data's, the one the bag is in, on the explorer of
+// the link's network. A network the page has no explorer for, or no network at all, has no row.
+const contractRow = () => ({ shown: !$('contract').hidden, href: $('contract-link').getAttribute('href'), text: $('contract-addr').textContent })
+const onSepolia = (address) => ({ shown: true, href: `https://sepolia.etherscan.io/address/${address}`, text: address })
+// a scan with another configuration
+async function configured(given, link) {
+    const inline = $('config')
+    const plain = inline.textContent
+    inline.textContent = JSON.stringify(given)
+    try {
+        await scan(link)
+    } finally {
+        inline.textContent = plain
+    }
+}
+
+test('a bag: the footer names the contract it is in, on the explorer of its network, and the page is the bag’s', async () => {
+    net.head = put(packed())
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(document.documentElement.hasAttribute('data-empty'), false)
+    assert.deepEqual(contractRow(), onSepolia(contract))
+    assert.equal($('contract-link').target, '_blank')
+    assert.equal($('contract-link').rel, 'noopener')
+})
+
+test('a contract the page does not list: the footer names the one the page trusts, never the stranger', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    await scan(`11155111:${stranger}/1`)
+    assert.match($('notice').textContent, /This is not a Fair Food Data bag/)
+    assert.deepEqual(contractRow(), onSepolia(contract))
+    assert.equal($('contract').innerHTML.includes(stranger), false)
+})
+
+test('a configuration that names no network for its contract, or one with no explorer: no row, until a bag is read on a network that has one', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    for (const chain of [undefined, 100, 5]) {
+        await configured({ ...config, chain }, `11155111:${stranger}/1`)
+        assert.match($('notice').textContent, /This is not a Fair Food Data bag/)
+        assert.equal(contractRow().shown, false, String(chain))
+    }
+    net.head = put(packed())
+    await configured({ ...config, chain: undefined })
+    assert.deepEqual(contractRow(), onSepolia(contract))
+    await configured({ ...config, contract: 'the contract' }, `11155111:${stranger}/1`)
+    assert.equal(contractRow().shown, false)
+})
+
+// ---------- the holder's name: asked of ENS only when the twin has moved ----------
+test('a twin in custody: ENS is not asked for a name; a twin that has moved: it is', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    let names = 0
+    net.ens = () => {
+        names++
+        throw revert()
+    }
+    net.owner = holder
+    net.head = put(packed())
+    await configured({ ...config, custody: holder })
+    await turns()
+    assert.match($('twin').textContent, /Twin held by Fair Food Data/)
+    assert.equal(names, 0)
+    net.head = put(packed())
+    await scan()
+    await turns()
+    assert.match($('twin').textContent, /Twin held by 0x1111…1111/)
+    assert.ok(names > 0)
 })
 
 // ---------- where Ethereum is read from ----------
@@ -1071,7 +1143,7 @@ const stamp = '7ccec48d'.repeat(8)
 const NOW = Date.parse('2026-10-28T12:00:00Z')
 const PRICE = 24_000n
 const REMAINING = PRICE * 1_036_800n // 60 days of blocks of 5 s, at that price: paid up to 27 December 2026
-const [gnosis, otherGnosis] = gnosisRpcs
+const [stampSource, otherStampSource] = stampRpcs
 const stamptime = `https://stamptime.example/?id=${stamp}`
 const line = () => ({ shown: !$('alive').hidden, until: $('alive-until').textContent, href: $('alive').getAttribute('href'), title: $('alive').getAttribute('title') })
 const linked = { shown: true, until: '27 Dec 2026', href: stamptime, title: `Swarm stamp ${stamp}` }
@@ -1080,7 +1152,7 @@ const written = { shown: true, until: '27 Jan 2027', href: null, title: null }
 function hold() {
     let open
     const gate = new Promise((resolve) => (open = resolve))
-    net.says.set(gnosis, (method, params) => gate.then(() => stampRpc(method, params)))
+    net.says.set(stampSource, (method, params) => gate.then(() => stampRpc(method, params)))
     return open
 }
 // a scan with another storage in the configuration
@@ -1105,8 +1177,8 @@ test('the stamp of the bag’s record: the day it is paid up to, read from its c
     assert.equal($('alive').target, '_blank')
     assert.equal($('alive').rel, 'noopener')
     // the chain is asked its network, then what is left on that batch and the price, and nothing else; its second RPC is not asked
-    assert.deepEqual(callsTo(gnosis), ['eth_chainId', 'eth_call', 'eth_call'])
-    assert.deepEqual(callsTo(otherGnosis), [])
+    assert.deepEqual(callsTo(stampSource), ['eth_chainId', 'eth_call', 'eth_call'])
+    assert.deepEqual(callsTo(otherStampSource), [])
     assert.deepEqual(net.stamp.asked, [`0x${stamp}`])
     clean(document)
 })
@@ -1119,7 +1191,7 @@ test('a record that names no stamp, or one only on a record before the head: the
         await scan()
         assert.ok($('hero').classList.contains('verified'))
         assert.deepEqual(line(), written)
-        assert.deepEqual(callsTo(gnosis), [])
+        assert.deepEqual(callsTo(stampSource), [])
     }
 })
 
@@ -1130,7 +1202,7 @@ test('a stamp in any other form: the day of the configuration, no link, the chai
         await scan()
         assert.ok($('hero').classList.contains('verified'))
         assert.deepEqual(line(), written)
-        assert.deepEqual(callsTo(gnosis), [])
+        assert.deepEqual(callsTo(stampSource), [])
     }
     clean(document)
     assert.equal(document.documentElement.outerHTML.includes(stamp.toUpperCase()), false)
@@ -1144,7 +1216,7 @@ test('a stamp whose chain does not answer, is another network, or says the batch
     // passed over like one that does not answer
     const whole = ['eth_chainId', 'eth_call', 'eth_call']
     const cases = [
-        ['no RPC of the chain answers', () => [gnosis, otherGnosis].forEach((rpc) => net.says.set(rpc, fails)), null],
+        ['no RPC of the chain answers', () => [stampSource, otherStampSource].forEach((rpc) => net.says.set(rpc, fails)), null],
         ['the RPC is on another network, and so is the next', () => (net.stamp.chain = '0x1'), [['eth_chainId'], ['eth_chainId']]],
         ['the batch has run out', () => (net.stamp.remaining = 0n), [whole, []]],
         ['the contract has forgotten the batch', () => (net.stamp.remaining = null), [whole, whole]],
@@ -1159,19 +1231,19 @@ test('a stamp whose chain does not answer, is another network, or says the batch
         await scan()
         assert.ok($('hero').classList.contains('verified'), what)
         assert.deepEqual(line(), { ...written, href: stamptime, title: `Swarm stamp ${stamp}` }, what)
-        if (asked) assert.deepEqual([callsTo(gnosis), callsTo(otherGnosis)], asked, what)
-        else assert.equal([...callsTo(gnosis), ...callsTo(otherGnosis)].includes('eth_call'), false, what)
+        if (asked) assert.deepEqual([callsTo(stampSource), callsTo(otherStampSource)], asked, what)
+        else assert.equal([...callsTo(stampSource), ...callsTo(otherStampSource)].includes('eth_call'), false, what)
     }
 })
 
 test('a first RPC of the stamp’s chain that does not answer: the second is read', async (t) => {
     t.mock.method(console, 'error', () => {})
     t.mock.method(Date, 'now', () => NOW)
-    net.says.set(gnosis, fails)
+    net.says.set(stampSource, fails)
     net.head = put(packed({ stamp }))
     await scan()
     assert.deepEqual(line(), linked)
-    assert.deepEqual(callsTo(otherGnosis), ['eth_chainId', 'eth_call', 'eth_call'])
+    assert.deepEqual(callsTo(otherStampSource), ['eth_chainId', 'eth_call', 'eth_call'])
 })
 
 test('a configuration without the chain, the contract, the seconds of a block or an RPC for the chain: the day written in it, and the chain is not asked', async (t) => {
@@ -1181,7 +1253,7 @@ test('a configuration without the chain, the contract, the seconds of a block or
         net.head = put(packed({ stamp }))
         await stored(given)
         assert.deepEqual(line(), { ...written, href: stamptime, title: `Swarm stamp ${stamp}` })
-        assert.deepEqual(callsTo(gnosis), [])
+        assert.deepEqual(callsTo(stampSource), [])
     }
 })
 
@@ -1201,8 +1273,8 @@ test('no day written in the configuration: the stamp’s day when its chain answ
     net.head = put(packed({ stamp }))
     await stored({ ...storage, until: undefined })
     assert.deepEqual(line(), linked)
-    net.says.set(gnosis, fails)
-    net.says.set(otherGnosis, fails)
+    net.says.set(stampSource, fails)
+    net.says.set(otherStampSource, fails)
     net.head = put(packed({ stamp }))
     await stored({ ...storage, until: undefined })
     assert.equal($('alive').hidden, true)
@@ -1213,7 +1285,7 @@ test('no day written in the configuration: the stamp’s day when its chain answ
     await stored(undefined)
     assert.ok($('hero').classList.contains('verified'))
     assert.equal($('alive').hidden, true)
-    assert.deepEqual(callsTo(gnosis), [])
+    assert.deepEqual(callsTo(stampSource), [])
 })
 
 test('a record that did not match, before or at the head: the chain is not asked for the stamp, and the line stays folded', async () => {
@@ -1224,14 +1296,14 @@ test('a record that did not match, before or at the head: the chain is not asked
     assert.equal($('step-3').querySelector('.v').textContent, '1 of 2 matches')
     assert.equal($('proof-fold').classList.contains('open'), false)
     assert.equal($('alive').hidden, true)
-    assert.deepEqual(callsTo(gnosis), [])
+    assert.deepEqual(callsTo(stampSource), [])
     // the head record itself: not read, so it names no stamp
     net.head = put(packed({ stamp }))
     net.anchors.clear()
     await scan()
     assert.match(cards()[0].textContent, /Record not shown/)
     assert.equal($('alive').hidden, true)
-    assert.deepEqual(callsTo(gnosis), [])
+    assert.deepEqual(callsTo(stampSource), [])
 })
 
 test('a wallet in the browser is not asked for the stamp: its chain is read through the RPCs of the configuration', async (t) => {
@@ -1251,7 +1323,7 @@ test('a wallet in the browser is not asked for the stamp: its chain is read thro
     assert.deepEqual(line(), linked)
     assert.ok(asked.includes(`eth_call ${contract}`))
     assert.equal(asked.some((call) => call.includes(storage.contract.toLowerCase())), false)
-    assert.deepEqual(callsTo(gnosis), ['eth_chainId', 'eth_call', 'eth_call'])
+    assert.deepEqual(callsTo(stampSource), ['eth_chainId', 'eth_call', 'eth_call'])
 })
 
 test('a stamp whose chain answers after the seal: the day of the configuration first, and the stamp’s in its place when it comes', async (t) => {
@@ -1285,6 +1357,22 @@ test('another bag while the stamp’s chain is still to answer for the first: it
     await turns()
     await scanning
     assert.deepEqual(line(), written)
+})
+
+// ---------- whom a whole check asks ----------
+test('a whole check, with a stamp and a holder: no one is asked but the RPCs and the gateways of the configuration', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    t.mock.method(Date, 'now', () => NOW)
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' })
+    net.head = put(packed({ stamp, inputs: [intake] }))
+    net.owner = holder
+    await scan()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(line(), linked)
+    const asked = new Set(net.asked.map((url) => new URL(url).origin))
+    assert.deepEqual([...asked].filter((origin) => ![...rpcs, ...stampRpcs, ...config.gateways].includes(origin)), [])
+    for (const origin of [rpcs[0], stampSource, config.gateways[0]]) assert.ok(asked.has(origin), origin)
 })
 
 // ---------- the curves of a cycle: the light file its record names ----------

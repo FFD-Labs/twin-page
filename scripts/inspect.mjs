@@ -2,17 +2,18 @@
 // build asks this of what it has just written and stops if the answer is not the one it means; the tests ask it of every
 // published file that is still to be used.
 //
-// The file runs its own two scripts and no other because its head says so: a Content-Security-Policy that names each by
-// its SHA-256. A policy holds only where a browser finds it, as an element of the head that comes before any script. One
-// that landed inside a comment, or after a script, is text, and a search for its words would still find it. So: there is
-// one policy and it is where it holds; the scripts that can run are two, and each is one the policy names; and nothing
-// else in the markup runs or loads anything from elsewhere.
+// The file runs its own scripts and no other because its head says so: a Content-Security-Policy that names each by its
+// SHA-256. A policy holds only where a browser finds it, as an element of the head that comes before any script. One that
+// landed inside a comment, or after a script, is text, and a search for its words would still find it. So: there is one
+// policy and it is where it holds; the scripts that can run are as many as the file should run, `expected`, and each is
+// one the policy names; and nothing else in the markup runs or loads anything from elsewhere. The build writes three:
+// the two lines of the head, the library and the page's own code. A release up to 0.4 has the last two.
 import { createHash } from 'node:crypto'
 import { JSDOM, VirtualConsole } from 'jsdom'
 
 const sha256 = (text) => `'sha256-${createHash('sha256').update(text).digest('base64')}'`
 
-export function inspect(html) {
+export function inspect(html, expected) {
     const { document } = new JSDOM(html, { virtualConsole: new VirtualConsole() }).window
     const stop = (what) => {
         throw Error(`the file is not what it says: ${what}`)
@@ -31,14 +32,14 @@ export function inspect(html) {
     if (!named.length || named.some((value) => !/^'sha256-[A-Za-z0-9+/]{43}='$/.test(value))) stop('its policy lets a script run other than by its hash')
     for (const closed of ['object-src', 'base-uri']) if (directives.get(closed)?.join(' ') !== "'none'") stop(`its policy leaves ${closed} open`)
 
-    // ---------- the scripts: two that run, each named by the policy, and data ----------
+    // ---------- the scripts: as many as expected that run, each named by the policy, and data ----------
     const scripts = all.filter((el) => el.localName === 'script')
     if (scripts.some((script) => script.hasAttribute('src'))) stop('a script is loaded from elsewhere')
     const running = scripts.filter((script) => script.getAttribute('type') !== 'application/json')
     if (running.some((script) => !after(policy, script))) stop('a script comes before the policy')
     const hashes = running.map((script) => sha256(script.textContent))
-    if (running.length !== 2) stop(`${running.length} scripts can run, not two`)
-    if (hashes.some((hash) => !named.includes(hash)) || named.some((hash) => !hashes.includes(hash))) stop('the scripts are not the two its policy names')
+    if (running.length !== expected) stop(`${running.length} scripts can run, not ${expected}`)
+    if (hashes.some((hash) => !named.includes(hash)) || named.some((hash) => !hashes.includes(hash))) stop('the scripts are not the ones its policy names')
 
     // ---------- nothing else runs, and nothing is loaded from elsewhere ----------
     for (const el of all) {

@@ -29,7 +29,7 @@ No server of Fair Food Data sits between the visitor and the records. The page i
 ## Capabilities and Constraints
 
 - Six blocks, top to bottom, each filling in as its records arrive: the fruit, the plate (the check), the path (one card per record), the arithmetic of the CO₂, who holds the twin, the footer with the file's fingerprint. The structure is final; the content is not. (README)
-- One file with everything inside: styles, markup, configuration, viem, the page's own code with its types removed, the fonts. A Content-Security-Policy names its two scripts by hash. The build is deterministic and every release is filed with its SHA-256. (README)
+- One file with everything inside: styles, markup, configuration, viem, the page's own code with its types removed, the fonts. A Content-Security-Policy names its three scripts by hash. The build is deterministic and every release is filed with its SHA-256. (README)
 - The file carries no image, so that it weighs as little as it can. The page first shows itself complete in CSS, with the crystal drawn and the colours of the pouch, and loads the art and the photograph last of all, from beside the file (tonytony32).
 - The twins are numbered up to 15000 (tonytony32).
 - A bag holds 10 g (tonytony32).
