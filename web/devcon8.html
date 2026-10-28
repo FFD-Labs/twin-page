@@ -19,8 +19,9 @@
 
             The file carries no image, and of the fruit only the colours of each pouch. What it shows of the pouch it draws:
             the crystal, its window, the colours. The name of the fruit, what the bag holds, its photograph and the illustrations of its
-            pouch are files the bag's packing record names, and where the plant is, a file its intake record names: the page
-            reads them from Swarm, each checked against its reference, the images last of all; without them nothing is missing.
+            pouch are files the bag's packing record names, and where the plant is and where the bag went, files its intake
+            and its transport records name: the page reads them from Swarm, each checked against its reference, the images
+            last of all; without them nothing is missing. The map of the route is drawn by the page from the two points.
 
             The file runs two scripts, 4 and 5, and no other: the Content-Security-Policy in the head names each by its SHA-256
             (added by the build), so nothing written into the page afterwards can run as script.
@@ -31,13 +32,15 @@
                               next source is then asked whether it says the same
               Swarm           public gateways, read only: the records themselves, and the files they name, each hashed before
                               it is read: the product's, from the packing record, where the plant is, from the intake
-                              record, and the light file of the curves, from the cycle record (config: gateways)
+                              record, where the bag went, from the transport record, and the light file of the curves,
+                              from the cycle record (config: gateways)
               Gnosis          read only, through the RPCs of the config and never a wallet: how long the stamp the bag's
                               record names is paid for, once every record has matched (config: rpcs, storage)
               the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
               this file       itself, once more, to show its fingerprint in the footer
-              OpenStreetMap   not asked: the coordinates of the plant on the Received card are a link to it, followed only
-                              when tapped
+              OpenStreetMap   not asked: the coordinates of the plant on the Received card and of the destination on the
+                              Delivered card are links to it, and so is the route under the map the Delivered card draws;
+                              each is followed only when tapped
             What the page asks Ethereum about, the bag in the link, is seen by the source it asks. No cookies, no storage,
             no server of ours. Nothing is signed or uploaded.
         -->
@@ -299,8 +302,10 @@
             .step.bad .tile, .step.bad .tile::before { color: var(--bad); border-color: var(--bad); }
             .twin-born { margin-top: .35rem; color: var(--panel-ink-2); }
             .card h2 + .row, .card .twin-born + .row, .card .chips + .row { margin-top: .75rem; border-top: 1px solid var(--panel-rule); }
-            /* the rows a file adds to a card once it has come, where the plant is, land as the blocks do */
-            .card .row.late { animation: land var(--t-enter) var(--ease-out) both; }
+            /* the rows a file adds to a card once it has come, where the plant is, land as the blocks do; so do the coordinates
+               of where the bag went, under the words of the To row */
+            .card .row.late, .card .row .late { animation: land var(--t-enter) var(--ease-out) both; }
+            .row .v .geo { display: block; }
             /* the line of the check is small print, on one line: the word of the anchor, not a row of the record */
             .check { margin-top: .9rem; font-size: .8rem; line-height: 1.3; color: var(--panel-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--t-state) var(--ease-out), opacity var(--t-hover) var(--ease-out), filter var(--t-hover) var(--ease-out); }
             .check.bad { color: var(--bad); }
@@ -340,6 +345,21 @@
             .curves .key .sw { width: 1.1rem; border-top: 2px solid var(--panel-ink); }
             .curves .key .sw.shelf { border-top: 1px solid var(--icon-a); }
             .curves .key .sw.press { border-top: 2px solid var(--chart-warm); }
+            /* the route of the bag, drawn in the Delivered card from the two files the records name: on a plate in the tint of
+               the panel, the plant as the filled diamond and where the bag went as the ring in the one warm colour, each named
+               under it, joined by a line that bows to the north and is drawn once the map has landed, the ring and its name
+               coming up behind it; under the map, the distance and the days of the journey, in the small print of the check */
+            .route { margin-top: 1rem; color: var(--panel-ink); animation: land var(--t-enter) var(--ease-out) both; }
+            .route .map { display: block; width: 100%; height: auto; font: 400 9.5px var(--text); }
+            .route .ground { fill: var(--panel-tint); }
+            .route text { fill: var(--panel-ink-2); }
+            .route .way { fill: none; stroke: var(--panel-ink); stroke-width: 1.4; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1.4s var(--ease-out) .1s; }
+            .route.drawn .way { stroke-dashoffset: 0; }
+            .route .plant { fill: var(--panel-ink); }
+            .route .dest { fill: var(--panel); stroke: var(--chart-warm); stroke-width: 1.4; }
+            .route .dest, .route .to { transition: opacity .6s var(--ease-out) 1.2s; }
+            .route:not(.drawn) .dest, .route:not(.drawn) .to { opacity: 0; }
+            .route .leg { margin-top: .5rem; font-size: .8rem; line-height: 1.3; color: var(--panel-ink-2); font-variant-numeric: tabular-nums; }
             @media (hover: hover) and (pointer: fine) { .btn:hover { background: currentColor; } .card .btn:hover, .notice .btn:hover { background: var(--panel-ink); color: var(--panel); } .row .v a:hover { border-color: var(--panel-ink); } }
 
             /* 4 · the arithmetic, set on the ground of the bag like the lines of its front */
@@ -433,7 +453,7 @@
             }
             @media (prefers-reduced-motion: reduce) {
                 * { animation: none !important; transition-property: color, background-color, background, border-color, opacity, filter !important; transition-duration: .15s !important; }
-                .tri .edge, .step::before, .reads li + li::after, .curves .temp { transition: none; }
+                .tri .edge, .step::before, .reads li + li::after, .curves .temp, .route .way { transition: none; }
                 .reads li.busy::after { background: none; }
                 .step .unfold, .proof-fold { transition: none; }
                 .btn:active, .plate-link:active { transform: none; }
@@ -445,6 +465,9 @@
                 .curves .axis, .curves .press, .curves .shelf, .curves .ring { stroke: currentColor; }
                 .curves text, .curves .dot, .curves .fill { fill: currentColor; }
                 .curves .ring { fill: Canvas; }
+                .route .way, .route .dest, .route .ground { stroke: currentColor; }
+                .route text, .route .plant { fill: currentColor; }
+                .route .ground, .route .dest { fill: Canvas; }
                 .minima .mk-cold { background: CanvasText; } .minima .mk-low { border-color: CanvasText; }
                 .glyph .ga, .glyph .gb, .glyph .gc { fill: CanvasText; } .glyph .gs { stroke: CanvasText; }
             }

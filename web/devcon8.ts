@@ -2,9 +2,9 @@
 // verification report. The looks live in devcon8.html; this file reads, checks and paints.
 //
 // Reads ./config.json. The keys of the blocks are optional: a block whose data or assumptions are missing is not painted.
-// What the page says of the fruit, and where the plant is, is not in the config: the bag's records name the files, the
-// packing record those of its product and the intake record the location of the plant, and the page reads them from Swarm
-// against their references, as it reads the records.
+// What the page says of the fruit, where the plant is and where the bag went, is not in the config: the bag's records name
+// the files, the packing record those of its product, the intake record the location of the plant and the transport record
+// that of its destination, and the page reads them from Swarm against their references, as it reads the records.
 
 import { NotOfficial, abi, download, hex, parseSticker, swarmHash, type Config } from '../src/lib.ts'
 import './life-grid.ts'
@@ -74,7 +74,7 @@ type Nutrition = {
 type Description = { fruit: string | null; name: string | null; nutrition: Nutrition | null; alt: string | null; credit: string | null; manufactured: string | null; expires: string | null }
 
 // A place of the path, from the file a record names: the key the records call it by (`urn:bdf:site:india-1`), the words
-// for it, and where it is. The intake record names the file of the plant.
+// for it, and where it is. The intake record names the file of the plant, the transport record that of its destination.
 type Point = { site: string | null; place: string | null; lat: number; lon: number }
 
 // The arithmetic of block 5.
@@ -143,12 +143,14 @@ const farm = (f: Farm) =>
     [[f.zone, f.country && country(f.country)].filter(Boolean).join(', '), f.variety, f.harvested && `harvested ${day(f.harvested)}`, f.kg != null && `${f.kg} kg`]
         .filter(Boolean)
         .join(' · ') || null
-// The rows of a card: a key and a value, written as text. A third element is an address of the page's own making, and the
-// value is then a link to it, opened beside the page; nothing a record or a file says is ever one.
+// A value that is a link: to an address of the page's own making, opened beside the page; nothing a record or a file says
+// is ever one.
+const linked = (value: unknown, href: string) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(value)} ↗</a>`
+// The rows of a card: a key and a value, written as text. A third element is an address, and the value is then a link to it.
 const rows = (list: (string | null | undefined)[][]) =>
     list
         .filter(([, value]) => value != null && value !== '')
-        .map(([key, value, href]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(value)} ↗</a>` : esc(value)}</span></div>`)
+        .map(([key, value, href]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${href ? linked(value, href) : esc(value)}</span></div>`)
         .join('')
 
 const EDGE_GAP = 420
@@ -474,9 +476,9 @@ function markCheck(li: HTMLElement, event: Event) {
 
 // A record names files among its documents, each by its name, its type and its reference. The page knows the ones it reads
 // by their name and the type each must declare, and looks for each in the record that names it: the packing record names
-// the files of the product, the intake record the location of the plant. A document under another name, of another type,
-// or whose reference is not one, is not that file, and the page does not ask for it; a record that was not read, or not
-// understood, names nothing.
+// the files of the product, the intake record the location of the plant, the transport record its destination. A document
+// under another name, of another type, or whose reference is not one, is not that file, and the page does not ask for it;
+// a record that was not read, or not understood, names nothing.
 export function documentOf(record: Record | null | undefined, name: string, type: string): Hex | null {
     const documents = record?.documents
     if (!Array.isArray(documents)) return null
@@ -602,13 +604,24 @@ export function readPoint(bytes: Uint8Array): Point | null {
 }
 
 // The places of the path, kept as each file comes, with their coordinates: the plant, from the file the intake record
-// names, and in time the destination of the transport, for a map to join them. Another bag starts from none.
-export const places: { plant: Point | null } = { plant: null }
+// names, and where the bag went, from the file the transport record names, for the map of the Delivered card to join
+// them. Another bag starts from none.
+export const places: { plant: Point | null; destination: Point | null } = { plant: null, destination: null }
 
 // The coordinates as a visitor reads them, 20.2353° N, 85.1091° E, and as OpenStreetMap takes them: in the address only
-// numbers of the page's own making, to six decimals, and nothing the file said.
+// numbers of the page's own making, to six decimals, and nothing the file said. The route between two places the same
+// way, from the first to the second.
 const geo = ({ lat, lon }: Point) => `${Math.abs(lat).toFixed(4)}° ${lat < 0 ? 'S' : 'N'}, ${Math.abs(lon).toFixed(4)}° ${lon < 0 ? 'W' : 'E'}`
 const osm = ({ lat, lon }: Point) => `https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lon.toFixed(6)}#map=15/${lat.toFixed(6)}/${lon.toFixed(6)}`
+const osmRoute = (from: Point, to: Point) => `https://www.openstreetmap.org/directions?route=${from.lat.toFixed(6)}%2C${from.lon.toFixed(6)}%3B${to.lat.toFixed(6)}%2C${to.lon.toFixed(6)}`
+
+// The rows a file adds to a card already on screen, set before the element given: they land as the blocks do.
+function landRows(before: Element, list: (string | null | undefined)[][]) {
+    const late = document.createElement('template')
+    late.innerHTML = rows(list)
+    late.content.querySelectorAll('.row').forEach(row => row.classList.add('late'))
+    before.before(late.content)
+}
 
 // Where the plant is. The intake record names the file among its documents; it is asked for once the records are checked,
 // with the description, and read like it: hashed against its reference, then found out once. When it has come, the
@@ -623,12 +636,7 @@ async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLEl
     if (!point || product !== mine) return // it did not come, or another bag is being read
     places.plant = point
     const check = cards.get(intake.ref)?.querySelector('.check')
-    if (!check) return
-    // the rows land as the blocks do
-    const late = document.createElement('template')
-    late.innerHTML = rows([['Site', point.place], ['GPS', geo(point), osm(point)]])
-    late.content.querySelectorAll('.row').forEach(row => row.classList.add('late'))
-    check.before(late.content)
+    if (check) landRows(check, [['Site', point.place], ['GPS', geo(point), osm(point)]])
 }
 
 // ---------- the curves of a cycle: the light file its record names ----------
@@ -877,6 +885,118 @@ async function drawCurves(mine: Product, event: Event, li: HTMLElement) {
     const named = new Set([...li.querySelectorAll<HTMLElement>('.minima .stat')].map(stat => stat.dataset.row))
     for (const row of li.querySelectorAll<HTMLElement>('.card .row')) if (named.has(row.querySelector('.k')?.textContent ?? '')) row.remove()
     requestAnimationFrame(() => requestAnimationFrame(() => li.querySelector('.curves')?.classList.add('drawn')))
+}
+
+// ---------- the route: where the transport record says the bag went ----------
+
+// The transport record names the file of its destination among its documents, as the intake record names the plant's,
+// and the page reads it the same way. The Delivered card then says where the bag went and, once the plant has come as
+// well and the transport names its site as the origin, draws the route between the two: a map of the page's own making,
+// since the page loads no tile and no script from anyone. One transport, two places: the map never holds more.
+const DESTINATION_LOCATION = 'destination-location.geojson'
+
+// Where the bag went. Asked for with the plant's file, once the records are checked, and read like it. When it has come,
+// the To row of the Delivered card, already on screen, gains the coordinates under the record's own words, linked to
+// OpenStreetMap as the GPS of the plant is; a record that gave no words for its destination gets the row with the
+// coordinates alone.
+async function placeDestination(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
+    const transport = events.find(e => e.data?.phase === 'transport')
+    const ref = documentOf(transport?.data, DESTINATION_LOCATION, GEOJSON)
+    if (!transport || !ref) return
+    const bytes = await fileOf(mine.gateways, ref)
+    const point = bytes ? readPoint(bytes) : null
+    if (!point || product !== mine) return // it did not come, or another bag is being read
+    places.destination = point
+    const li = cards.get(transport.ref)
+    const check = li?.querySelector('.card .check')
+    if (!li || !check) return
+    const to = [...li.querySelectorAll<HTMLElement>('.card .row')].find(row => row.querySelector('.k')?.textContent === 'To')
+    if (to) to.querySelector('.v')?.insertAdjacentHTML('beforeend', `<span class="geo late">${linked(geo(point), osm(point))}</span>`)
+    else landRows(check, [['To', geo(point), osm(point)]])
+}
+
+// The distance between two places as the crow flies, in kilometres, on a round Earth
+const EARTH_KM = 6371
+const rad = (degrees: number) => (degrees * Math.PI) / 180
+function distance(a: Point, b: Point) {
+    const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lon - a.lon) / 2) ** 2
+    return 2 * EARTH_KM * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+// a distance as the line under the map says it, to three figures and in whole kilometres: 1,290
+const kilometres = (km: number) => Number(km.toPrecision(3)).toLocaleString('en-GB', { maximumFractionDigits: 0 })
+// The days of a journey, from its departure to its arrival, rounded: null when the record does not give both as moments
+function daysBetween(from: unknown, to: unknown) {
+    const ms = typeof from === 'string' && typeof to === 'string' ? Date.parse(to) - Date.parse(from) : NaN
+    return Number.isFinite(ms) && ms >= 0 ? Math.round(ms / 864e5) : null
+}
+
+// The map: a box in units of its own, scaled to the width of the card, with the two places inside margins that hold their
+// names; the line between them bows to the north by this much of its length
+const MAP = { w: 300, h: 170, x0: 36, x1: 264, y0: 24, y1: 146 }
+const BOW = 0.22
+// the name of a place on the map: the words before the first comma of what the file says, cut at this many
+const NAME_MOST = 32
+function nameOf(place: string | null) {
+    const name = (place ?? '').split(',')[0]!.trim()
+    return name === '' ? null : name.length > NAME_MOST ? `${name.slice(0, NAME_MOST)}…` : name
+}
+
+// The route drawn: the plant as the filled diamond and where the bag went as the ring, set on a flat map, degrees east
+// scaled by the cosine of the middle latitude and degrees north upward, framed with a margin, and joined by a line that
+// bows to the north and is drawn once the map has landed; under it, the distance as the crow flies and the days from
+// departure to arrival. The names are the words of the files before their first comma, written as text; the rest of the
+// markup is the page's own words and numbers. Empty when the two places are one, within a kilometre of each other.
+export function drawRoute(from: Point, to: Point, record: Record): string {
+    const km = distance(from, to)
+    if (!(km >= 1)) return ''
+    const { w, h, x0, x1, y0, y1 } = MAP
+    const east = Math.cos(rad((from.lat + to.lat) / 2))
+    const flat = ({ lat, lon }: Point) => ({ x: lon * east, y: -lat })
+    const a = flat(from), b = flat(to)
+    const sx = Math.abs(b.x - a.x), sy = Math.abs(b.y - a.y)
+    const scale = Math.min(sx > 0 ? (x1 - x0) / sx : Infinity, sy > 0 ? (y1 - y0) / sy : Infinity)
+    // the two places fitted to the frame: the middle of the line between them is the middle of the frame
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
+    const at = ({ x, y }: { x: number; y: number }) => ({ x: cx + (x - (a.x + b.x) / 2) * scale, y: cy + (y - (a.y + b.y) / 2) * scale })
+    const p = at(a), q = at(b)
+    const bow = cy - BOW * Math.hypot(q.x - p.x, q.y - p.y)
+    const n = (value: number) => value.toFixed(1)
+    // each name under its place, set towards the middle so that it stays in the frame
+    const name = (point: Point, { x, y }: { x: number; y: number }, cls: string) => {
+        const words = nameOf(point.place)
+        return words ? caption(x < w / 2 ? x - 5 : x + 5, y + 15, words, cls, x < w / 2 ? 'start' : 'end') : ''
+    }
+    const days = daysBetween(record.departure, record.arrival)
+    const journey = days === null ? null : days === 0 ? 'under a day' : days === 1 ? '1 day' : `${days} days`
+    const said = `The route from ${nameOf(from.place) ?? 'the plant'} to ${nameOf(to.place) ?? 'where the bag went'}: about ${kilometres(km)} km${journey ? ` in ${journey}` : ''}`
+    return `<figure class="route">
+        <svg class="map" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(said)}">
+            <rect class="ground" x=".5" y=".5" width="${w - 1}" height="${h - 1}" rx="6"/>
+            <path class="way" pathLength="1" d="M${n(p.x)} ${n(p.y)}Q${n(cx)} ${n(bow)} ${n(q.x)} ${n(q.y)}"/>
+            <path class="plant" d="M${n(p.x)} ${n(p.y - 4)}l4 4-4 4-4-4z"/>
+            <circle class="dest" cx="${n(q.x)}" cy="${n(q.y)}" r="3.8"/>
+            ${name(from, p, 'from')}${name(to, q, 'to')}
+        </svg>
+        <figcaption class="leg">≈ ${kilometres(km)} km${journey ? ` · ${journey}` : ''}</figcaption>
+    </figure>`
+}
+
+// The route of the bag, drawn in the Delivered card once both places have come: from the plant, when the transport record
+// names its site as the origin, to where the bag went. Set between the rows and the check line, as the curves are in the
+// card of a cycle, with the line that opens the route on OpenStreetMap among the small print, after the links. Nothing
+// is drawn without both places, from a plant that is not the transport's origin, or once another bag is being read.
+function drawMap(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
+    const transport = events.find(e => e.data?.phase === 'transport')
+    const record = transport?.data
+    const { plant, destination } = places
+    if (!transport || !record || !plant || !destination || product !== mine) return
+    if (plant.site === null || plant.site !== record.origin) return
+    const drawn = drawRoute(plant, destination, record)
+    const li = cards.get(transport.ref)
+    if (!drawn || !li) return
+    li.querySelector('.card .check')?.insertAdjacentHTML('beforebegin', drawn)
+    li.querySelector('.card .links')?.insertAdjacentHTML('afterend', `<p class="quiet">${linked('Open the route in OpenStreetMap', osmRoute(plant, destination))}</p>`)
+    requestAnimationFrame(() => requestAnimationFrame(() => li.querySelector('.route')?.classList.add('drawn')))
 }
 
 // ---------- the fruit (block 2) ----------
@@ -1399,7 +1519,7 @@ export function reset() {
     $<HTMLOListElement>('path').innerHTML = ''
     resetLater()
     resetFruit()
-    places.plant = null
+    places.plant = places.destination = null
     row(1, 'reading…', 'busy')
     row(2, 'waiting', 'idle')
     row(3, 'waiting', 'idle')
@@ -1569,9 +1689,10 @@ async function check(config: Page) {
         const mine = product
         later(() => {
             revealFruit(events)
-            // the description fills the label when it has come, now or later; the location of the plant, the Received card
+            // the description fills the label when it has come, now or later; the two places of the path, the plant and
+            // where the bag went, each its card, and the route between them the Delivered card once both are in
             void mine.description.then(described => product === mine && revealFruit(events, described))
-            void placePlant(mine, events, cards)
+            void Promise.all([placePlant(mine, events, cards), placeDestination(mine, events, cards)]).then(() => drawMap(mine, events, cards))
             // the curves of a cycle hang from its record, as the files of the product from the packing: the light file each
             // cycle names is asked for now, and drawn in its card when it has come
             for (const event of events) if (event.data?.phase === 'cycle') void drawCurves(mine, event, cards.get(event.ref)!)

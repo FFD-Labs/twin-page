@@ -431,3 +431,65 @@ test('the link to the full curves is there when the cycle names a reference, and
     assert.equal(cardOf(odd).querySelector('.quiet'), null)
     clean(document)
 })
+
+// ---------- the route, drawn from two places ----------
+const { drawRoute } = page
+const plant = { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', lat: 20.235281, lon: 85.109112 }
+const devcon = { site: null, place: 'Jio World Convention Centre, G Block, Bandra Kurla Complex, Bandra East, Mumbai 400098, India', lat: 19.064192, lon: 72.867442 }
+const carried = (fields = {}) => ({ phase: 'transport', at: '2026-11-02T10:00:00Z', origin: 'urn:bdf:site:india-1', destination: 'Devcon 8, Mumbai', departure: '2026-10-27T03:26:59Z', arrival: '2026-11-02T09:20:36Z', ...fields })
+// the markup of a route, parsed; and the line of a map as its numbers: where it starts, where it bows to, and where it ends
+const parsed = (html) => Object.assign(document.createElement('div'), { innerHTML: html })
+const lineOf = (card) => card.querySelector('.way').getAttribute('d').match(/^M([\d.]+) ([\d.]+)Q([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)$/).slice(1).map(Number)
+
+test('the route is drawn from the two points: the words of the places as text, the line and the markers from numbers alone', () => {
+    const card = document.createElement('div')
+    card.className = 'card'
+    document.getElementById('path').append(card)
+    card.innerHTML = drawRoute({ ...plant, place: hostile('place') }, { ...devcon, place: hostile('place') }, carried({ departure: hostile('departure'), arrival: hostile('arrival'), origin: hostile('origin'), destination: hostile('destination') }))
+    clean(document)
+    assert.deepEqual([...card.querySelectorAll('text')].map((t) => t.textContent), [`${hostile('place').slice(0, 32)}…`, `${hostile('place').slice(0, 32)}…`])
+    assert.equal(card.querySelector('.leg').textContent, '≈ 1,290 km')
+    assert.equal(card.querySelector('.plant').getAttribute('d').match(/[^\dMlz .-]/g), null)
+    assert.equal(card.querySelectorAll('.way[pathLength="1"]').length, 1)
+    // the honest route: the plant at the east edge of the frame, where the bag went at the west, named under each, and the
+    // line between them bowing to the north
+    card.innerHTML = drawRoute(plant, devcon, carried())
+    assert.equal(card.querySelector('.leg').textContent, '≈ 1,290 km · 6 days')
+    assert.equal(card.querySelector('.map').getAttribute('aria-label'), 'The route from Dhodapalli to Jio World Convention Centre: about 1,290 km in 6 days')
+    const [x1, y1, cx, cy, x2, y2] = lineOf(card)
+    assert.deepEqual([x1, x2], [264, 36])
+    assert.ok(y1 < y2) // Dhodapalli lies north of Mumbai
+    assert.ok(cy < Math.min(y1, y2))
+    assert.equal(cx, 150)
+    assert.match(card.querySelector('.plant').getAttribute('d'), /^M264\.0 /)
+    assert.equal(card.querySelector('.dest').getAttribute('cx'), '36.0')
+    const [from, to] = card.querySelectorAll('text')
+    assert.deepEqual([from.getAttribute('text-anchor'), to.getAttribute('text-anchor')], ['end', 'start'])
+    assert.ok(Number(from.getAttribute('y')) > y1 && Number(to.getAttribute('y')) > y2)
+    clean(document)
+})
+
+test('the days of the journey are rounded, one day and less are said as such, and dates the record does not give leave the distance alone', () => {
+    const leg = (fields) => parsed(drawRoute(plant, devcon, carried(fields))).querySelector('.leg').textContent
+    assert.equal(leg({ arrival: '2026-10-28T03:26:59Z' }), '≈ 1,290 km · 1 day')
+    assert.equal(leg({ arrival: '2026-10-28T20:00:00Z' }), '≈ 1,290 km · 2 days')
+    assert.equal(leg({ arrival: '2026-10-27T09:00:00Z' }), '≈ 1,290 km · under a day')
+    for (const fields of [{ arrival: undefined }, { departure: undefined }, { arrival: '2026-10-26T09:00:00Z' }, { departure: 7, arrival: 8 }, { departure: 'yesterday', arrival: 'today' }]) assert.equal(leg(fields), '≈ 1,290 km')
+})
+
+test('two places that are one, within a kilometre, draw nothing; places without words have no names, and the map is drawn', () => {
+    assert.equal(drawRoute(plant, plant, carried()), '')
+    assert.equal(drawRoute(plant, { ...plant, lon: 85.1092 }, carried()), '')
+    const html = drawRoute({ ...plant, place: null }, { ...devcon, place: ', Mumbai' }, carried())
+    const card = parsed(html)
+    assert.equal(card.querySelectorAll('text').length, 0)
+    assert.equal(card.querySelectorAll('.plant, .dest').length, 2)
+    assert.equal(card.querySelector('.map').getAttribute('aria-label'), 'The route from the plant to where the bag went: about 1,290 km in 6 days')
+    // a route up a meridian fills the height of the frame, and its line is straight: the bow lies on it
+    const north = drawRoute({ ...plant, lat: 10, lon: 80 }, { ...devcon, lat: 20, lon: 80 }, carried())
+    const [x1, y1, cx, cy, x2, y2] = lineOf(parsed(north))
+    assert.deepEqual([x1, x2, cx], [150, 150, 150])
+    assert.deepEqual([y1, y2], [146, 24])
+    assert.ok(cy > y2 && cy < y1)
+    assert.match(north, /≈ 1,110 km/)
+})
