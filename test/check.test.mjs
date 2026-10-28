@@ -888,7 +888,8 @@ test('a table with more rows than a label has room for: the page takes the first
 // ---------- the plant: the file the intake record names ----------
 // Where the plant is comes from a file, as what the bag holds does: the intake record names `site-location.geojson` among
 // its documents, and the page reads it against its reference once the records are checked. The Received card then says
-// the place and the coordinates, and the coordinates are a link to OpenStreetMap, which is asked for nothing.
+// the place, with the flag of its country after it, from the code the file gives or the name the place ends with, and the
+// coordinates, which are a link to OpenStreetMap, named after them and asked for nothing.
 const india = { type: 'Feature', geometry: { type: 'Point', coordinates: [85.109112, 20.235281] }, properties: { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India' } }
 const site = (value = india, name = 'site-location.geojson', type = 'application/geo+json') => file(name, type, bytes(value))
 // a bag of banana whose intake record names these documents; the reference of that record is returned, for a test that
@@ -901,7 +902,7 @@ function received(documents) {
 const receivedCard = () => cards().find((li) => li.querySelector('h2').textContent === 'Received')
 const rowsOf = (li) => [...li.querySelectorAll('.row')].map((row) => [row.querySelector('.k').textContent, row.querySelector('.v').textContent])
 const asIs = ['Fruit', 'Weight', 'Sourcing']
-const plant = { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', lat: 20.235281, lon: 85.109112 }
+const plant = { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', country: null, lat: 20.235281, lon: 85.109112 }
 
 test('the plant: the Received card says where it is, from the file the intake record names, and its coordinates are a link to OpenStreetMap', async () => {
     const files = [site()]
@@ -909,7 +910,7 @@ test('the plant: the Received card says where it is, from the file the intake re
     await scan()
     assert.ok($('hero').classList.contains('verified'))
     const card = receivedCard()
-    assert.deepEqual(rowsOf(card), [['Fruit', 'Banana'], ['Weight', '20 kg'], ['Sourcing', 'Rescued surplus'], ['Site', 'Dhodapalli, Odisha 752077, India'], ['GPS', '20.2353° N, 85.1091° E ↗']])
+    assert.deepEqual(rowsOf(card), [['Fruit', 'Banana'], ['Weight', '20 kg'], ['Sourcing', 'Rescued surplus'], ['Site', 'Dhodapalli, Odisha 752077, India 🇮🇳'], ['GPS', '20.2353° N, 85.1091° E OpenStreetMap ↗']])
     // the link holds numbers the page wrote and nothing else, and opens beside the page
     const links = card.querySelectorAll('.row a')
     assert.equal(links.length, 1)
@@ -928,8 +929,44 @@ test('a location file whose words are HTML: they are written as text', async () 
     received([site({ ...india, properties: { site: hostile('site'), place: hostile('place') } })])
     await scan()
     clean(document)
-    assert.deepEqual(rowsOf(receivedCard()).slice(-2), [['Site', hostile('place')], ['GPS', '20.2353° N, 85.1091° E ↗']])
+    assert.deepEqual(rowsOf(receivedCard()).slice(-2), [['Site', hostile('place')], ['GPS', '20.2353° N, 85.1091° E OpenStreetMap ↗']])
     assert.equal(page.places.plant.site, hostile('site'))
+})
+
+test('the flag of a country: after the country of the farm the record names by its code, and after the plant when its file gives one', async () => {
+    const farms = [{ zone: 'Odisha', country: 'IN', kg: 20 }, { zone: 'Kerala', country: 'in', kg: 2 }, { zone: 'Elsewhere', country: 'XX', kg: 1 }, { country: 'IN', kg: 1 }]
+    const intake = put({ phase: 'intake', at: '2026-09-25T08:00:00Z', fruit: 'banana', kg: 24, farms, documents: [site({ ...india, properties: { ...india.properties, country: 'IN' } })] })
+    net.head = put(packed({ product: 'dried banana', inputs: [intake] }))
+    await scan()
+    const card = receivedCard()
+    // a code of two capital letters that names a country has its flag, drawn by the emoji font; another is printed as it is
+    assert.deepEqual(rowsOf(card).filter(([key]) => key === 'Origin').map(([, value]) => value), ['Odisha, India 🇮🇳 · 20 kg', 'Kerala, in · 2 kg', 'Elsewhere, XX · 1 kg', 'India 🇮🇳 · 1 kg'])
+    assert.deepEqual(rowsOf(card).slice(-2), [['Site', 'Dhodapalli, Odisha 752077, India 🇮🇳'], ['GPS', '20.2353° N, 85.1091° E OpenStreetMap ↗']])
+    assert.equal(page.places.plant.country, 'IN')
+    // the small print under the coordinates names where they open, inside the link
+    assert.equal(card.querySelector('.row a small').textContent, 'OpenStreetMap ↗')
+    assert.equal(card.querySelector('.row a').textContent, '20.2353° N, 85.1091° E OpenStreetMap ↗')
+})
+
+test('the flag of the plant whose file gives no code: the country its place ends with, by name; a code in the file wins', async () => {
+    const siteOf = async (properties) => {
+        received([site({ ...india, properties })])
+        await scan()
+        return rowsOf(receivedCard()).find(([key]) => key === 'Site')[1]
+    }
+    // the words after the last comma, compared without case, against the names ICU gives the codes of today
+    assert.equal(await siteOf({ place: 'Dhodapalli, Odisha 752077, India' }), 'Dhodapalli, Odisha 752077, India 🇮🇳')
+    assert.equal(await siteOf({ place: 'Mumbai, india' }), 'Mumbai, india 🇮🇳')
+    assert.equal(await siteOf({ place: 'India' }), 'India 🇮🇳')
+    assert.equal(await siteOf({ place: 'London, United Kingdom' }), 'London, United Kingdom 🇬🇧')
+    assert.equal(await siteOf({ place: 'Berlin, Germany' }), 'Berlin, Germany 🇩🇪')
+    assert.equal(await siteOf({ place: 'Hanoi, Vietnam' }), 'Hanoi, Vietnam 🇻🇳')
+    // words that are not exactly such a name give no flag
+    for (const place of ['Somewhere, Narnia', 'Mumbai, Maharashtra', 'Jio World Centre', 'Delhi, India.', 'USA', 'Atlanta, Georgia, USA']) assert.equal(await siteOf({ place }), place)
+    // the code of the file, when it gives one, says it all
+    assert.equal(await siteOf({ place: 'Dhodapalli, Odisha 752077, India', country: 'XX' }), 'Dhodapalli, Odisha 752077, India')
+    assert.equal(await siteOf({ place: 'Dhodapalli, Odisha 752077, India', country: 'ES' }), 'Dhodapalli, Odisha 752077, India 🇪🇸')
+    assert.equal(page.places.plant.country, 'ES')
 })
 
 for (const [what, content] of [
@@ -1429,4 +1466,280 @@ test('another bag while the curves of the first are still on their way: nothing 
     await scanning
     assert.ok(cycleCard())
     assert.equal(document.querySelector('.curves'), null)
+})
+
+// ---------- the route: the file the transport record names, and the map of the Delivered card ----------
+// Where the bag went comes from a file too: the transport record names `destination-location.geojson` among its
+// documents, and the page reads it like the plant's. The Delivered card then gains the coordinates on its To row and,
+// once the plant has come as well and the transport names its site as the origin, the map: the two places joined by a
+// line, the distance and the days under it, and at the end of that line a link that opens OpenStreetMap over the two
+// places, which is asked for nothing. The map is the page's own drawing: no tile, no script and no image from anyone.
+const mumbai = { type: 'Feature', geometry: { type: 'Point', coordinates: [72.867442, 19.064192] }, properties: { place: 'Jio World Convention Centre, G Block, Bandra Kurla Complex, Bandra East, Mumbai 400098, India' } }
+const destination = (value = mumbai, name = 'destination-location.geojson', type = 'application/geo+json') => file(name, type, bytes(value))
+const devcon = { site: null, place: mumbai.properties.place, country: null, lat: 19.064192, lon: 72.867442 }
+// a bag of banana that went from the plant to Devcon: its intake names the plant's file and its transport the destination's,
+// unless a test names other documents (`plant`, `went`) or says otherwise of the transport; the reference of the transport
+// record is returned
+function delivered({ plant = [site()], went = [destination()], ...transport } = {}) {
+    const intake = put({ phase: 'intake', at: '2026-09-25T08:00:00Z', fruit: 'banana', kg: 20, sourcing: 'rescued', documents: plant })
+    const packing = put(packed({ product: 'dried banana', inputs: [intake] }))
+    net.head = put({ phase: 'transport', at: '2026-11-02T10:00:00Z', product: 'dried banana', origin: 'urn:bdf:site:india-1', destination: 'Devcon 8, Mumbai', departure: '2026-10-27T03:26:59Z', arrival: '2026-11-02T09:20:36Z', carrier: 'road courier', documents: went, inputs: [packing], ...transport })
+    return net.head
+}
+const deliveredCard = () => cards().find((li) => li.querySelector('h2').textContent === 'Delivered')
+const toRow = (li) => rowsOf(li).find(([key]) => key === 'To')
+const asDelivered = ['Product', 'From', 'To', 'Departed', 'Arrived', 'Carrier']
+const toDevcon = ['To', 'Devcon 8, Mumbai19.0642° N, 72.8674° E OpenStreetMap ↗']
+const point = 'https://www.openstreetmap.org/?mlat=19.064192&mlon=72.867442#map=15/19.064192/72.867442'
+// the view of OpenStreetMap over the two places: the destination marked, and zoom 6, the widest at which both fit, centred between them
+const view = 'https://www.openstreetmap.org/?mlat=19.064192&mlon=72.867442#map=6/19.649736/78.988277'
+// the map of a card, when it has one, and the links under it
+const mapOf = (li) => li.querySelector('.route')
+const opens = (li) => [...li.querySelectorAll('.leg a')].map((a) => a.getAttribute('href'))
+
+test('the route: the Delivered card draws it from the two files, says the distance and the days, and opens it on OpenStreetMap', async () => {
+    const files = [site(), destination()]
+    delivered({ plant: [files[0]], went: [files[1]] })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches')
+    const card = deliveredCard()
+    const map = mapOf(card)
+    assert.ok(map)
+    // the map sits between the rows and the check line, as the curves of a cycle do
+    assert.ok(map.previousElementSibling.classList.contains('row'))
+    assert.ok(map.nextElementSibling.classList.contains('check'))
+    // the two places, named by the words before the first comma of each file, and the line between them, drawn as it lands
+    assert.equal(map.querySelectorAll('.plant').length, 1)
+    assert.equal(map.querySelectorAll('.dest').length, 1)
+    const way = map.querySelector('path.way')
+    assert.equal(way.getAttribute('pathLength'), '1')
+    assert.match(way.getAttribute('d'), /^M[\d. ]+Q[\d. ]+$/)
+    assert.deepEqual([...map.querySelectorAll('text')].map((t) => t.textContent), ['Dhodapalli', 'Jio World Convention Centre'])
+    assert.equal(map.querySelector('.leg .far').textContent, '≈ 1,290 km · 6 days')
+    assert.equal(map.querySelector('svg').getAttribute('aria-label'), 'The route from Dhodapalli to Jio World Convention Centre: about 1,290 km in 6 days')
+    // the To row gains the coordinates of the destination under the record's words, linked as the GPS of the plant is
+    assert.deepEqual(toRow(card), toDevcon)
+    const links = card.querySelectorAll('.row a')
+    assert.equal(links.length, 1)
+    assert.equal(links[0].getAttribute('href'), point)
+    assert.equal(links[0].getAttribute('rel'), 'noopener')
+    assert.ok(links[0].closest('.late'))
+    // the link at the end of the line under the map: OpenStreetMap over the two places, from numbers the page wrote and
+    // nothing of the files; the small print of the card has no line of its own for it
+    const open = map.querySelector('.leg a')
+    assert.equal(open.textContent, 'Open in OpenStreetMap ↗')
+    assert.equal(open.getAttribute('href'), view)
+    assert.equal(open.getAttribute('target'), '_blank')
+    assert.equal(open.getAttribute('rel'), 'noopener')
+    assert.equal(open.previousElementSibling.textContent, '≈ 1,290 km · 6 days')
+    assert.equal(card.querySelector('.quiet'), null)
+    assert.equal(card.querySelectorAll('.links a').length, 2)
+    // the Received card has its own rows, and the raw records are the records
+    assert.deepEqual(rowsOf(receivedCard()).slice(-2).map(([key]) => key), ['Site', 'GPS'])
+    assert.equal(card.querySelector('pre').textContent.includes('Jio'), false)
+    assert.deepEqual(files.map(askedFor), [1, 1])
+    assert.deepEqual(page.places, { plant, destination: devcon })
+    clean(document)
+})
+
+test('a destination without the plant: the To row has its coordinates, and there is no map and no route', async () => {
+    delivered({ plant: [] })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = deliveredCard()
+    assert.deepEqual(toRow(card), toDevcon)
+    assert.equal(card.querySelector('.row a').getAttribute('href'), point)
+    assert.equal(mapOf(card), null)
+    assert.equal(card.querySelector('svg:not(.glyph)'), null) // the glyph at the head of the card is the page's own
+    assert.deepEqual(opens(card), [])
+    assert.deepEqual(rowsOf(receivedCard()).map(([key]) => key), asIs)
+    assert.deepEqual(page.places, { plant: null, destination: devcon })
+    clean(document)
+})
+
+test('a plant that is not the origin of the transport: both cards say where their place is, and there is no map', async () => {
+    for (const [what, make] of [
+        ['the transport names another site', () => delivered({ origin: 'urn:bdf:site:india-2' })],
+        ['the transport names no origin', () => delivered({ origin: undefined })],
+        ["the plant's file names no site", () => delivered({ plant: [site({ ...india, properties: { place: india.properties.place } })] })]
+    ]) {
+        make()
+        await scan()
+        assert.ok($('hero').classList.contains('verified'), what)
+        const card = deliveredCard()
+        assert.deepEqual(toRow(card), toDevcon, what)
+        assert.equal(mapOf(card), null, what)
+        assert.deepEqual(opens(card), [], what)
+        assert.deepEqual(rowsOf(receivedCard()).slice(-2).map(([key]) => key), ['Site', 'GPS'], what)
+        assert.equal(page.places.destination.place, devcon.place, what)
+    }
+    clean(document)
+})
+
+test('a destination that is the plant, or within a kilometre of it: the coordinates on the To row, and no map', async () => {
+    for (const where of [india.geometry.coordinates, [85.1092, 20.2353]]) {
+        delivered({ went: [destination({ ...mumbai, geometry: { type: 'Point', coordinates: where } })] })
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        const card = deliveredCard()
+        assert.match(toRow(card)[1], /^Devcon 8, Mumbai20\.235\d° N, 85\.109\d° E OpenStreetMap ↗$/)
+        assert.equal(mapOf(card), null)
+        assert.deepEqual(opens(card), [])
+        assert.deepEqual(page.places.plant, plant)
+    }
+})
+
+test('a destination file whose words are HTML, and a transport whose dates are not dates: text on the map, and the distance alone under it', async () => {
+    delivered({ went: [destination({ ...mumbai, properties: { place: hostile('place') } })], departure: hostile('departure'), arrival: hostile('arrival') })
+    await scan()
+    clean(document)
+    const card = deliveredCard()
+    const map = mapOf(card)
+    assert.ok(map)
+    // a name is cut at 32 characters; the words reach the map as text and the label of the map as an attribute, escaped
+    assert.deepEqual([...map.querySelectorAll('text')].map((t) => t.textContent), ['Dhodapalli', `${hostile('place').slice(0, 32)}…`])
+    assert.equal(map.querySelector('.leg .far').textContent, '≈ 1,290 km')
+    assert.equal(map.querySelector('svg').getAttribute('aria-label'), `The route from Dhodapalli to ${hostile('place').slice(0, 32)}…: about 1,290 km`)
+    assert.deepEqual(opens(card), [view])
+    assert.equal(page.places.destination.place, hostile('place'))
+})
+
+test('a destination file under another name or of another type is not asked for, nor one named by a transport record that did not pass the check', async () => {
+    const elsewhere = { ...mumbai, properties: { place: 'Elsewhere' } }
+    delivered({ went: [destination(elsewhere, 'destination.geojson'), destination(mumbai, 'destination-location.geojson', 'application/json'), { name: 'destination-location.geojson', type: 'application/geo+json', ref: hostile('ref') }] })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = deliveredCard()
+    assert.deepEqual(rowsOf(card).map(([key]) => key), asDelivered)
+    assert.deepEqual(toRow(card), ['To', 'Devcon 8, Mumbai'])
+    assert.equal(card.querySelector('.row a'), null)
+    assert.equal(mapOf(card), null)
+    assert.deepEqual(opens(card), [])
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 4) // the three records, the plant's file, and no other
+    assert.deepEqual(page.places, { plant, destination: null })
+    assert.equal(document.documentElement.outerHTML.includes('Elsewhere'), false)
+    clean(document)
+    // a transport record with no anchor is not read, and names nothing
+    net.asked.length = 0
+    const went = destination()
+    net.anchors.delete(delivered({ went: [went] }))
+    await scan()
+    assert.match(cards()[0].textContent, /Record not shown/)
+    assert.equal(askedFor(went), 0)
+    assert.deepEqual(page.places, { plant: null, destination: null })
+})
+
+test('a destination file no gateway serves as its reference names it, or that is not a point: nothing of it, and the card is as it was', async () => {
+    const served = () => answer(bytes({ ...mumbai, properties: { place: 'SERVED-BY-THE-GATEWAY' } }), 'application/octet-stream')
+    const went = destination()
+    delivered({ went: [went] })
+    for (const gateway of [first, second]) net.instead.set(gateway, but(went, served))
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    let card = deliveredCard()
+    assert.deepEqual(toRow(card), ['To', 'Devcon 8, Mumbai'])
+    assert.equal(mapOf(card), null)
+    assert.deepEqual(opens(card), [])
+    assert.equal(askedFor(went), 2)
+    assert.equal(document.documentElement.outerHTML.includes('SERVED-BY-THE-GATEWAY'), false)
+    assert.deepEqual(page.places, { plant, destination: null })
+    // a file that is what its reference names, and says nothing: a polygon where a point should be
+    net.instead.clear()
+    const shape = destination({ ...mumbai, geometry: { type: 'Polygon', coordinates: [[[72, 19], [73, 19], [73, 20], [72, 19]]] } })
+    delivered({ went: [shape] })
+    await scan()
+    card = deliveredCard()
+    assert.deepEqual(toRow(card), ['To', 'Devcon 8, Mumbai'])
+    assert.equal(mapOf(card), null)
+    assert.equal(askedFor(shape), 1)
+    assert.deepEqual(page.places, { plant, destination: null })
+    clean(document)
+})
+
+test('a transport record that names no file: the card as it has been, and no one is asked for anything', async () => {
+    delivered({ went: null })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = deliveredCard()
+    assert.deepEqual(rowsOf(card).map(([key]) => key), asDelivered)
+    assert.equal(card.querySelector('.row a'), null)
+    assert.equal(mapOf(card), null)
+    assert.deepEqual(opens(card), [])
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 4) // the three records and the plant's file
+    assert.deepEqual(page.places, { plant, destination: null })
+})
+
+test('another bag after one with its route: nothing of it is left', async () => {
+    delivered()
+    await scan()
+    assert.ok(mapOf(deliveredCard()))
+    net.head = put(packed())
+    await scan()
+    assert.deepEqual(page.places, { plant: null, destination: null })
+    assert.deepEqual(cards().map((li) => li.querySelector('h2').textContent), ['Packed'])
+    for (const word of ['Jio', 'Dhodapalli', 'map=6/', 'class="route"']) assert.equal(document.documentElement.outerHTML.includes(word), false, word)
+})
+
+test('a file of the route that is slow to come: the seal does not wait for it, the other place takes its card, and the map comes when both are in', async () => {
+    // the destination held back: the plant lands on the Received card, and the map waits
+    let files = [site(), destination()]
+    delivered({ plant: [files[0]], went: [files[1]] })
+    let open = slow(files[1])
+    location.hash = `#11155111:${contract}/1`
+    let scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.ok($('proof-fold').classList.contains('open'))
+    assert.deepEqual(rowsOf(receivedCard()).slice(-2).map(([key]) => key), ['Site', 'GPS'])
+    assert.deepEqual(toRow(deliveredCard()), ['To', 'Devcon 8, Mumbai'])
+    assert.equal(mapOf(deliveredCard()), null)
+    assert.deepEqual(page.places, { plant, destination: null })
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual(toRow(deliveredCard()), toDevcon)
+    assert.ok(mapOf(deliveredCard()))
+    assert.deepEqual(opens(deliveredCard()), [view])
+    // the plant held back: the destination lands on the Delivered card, and the map waits for the plant
+    net.instead.clear()
+    files = [site(), destination()]
+    delivered({ plant: [files[0]], went: [files[1]] })
+    open = slow(files[0])
+    location.hash = `#11155111:${contract}/1`
+    scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(toRow(deliveredCard()), toDevcon)
+    assert.equal(mapOf(deliveredCard()), null)
+    assert.deepEqual(rowsOf(receivedCard()).map(([key]) => key), asIs)
+    assert.deepEqual(page.places, { plant: null, destination: devcon })
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual(rowsOf(receivedCard()).slice(-2).map(([key]) => key), ['Site', 'GPS'])
+    assert.ok(mapOf(deliveredCard()))
+    assert.ok(mapOf(deliveredCard()).nextElementSibling.classList.contains('check'))
+    clean(document)
+})
+
+test('another bag while the files of the route are still on their way: nothing of them reaches the page', async () => {
+    const files = [site(), destination()]
+    delivered({ plant: [files[0]], went: [files[1]] })
+    const open = slow(files[1])
+    location.hash = `#11155111:${contract}/1`
+    const scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(mapOf(deliveredCard()), null)
+    net.instead.clear()
+    net.head = put(packed())
+    await scan()
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual(page.places, { plant: null, destination: null })
+    assert.deepEqual(cards().map((li) => li.querySelector('h2').textContent), ['Packed'])
+    assert.equal(document.querySelector('.route'), null)
+    assert.equal(document.documentElement.outerHTML.includes('Jio'), false)
 })
