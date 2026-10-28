@@ -10,9 +10,11 @@ page is cut from its master and written to web/public/fonts/, where the page and
 
     uv run scripts/fonts.py
 
-Every character a face keeps keeps its outline, its advance, its kerning and its tabular figures; the vertical metrics
-(head, hhea, OS/2) and the names, with the copyright and the licence of each typeface, are the master's. What a face
-drops is what the page never asks of it:
+Every character a face keeps keeps its outline, its advance, its kerning and its tabular figures, and the vertical
+metrics (head, hhea, OS/2) are the master's. So are the names, with the copyright of each typeface, but for those of the
+weights of Spline Sans Mono's variable master, which its one weight no longer has. The masters carry no licence of their
+own: the three typefaces are under the SIL Open Font License 1.1, as the License section of the README says. What a
+face drops is what the page never asks of it:
 
 - Montserrat 300 draws numbers only: the twin's number in the window (.twin b), the times in the ring of the arithmetic
   (.ring .times, ≈4.1×) and the amounts of its ledger (.ledger .amt, ≈61). Figures, the point and the comma, ≈ and ×,
@@ -63,7 +65,7 @@ def cmap(font):
 def cut(font, unicodes, features, name):
     options = subset.Options()
     options.layout_features = features
-    # every name record, as the master has it: the copyright and the licence travel with the face
+    # every name record the master has, as it has it: the copyright travels with the face
     options.name_IDs = ["*"]
     options.name_languages = ["*"]
     options.name_legacy = True
