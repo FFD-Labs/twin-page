@@ -885,6 +885,128 @@ test('a table with more rows than a label has room for: the page takes the first
     assert.equal($('fruit-origin').textContent.includes('Mineral 13'), false)
 })
 
+// ---------- the walk: a record and its anchor at once ----------
+// A record is asked of the gateways and its anchor of the source at once, and its card waits for both. When no gateway
+// answers, the page says so as soon as that is known, whatever the source is doing.
+
+// the anchors the first source is asked for, kept in order; `then` is what it does before it answers, to hold the answer
+// back or to fail
+function anchorsAsked(then = () => {}) {
+    const anchors = []
+    net.says.set(rpc1, async (method, params) => {
+        const call = method === 'eth_call' && params[0].to.toLowerCase() === contract ? decodeFunctionData({ abi, data: params[0].data }) : null
+        if (call?.functionName === 'anchoredAt') {
+            anchors.push(call.args[0])
+            await then()
+        }
+        return rpc(method, params)
+    })
+    return anchors
+}
+
+test('a record that is slow to come: its anchor is asked while it is on its way, and its card waits for both', async () => {
+    net.head = put(packed())
+    const open = slow({ ref: net.head.slice(2) })
+    const anchors = anchorsAsked()
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    await turns()
+    assert.equal(done, false)
+    assert.deepEqual(anchors, [net.head])
+    assert.equal(cards().length, 0)
+    open()
+    await turns()
+    await scanning
+    assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
+    assert.match(cards()[0].querySelector('.check').textContent, /^✓ Matches its Ethereum anchor of /)
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(anchors, [net.head])
+})
+
+test('no gateway answers while the source keeps the anchor back: the page says so without waiting for the source', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    net.instead.set(first, down)
+    net.instead.set(second, down)
+    let open
+    const held = new Promise((resolve) => (open = resolve))
+    const anchors = anchorsAsked(() => held)
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    await turns()
+    assert.equal(done, true)
+    assert.deepEqual(anchors, [net.head]) // asked, and not answered yet
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example, second\.example\./)
+    assert.ok(document.getElementById('retry'))
+    assert.equal(cards().length, 0)
+    open()
+    await scanning
+})
+
+test('a source that fails when asked for an anchor, while a gateway serves the record: the page says it could not reach the records', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    anchorsAsked(fails)
+    await scan()
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example\./)
+    assert.match($('notice').querySelector('pre').textContent, /Status: 429/) // what the source said, in the details
+    assert.ok(document.getElementById('retry'))
+    assert.equal(cards().length, 0)
+    assert.equal($('hero').classList.contains('verified'), false)
+})
+
+// the rejections nobody handled while `scanning` ran, and for a few turns after it: an anchor that fails when its answer
+// is no longer read must not become one
+async function unhandled(scanning) {
+    const seen = []
+    const on = (reason) => seen.push(reason)
+    process.on('unhandledRejection', on)
+    try {
+        await scanning()
+        await turns(40)
+    } finally {
+        process.off('unhandledRejection', on)
+    }
+    return seen
+}
+
+test('no gateway answers, and the source fails when asked for the anchor: the page says so, and leaves no rejection unhandled', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    net.instead.set(first, down)
+    net.instead.set(second, down)
+    const anchors = anchorsAsked(fails)
+    const seen = await unhandled(() => scan())
+    assert.equal(anchors.length, 2) // asked, and asked again, before it gave up
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').querySelector('pre').textContent, /download failed: 502/)
+    assert.deepEqual(seen, [])
+})
+
+test('the source fails when asked for the anchor while a gateway still serves the record: the page says so once the bytes are in, and leaves no rejection unhandled', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    const open = slow({ ref: net.head.slice(2) })
+    const anchors = anchorsAsked(fails)
+    location.hash = `#11155111:${contract}/1`
+    const seen = await unhandled(async () => {
+        const scanning = page.main()
+        await turns(80)
+        assert.equal(anchors.length, 2)
+        assert.equal($('notice').hidden, true)
+        open()
+        await turns()
+        await scanning
+    })
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').querySelector('pre').textContent, /Status: 429/)
+    assert.deepEqual(seen, [])
+})
+
 // ---------- the plant: the file the intake record names ----------
 // Where the plant is comes from a file, as what the bag holds does: the intake record names `site-location.geojson` among
 // its documents, and the page reads it against its reference once the records are checked. The Received card then says

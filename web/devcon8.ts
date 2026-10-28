@@ -1709,8 +1709,12 @@ async function check(config: Page) {
             const ref = queue.shift()!
             if (seen.has(ref)) continue
             seen.add(ref)
+            // the anchor is asked while the bytes are on their way, and read once they are in: when no gateway answers, that
+            // is said at once, without waiting for the source, and what the source says of the anchor is not read
+            const anchor = reader.anchoredAt(ref)
+            void anchor.catch(() => {})
             const { bytes, gateway } = await fetchBytes(ref)
-            const [anchored, block] = await reader.anchoredAt(ref)
+            const [anchored, block] = await anchor
             const at = when(anchored)
             const text = at !== null && bytes ? new TextDecoder().decode(bytes) : null
             const verified = text !== null
