@@ -1392,9 +1392,10 @@ async function nameHolder(owner: Address, chainId: number, { transport }: Source
 // ---------- the art: last of all ----------
 
 // The page is complete without an image: the crystal is drawn, the colours are its own, and the photograph has its place
-// kept. When everything else is on screen, and only then, it asks Swarm for the illustrations of the bag's pouch and the
-// photograph of its fruit, by the references the packing record names, and checks each against its reference before
-// it is shown. One that does not come, does not match, or is not an image a browser can draw, leaves the page as it was.
+// kept. When everything else is on screen, and only then, it asks Swarm for the photograph of the bag's fruit and then for
+// the illustrations of its pouch, the cover and then the background, by the references the packing record names, and
+// checks each against its reference before it is shown. One that does not come, does not match, or is not an image a
+// browser can draw, leaves the page as it was.
 const ART_WAIT = 20_000
 const PIXELS_MOST = 4096 * 4096
 const arrive = (src: string) =>
@@ -1418,49 +1419,85 @@ const release = (url: string | null | undefined) => {
     URL.revokeObjectURL(url)
 }
 
-// An image of the product: its bytes from Swarm, checked against their reference, and then tried as an image.
-async function picture(mine: Product, name: string) {
+// An image of the product: its bytes from Swarm, checked against their reference and held under an address of the
+// page's own making (checked), and then tried as an image (tried).
+async function checked(mine: Product, name: string) {
     const ref = mine.files.get(name)
     const bytes = ref ? await fileOf(mine.gateways, ref) : null
     if (!bytes || product !== mine) return null // it did not come, or another bag is being read
     const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: PRODUCT_FILES[name]! }))
     held.add(url)
-    if (await arrive(url)) return url
+    return url
+}
+async function tried(url: string | null) {
+    if (!url || (await arrive(url))) return url
     release(url)
     return null
 }
+const picture = (mine: Product, name: string) => checked(mine, name).then(tried)
+
+// The images come one after another: each is asked for once the one before it is in, or has not come, or ART_TURN has
+// passed, whichever is first, so that one held up by its gateways, which may take 12 s each, does not hold back the next.
+const ART_TURN = 4_000
+const waitTurn = (before: Promise<unknown>) =>
+    new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, ART_TURN)
+        const done = () => {
+            clearTimeout(timer)
+            resolve()
+        }
+        void before.then(done, done)
+    })
 
 async function dress() {
     const mine = product
     if (!mine) return
     const root = document.documentElement
-    // each illustration is shown as it comes, and none waits for another file
-    const plate = async (name: string, side: 'front' | 'back') => {
-        const url = await picture(mine, name)
+    // each illustration is shown as it comes
+    const plate = async (image: Promise<string | null>, side: 'front' | 'back') => {
+        const url = await image
         if (!url) return
         if (product !== mine) return release(url) // another bag was read meanwhile
         root.style.setProperty(`--art-${side}`, `url(${JSON.stringify(url)})`)
         root.dataset.art = ['front', 'back'].filter(s => s === side || root.dataset.art?.split(' ').includes(s)).join(' ')
     }
     // the photograph waits for the description, which gives it its text and names who took it
-    const photograph = async () => {
-        const [url, described] = await Promise.all([picture(mine, PHOTO), mine.description])
+    const photograph = async (photo: Promise<string | null>) => {
+        const [url, described] = await Promise.all([photo, mine.description])
         if (product !== mine) return release(url)
         if (!url) return void ($('stage').hidden = true) // it did not come: its place is given back
         const img = $<HTMLImageElement>('fruit-photo')
         img.alt = described?.alt ?? $('fruit-name').textContent ?? ''
-        img.onload = () => img.classList.add('in')
+        // it fades in on its pixels once they are decoded, or ART_TURN after it is put in place when the browser has not
+        // said so by then, as when the page is in the background and draws nothing; where the browser cannot say when
+        // that is, as jsdom cannot, once it has loaded
+        if (!img.decode) img.onload = () => img.classList.add('in')
         img.src = url
         img.hidden = false
         $('stage').classList.add('on')
         // who took it is said with the sources of the label, or under it when the label has none, once the photograph is
         // there to be credited
-        if (!described?.credit) return
-        const origin = $('fruit-origin')
-        const note = origin.querySelector('.origin-note') ?? origin.appendChild(Object.assign(document.createElement('p'), { className: 'origin-note' }))
-        note.append(`${note.textContent ? ' ' : ''}Photograph: ${described.credit}.`)
+        if (described?.credit) {
+            const origin = $('fruit-origin')
+            const note = origin.querySelector('.origin-note') ?? origin.appendChild(Object.assign(document.createElement('p'), { className: 'origin-note' }))
+            note.append(`${note.textContent ? ' ' : ''}Photograph: ${described.credit}.`)
+        }
+        if (!img.decode) return
+        await waitTurn(img.decode())
+        if (product === mine) img.classList.add('in')
     }
-    await Promise.all([plate(COVER, 'front'), plate(BACKGROUND, 'back'), photograph()])
+    // The photograph of the fruit first, then the cover, then the background. The cover is asked for once the photograph
+    // is checked and tried as an image, and the background once the cover's bytes are checked, while the cover is still
+    // being tried; each of them at the latest ART_TURN after the one before it was asked for.
+    const photo = picture(mine, PHOTO)
+    const shown = photograph(photo)
+    await waitTurn(photo)
+    if (product !== mine) return // another bag is being read: nothing more of this one is asked for
+    const cover = checked(mine, COVER)
+    const front = plate(cover.then(tried), 'front')
+    await waitTurn(cover)
+    if (product !== mine) return
+    await Promise.all([shown, front, plate(picture(mine, BACKGROUND), 'back')])
 }
 
 function undress() {
