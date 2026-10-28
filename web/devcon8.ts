@@ -14,6 +14,7 @@ type Farm = { zone: string | null; country: string | null; variety: string | nul
 
 type Record = {
     phase: 'intake' | 'cycle' | 'packing' | 'transport'
+    // the version of a record is written in its raw record, and nowhere else on its card
     version?: number
     at: string
     plant_id?: string | null
@@ -287,6 +288,10 @@ async function secondOpinion(others: Source[], chainId: number, contract: Addres
 
 // ---------- the record cards (block 4) ----------
 
+// The two minima of a cycle, as its card names them: rows at first, and the figures above the chart once the curves are drawn.
+const COLDEST = 'Coldest'
+const LOWEST = 'Lowest pressure'
+
 const steps = {
     intake: (r: Record) => ({
         title: 'Received',
@@ -309,8 +314,8 @@ const steps = {
             ['Duration', hours(r.start, r.end)],
             ['Loaded', loaded(r.loads)],
             ['Dried out', r.kg_out != null ? `${r.kg_out} kg` : null],
-            ['Coldest', r.min_temperature_c != null ? `${r.min_temperature_c} °C` : null],
-            ['Lowest pressure', r.min_pressure_pa != null ? `${r.min_pressure_pa} Pa` : null],
+            [COLDEST, r.min_temperature_c != null ? `${r.min_temperature_c} °C` : null],
+            [LOWEST, r.min_pressure_pa != null ? `${r.min_pressure_pa} Pa` : null],
             ['Moisture left', r.moisture_pct != null ? `${r.moisture_pct} %` : null],
             ['Energy', r.kwh != null ? `${r.kwh} kWh` : null],
             ['Cycle', r.plant_id]
@@ -366,6 +371,25 @@ export function read(text: string): { data: Record | null; inputs: Hex[] } {
 // The most of a record's text a card shows when the page could not read it as a record.
 const RAW_SHOWN = 4000
 
+// ---------- the glyphs of the path ----------
+
+// One per record, at the head of its card, drawn from the geometry of the pack: the hexagon of the crystal and the diamond
+// of its ornament. Received is the fruit in its crate; Freeze-dried, the crystal grown from the hexagon; Packed, the pouch
+// with its window; Delivered, the route out of the diamond to where the bag went. Filled in the three tints of the pouch's
+// crystal (ga, gb, gc) and outlined in the deep one (gs). They are the page's own markup: nothing of a record is in them.
+const HEXAGON_MID = 'M15.12 13.8L12 15.6L8.88 13.8L8.88 10.2L12 8.4L15.12 10.2Z'
+const HEXAGON_LOW = 'M15.12 16L12 17.8L8.88 16L8.88 12.4L12 10.6L15.12 12.4Z'
+const CRYSTAL =
+    'M12 8.6V2.6M12 5.4l-1.99-1.15M12 5.4l1.99-1.15M14.94 10.3l5.2-3M17.72 8.7V6.4M17.72 8.7l1.99 1.15M14.94 13.7l5.2 3M17.72 15.3l1.99-1.15M17.72 15.3v2.3M12 15.4v6M12 18.6l1.99 1.15M12 18.6l-1.99 1.15M9.06 13.7l-5.2 3M6.28 15.3v2.3M6.28 15.3l-1.99-1.15M9.06 10.3l-5.2-3M6.28 8.7l-1.99 1.15M6.28 8.7V6.4'
+const GLYPHS: { [phase: string]: string } = {
+    intake: '<path class="gb" d="M4.2 11.5h15.6l-1.5 8.3H5.7z"/><path class="ga" opacity=".5" d="M7.1 11.5h9.8l-.9 5H8z"/><circle class="ga" cx="9.4" cy="7.6" r="3.2"/><circle class="gc" cx="14.9" cy="8.1" r="2.9"/><path class="gs" d="M14.4 5.2c.6-1.5 1.9-2.3 3.5-2.2"/>',
+    cycle: `<path class="ga" d="${HEXAGON_MID}"/><path class="gs gw" d="${CRYSTAL}"/><path class="gc" d="M12 10.6l1.4 1.4-1.4 1.4-1.4-1.4z"/>`,
+    packing: `<path class="gb" d="M7.2 3.6h9.6l1.8 2.6v12.9a1.5 1.5 0 0 1-1.5 1.5H6.9a1.5 1.5 0 0 1-1.5-1.5V6.2z"/><path class="ga" d="M5.6 8.2h12.8v1.2H5.6z"/><path class="ga" d="${HEXAGON_LOW}"/><path class="gc" d="M12 12.8l1.4 1.4-1.4 1.4-1.4-1.4z"/>`,
+    transport:
+        '<path class="gc" d="M5 16.2l2.2 2.2-2.2 2.2-2.2-2.2z"/><path class="gs" stroke-dasharray="2.4 2.2" d="M6.9 18.4c3.4 0 3.1-5.4 6.4-5.4 2.3 0 2.6 1.8 4.7 1.8"/><path class="gb" d="M19 5.3a3.1 3.1 0 0 1 3.1 3.1c0 2.4-3.1 5.8-3.1 5.8s-3.1-3.4-3.1-5.8A3.1 3.1 0 0 1 19 5.3z"/><circle class="ga" cx="19" cy="8.4" r="1.3"/>'
+}
+const glyph = (phase: string) => (Object.hasOwn(GLYPHS, phase) ? `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[phase]}</svg>` : '')
+
 function card(event: Event, explorer: string | undefined) {
     const data = event.data
     // A record that did not pass the check was not read: its card carries the reference the page asked for and nothing of what arrived.
@@ -390,7 +414,6 @@ function card(event: Event, explorer: string | undefined) {
         <details><summary>Raw record</summary><pre>${esc(raw.length > RAW_SHOWN ? `${raw.slice(0, RAW_SHOWN)}…` : raw)}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
     }
     const { title, twin, rows: list } = steps[data.phase](data)
-    const correction = typeof data.version === 'number' && data.version > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
     // A cycle names the SenML of its curves, which the page links and never downloads: the link is there when the record
     // names a reference, from the gateway that served the record, and nowhere otherwise. The curves themselves come later,
     // drawn from the light file the record also names (drawCurves).
@@ -400,9 +423,8 @@ function card(event: Event, explorer: string | undefined) {
             <a class="btn" href="${esc(`${event.gateway}/bytes/${telemetry.slice(2)}`)}" target="_blank" rel="noopener">Full curves on Swarm ↗</a>`
         : ''
     return `
-        <h2>${esc(title)}</h2>
+        <h2>${glyph(data.phase)}${esc(title)}</h2>
         ${twin ? '<p class="twin-born">This bag’s twin starts here.</p>' : ''}
-        ${correction ? `<div class="chips">${correction}</div>` : ''}
         ${rows(list)}${links(curves)}
         <details><summary>Raw record</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
@@ -704,6 +726,24 @@ function curve(values: (number | null)[], x: number[], y: (v: number) => number 
     })
     return d
 }
+// The ground under a series: each unbroken run of its line, closed down to the base of the chart
+function band(values: (number | null)[], x: number[], y: (v: number) => number | null, base: number) {
+    let d = ''
+    let run: string[] = []
+    let from = -1
+    const close = (to: number) => {
+        if (run.length) d += `M${run.join('L')}L${x[to]!.toFixed(1)} ${base.toFixed(1)}L${x[from]!.toFixed(1)} ${base.toFixed(1)}Z`
+        run = []
+    }
+    values.forEach((v, i) => {
+        const py = v === null ? null : y(v)
+        if (py === null) return close(i - 1)
+        if (!run.length) from = i
+        run.push(`${x[i]!.toFixed(1)} ${py.toFixed(1)}`)
+    })
+    close(values.length - 1)
+    return d
+}
 const caption = (x: number, y: number, label: string, cls: string, anchor: 'start' | 'middle' | 'end' = 'start') =>
     `<text class="${cls}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}">${esc(label)}</text>`
 
@@ -777,20 +817,29 @@ export function drawCycle(preview: Preview, record: Record): string {
             marks.push(caption(x1 + 5, yP(k) + 3, pascal(10 ** k), 'pascal'))
         }
     }
-    // the lines, the shelves behind, then the pressure, then the chamber in front; and the minima set on them
-    const lines: string[] = [], minima: string[] = []
+    // the lines: the ground under the chamber, then the shelves behind, the pressure, and the chamber in front
+    const lines: string[] = []
+    if (yT && chamber) lines.push(`<path class="fill" d="${band(chamber, x, yT, y1)}"/>`)
     if (yT) for (const shelf of shelves) lines.push(`<path class="line shelf" d="${curve(shelf, x, yT)}"/>`)
     if (yP && pressure) lines.push(`<path class="line press" d="${curve(pressure, x, p => (p > 0 ? yP(Math.log10(p)) : null))}"/>`)
     if (yT && chamber) lines.push(`<path class="line temp" pathLength="1" d="${curve(chamber, x, yT)}"/>`)
-    const diamond = (cx: number, cy: number, cls: string) => `<path class="min ${cls}" d="M${cx.toFixed(1)} ${(cy - 3.6).toFixed(1)}l3.6 3.6-3.6 3.6-3.6-3.6z"/>`
-    const beside = (cx: number, cy: number, label: string) => (cx < (x0 + x1) / 2 ? caption(cx + 6, cy + 3.2, label, 'min') : caption(cx - 6, cy + 3.2, label, 'min', 'end'))
+    // the two minima the record declares: each named above the chart, with the hour its curve was lowest, and marked on
+    // the curve there, the coldest as the filled diamond and the lowest pressure as the ring
+    const marksOn: string[] = [], stats: string[] = []
+    const diamond = (cx: number, cy: number) => `<path class="min dot" d="M${cx.toFixed(1)} ${(cy - 3.6).toFixed(1)}l3.6 3.6-3.6 3.6-3.6-3.6z"/>`
+    const ring = (cx: number, cy: number) => `<circle class="min ring" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.1"/>`
+    const hour = (at: number) => num(Number(clock[at]!.toFixed(clock[at]! < 10 ? 1 : 0)))
+    const stat = (row: string, mark: string, value: string, at: number) =>
+        `<div class="stat" data-row="${esc(row)}"><dt><i class="mk ${mark}"></i>${esc(row)}</dt><dd><b>${esc(value)}</b><small>at ${hour(at)} h</small></dd></div>`
     if (coldest !== null && chamber && yT) {
         const at = lowestAt(chamber)
-        minima.push(diamond(x[at]!, yT(coldest), 'dot'), beside(x[at]!, yT(coldest), `${num(coldest)} °C`))
+        marksOn.push(diamond(x[at]!, yT(coldest)))
+        stats.push(stat(COLDEST, 'mk-cold', `${num(coldest)} °C`, at))
     }
     if (lowestPa !== null && pressure && yP) {
         const at = lowestAt(pressure.map(p => (p !== null && p > 0 ? p : null)))
-        minima.push(diamond(x[at]!, yP(Math.log10(lowestPa)), 'ring'), beside(x[at]!, yP(Math.log10(lowestPa)), `${num(lowestPa)} Pa`))
+        marksOn.push(ring(x[at]!, yP(Math.log10(lowestPa))))
+        stats.push(stat(LOWEST, 'mk-low', `${num(lowestPa)} Pa`, at))
     }
     // the key under the chart names what is drawn, and so does the chart to whoever cannot see it
     const drawn: [boolean, string, string, string][] = [
@@ -800,12 +849,13 @@ export function drawCycle(preview: Preview, record: Record): string {
     ]
     const there = drawn.filter(([is]) => is)
     return `<figure class="curves">
+        ${stats.length ? `<dl class="minima">${stats.join('')}</dl>` : ''}
         <svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="The cycle over ${num(Number((h1 - h0).toFixed(1)))} hours: ${there.map(([, , , said]) => said).join(', ')}">
             ${grid.length ? `<path class="axis grid" d="${grid.join('')}"/>` : ''}
             <path class="axis" d="${axis.join('')}"/>
             ${marks.join('')}
             ${lines.join('')}
-            ${minima.join('')}
+            ${marksOn.join('')}
         </svg>
         <figcaption class="key">${there.map(([, cls, name]) => `<span><i class="sw ${cls}"></i>${name}</span>`).join('')}</figcaption>
     </figure>`
@@ -825,6 +875,9 @@ async function drawCurves(mine: Product, event: Event, li: HTMLElement) {
     const drawn = drawCycle(preview, data)
     if (!drawn) return
     li.querySelector('.card .check')?.insertAdjacentHTML('beforebegin', drawn)
+    // the two minima now stand above the chart, with the hour they came: their rows give way to them
+    const named = new Set([...li.querySelectorAll<HTMLElement>('.minima .stat')].map(stat => stat.dataset.row))
+    for (const row of li.querySelectorAll<HTMLElement>('.card .row')) if (named.has(row.querySelector('.k')?.textContent ?? '')) row.remove()
     requestAnimationFrame(() => requestAnimationFrame(() => li.querySelector('.curves')?.classList.add('drawn')))
 }
 

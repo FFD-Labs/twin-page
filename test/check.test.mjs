@@ -1312,7 +1312,10 @@ test('a cycle that names its curves: the preview is read against its reference a
     assert.match(chart.textContent, /°C/)
     assert.match(chart.textContent, /100k/)
     assert.match(chart.textContent, /4 h/)
-    assert.deepEqual([...chart.querySelectorAll('text.min')].map((t) => t.textContent), ['-38.2 °C', '21.3 Pa'])
+    assert.deepEqual([...chart.querySelectorAll('.minima b')].map((b) => b.textContent), ['-38.2 °C', '21.3 Pa'])
+    assert.equal(chart.querySelectorAll('svg .min').length, 2)
+    // the two rows of the minima gave way to the figures above the chart
+    assert.equal([...card.querySelectorAll('.row .k')].some((k) => k.textContent === 'Coldest' || k.textContent === 'Lowest pressure'), false)
     assert.equal(chart.querySelector('.key').textContent, 'ChamberShelvesPressure')
     // the link to the full curves, from the gateway that served the record; the SenML itself is never asked for
     const link = [...card.querySelectorAll('.links a')].find((a) => a.textContent === 'Full curves on Swarm ↗')
@@ -1343,7 +1346,7 @@ for (const [what, file] of [
         assert.ok($('hero').classList.contains('verified'))
         const card = cycleCard()
         assert.equal(card.querySelector('.curves'), null)
-        assert.equal(card.querySelector('svg'), null)
+        assert.equal(card.querySelector('svg:not(.glyph)'), null) // the glyph at the head of the card is the page's own
         assert.equal(card.querySelectorAll('.row').length, 5)
         assert.equal(card.querySelectorAll('.links a').length, 3)
         assert.equal(askedRef(preview), 1)

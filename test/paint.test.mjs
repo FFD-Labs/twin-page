@@ -78,10 +78,20 @@ test('a version that is HTML creates nothing', () => {
     clean(document)
 })
 
-test('a correction says its version', () => {
+test('the version of a record is in its raw record, and nowhere else on its card', () => {
     const packed = packing({ version: 2 })
     paint([intake(), cycle(), packed])
-    assert.equal(cardOf(packed).querySelector('.chip').textContent, 'Correction v2')
+    assert.equal(cardOf(packed).querySelector('.chip'), null)
+    assert.equal(cardOf(packed).textContent.includes('Correction'), false)
+    assert.match(cardOf(packed).querySelector('pre').textContent, /"version": 2/)
+    clean(document)
+})
+
+test('a card opens with the glyph of its record, the page’s own markup; a record not understood has none', () => {
+    const odd = event(3, null, { raw: 'not a record' })
+    paint([intake(), cycle(), packing(), odd])
+    const heads = [...document.querySelectorAll('#path .card h2')]
+    assert.deepEqual(Object.fromEntries(heads.map((h2) => [h2.textContent, !!h2.querySelector('svg.glyph')])), { Received: true, 'Freeze-dried': true, Packed: true, 'Record not understood': false })
     clean(document)
 })
 
@@ -385,10 +395,13 @@ test('the cycle is drawn from numbers alone: HTML where the record declares its 
     card.innerHTML = drawCycle(read, dryer({ min_temperature_c: hostile('min_temperature_c'), min_pressure_pa: hostile('min_pressure_pa') }))
     clean(document)
     assert.equal(card.querySelectorAll('.min').length, 0)
+    assert.equal(card.querySelector('.minima'), null)
     assert.equal(card.querySelectorAll('path.line').length, 3)
     assert.equal(card.querySelector('.key').textContent, 'ChamberShelvesPressure')
     card.innerHTML = drawCycle(read, dryer({ min_temperature_c: -38.2, min_pressure_pa: 21.3 }))
-    assert.deepEqual([...card.querySelectorAll('text.min')].map((t) => t.textContent), ['-38.2 °C', '21.3 Pa'])
+    assert.deepEqual([...card.querySelectorAll('.minima b')].map((b) => b.textContent), ['-38.2 °C', '21.3 Pa'])
+    assert.deepEqual([...card.querySelectorAll('.minima small')].map((s) => s.textContent), ['at 1 h', 'at 1 h'])
+    assert.equal(card.querySelectorAll('svg .min').length, 2)
     // a pressure that is not above zero has no place on a scale of powers of ten, and is not marked
     card.innerHTML = drawCycle(read, dryer({ min_temperature_c: null, min_pressure_pa: 0 }))
     assert.equal(card.querySelectorAll('.min').length, 0)

@@ -65,6 +65,8 @@
                 /* the label panel is white on every pouch, and what sits on it is read on white */
                 --panel: #FFFFFF; --panel-ink: #16383B; --panel-ink-2: #3F5E5E; --panel-rule: rgb(22 56 59 / .22); --panel-tint: #F3F1EC;
                 --glyph-a: #69A69B; --glyph-b: #2A5E61; --glyph-c: #173F43;
+                /* the glyphs at the head of the cards and the curves of a cycle, on the white panel: the tints of the crystal, and one warm for the pressure */
+                --icon-a: #69A69B; --icon-b: #2A5E61; --icon-c: #173F43; --chart-warm: #B8742A;
                 --bad: #A3361F; --wait: #7A5310;
                 --foot: #16383B; --foot-ink: #FBE8D3; --foot-ink-2: #B5CAC0; --foot-rule: rgb(251 232 211 / .24); --grad-a: #69A69B; --grad-b: #E9C98F;
                 --eth: #A9B8F5; --swarm: #FFB25C;
@@ -78,6 +80,7 @@
                 --light: #FFF6EF; --window-ink: #36182F;
                 --panel-ink: #36182F; --panel-ink-2: #624458; --panel-rule: rgb(54 24 47 / .22); --panel-tint: #F4F0F2;
                 --glyph-a: #A58AD2; --glyph-b: #5F4494; --glyph-c: #3C2566;
+                --icon-a: #A58AD2; --icon-b: #5F4494; --icon-c: #3C2566; --chart-warm: #B4506A;
                 --foot: #36182F; --foot-ink: #FBEAE0; --foot-ink-2: #D2BCCB; --foot-rule: rgb(251 234 224 / .24); --grad-a: #A58AD2; --grad-b: #F2C79A;
             }
             :root[data-way='banana'] {
@@ -86,6 +89,7 @@
                 --light: #FBE6D8; --window-ink: #3A1B3F;
                 --panel-ink: #3A1B3F; --panel-ink-2: #694B6C; --panel-rule: rgb(58 27 63 / .22); --panel-tint: #F4F0F4;
                 --glyph-a: #E6D8F3; --glyph-b: #B8A0D8; --glyph-c: #8A6EB4;
+                --icon-a: #B8A0D8; --icon-b: #8A6EB4; --icon-c: #5E4089; --chart-warm: #C77A3F;
                 --bad: #FFA08C; --wait: #F1D08C;
                 --foot: #2B132F; --foot-ink: #F8DDD6; --foot-ink-2: #C9AEC2; --foot-rule: rgb(248 221 214 / .24); --grad-a: #B8A0D8; --grad-b: #F2C79A;
                 color-scheme: dark;
@@ -193,6 +197,12 @@
             /* shared: the label panel of the back of the bag, white with a keyline inside its edge, and what is set on it */
             .card, .label, .notice { min-width: 0; background: var(--panel); color: var(--panel-ink); border-radius: .7rem; box-shadow: inset 0 0 0 .3rem var(--panel), inset 0 0 0 calc(.3rem + 1px) var(--panel-ink); padding: 1.35rem 1.3rem 1.15rem; text-align: left; }
             h2 { font: 500 .94rem/1.25 var(--caps); letter-spacing: .16em; text-transform: uppercase; }
+            /* the glyph of a record at the head of its card: filled in the tints of the crystal, outlined in the deep one */
+            .step .card h2 { display: flex; align-items: center; gap: .75rem; }
+            .glyph { width: 2.1rem; height: 2.1rem; flex: none; }
+            .glyph .ga { fill: var(--icon-a); } .glyph .gb { fill: var(--icon-b); } .glyph .gc { fill: var(--icon-c); }
+            .glyph .gs { fill: none; stroke: var(--icon-b); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+            .glyph .gw { stroke-width: 1.8; }
             .lead { margin-top: .5rem; color: var(--ink-2); }
             .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .7rem; }
             .chip { display: inline-flex; align-items: center; gap: .45rem; padding: .32rem .55rem; border: 1px solid currentColor; border-radius: .25rem; font: 500 .6875rem/1.2 var(--caps); letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
@@ -292,30 +302,41 @@
             .check.pending { color: var(--panel-ink-2); }
             .check.bad { color: var(--bad); }
             :root[data-way='banana'] .card .check.bad, :root[data-way='banana'] .card .chip.wait { color: #8E2A17; }
-            /* the curves of a cycle, drawn in its card from the light file the record names: the chamber temperature strong on the
-               scale of °C at the left, the shelves faint behind it, the pressure dashed on its own scale of Pa at the right, in powers
-               of ten, and the two minima the record declares set on their curves. The chamber line is drawn once the chart has landed */
+            /* the curves of a cycle, drawn in its card from the light file the record names: the two minima the record declares
+               as figures above the chart, with the hour; the chamber temperature strong on the scale of °C at the left, with its
+               ground under it; the shelves faint behind, in the light tint of the crystal; the pressure in the one warm colour of
+               the page, on its own scale of Pa at the right, in powers of ten; and the minima marked on their curves. The chamber
+               line is drawn once the chart has landed, and the rest comes up behind it */
             .curves { margin-top: 1rem; color: var(--panel-ink); animation: land var(--t-enter) var(--ease-out) both; }
+            .minima { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin-bottom: .55rem; }
+            .minima .stat { border-top: 1px solid var(--panel-rule); padding-top: .45rem; }
+            .minima dt { display: flex; align-items: center; gap: .45rem; font: 500 .6rem/1.3 var(--caps); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; color: var(--panel-ink-2); }
+            .minima dd { margin-top: .12rem; }
+            .minima b { display: block; font: 400 1.3rem/1.1 var(--text); font-variant-numeric: tabular-nums; }
+            .minima small { font: 500 .6rem/1.3 var(--caps); letter-spacing: .14em; text-transform: uppercase; color: var(--panel-ink-2); }
+            .minima .mk { width: .5rem; height: .5rem; flex: none; transform: rotate(45deg); }
+            .minima .mk-cold { background: var(--panel-ink); }
+            .minima .mk-low { border-radius: 50%; border: 1.4px solid var(--chart-warm); transform: none; }
             .curves .chart { display: block; width: 100%; height: auto; overflow: visible; font: 400 9.5px var(--text); font-variant-numeric: tabular-nums; }
             .curves .axis { fill: none; stroke: var(--panel-rule); }
             .curves .grid { stroke-dasharray: 1.5 3; }
             .curves text { fill: var(--panel-ink-2); }
             .curves .unit { font: 500 7px var(--caps); letter-spacing: .12em; }
-            .curves .line { fill: none; stroke: currentColor; stroke-linejoin: round; stroke-linecap: round; }
-            .curves .temp { stroke-width: 1.7; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1.4s var(--ease-out) .1s; }
+            .curves .line { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+            .curves .fill { fill: var(--panel-ink); opacity: .07; }
+            .curves .temp { stroke: var(--panel-ink); stroke-width: 1.7; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1.4s var(--ease-out) .1s; }
             .curves.drawn .temp { stroke-dashoffset: 0; }
-            .curves .shelf { stroke-width: .7; opacity: .3; }
-            .curves .press { stroke: var(--panel-ink-2); stroke-width: 1.2; stroke-dasharray: 3 2.4; }
-            .curves .press, .curves .shelf, .curves .min { transition: opacity .6s var(--ease-out) 1s; }
-            .curves:not(.drawn) .press, .curves:not(.drawn) .shelf, .curves:not(.drawn) .min { opacity: 0; }
-            .curves .dot { fill: currentColor; }
-            .curves .ring { fill: var(--panel); stroke: var(--panel-ink-2); stroke-width: 1.2; }
-            .curves text.min { fill: var(--panel-ink); paint-order: stroke; stroke: var(--panel); stroke-width: 3; stroke-linejoin: round; }
+            .curves .shelf { stroke: var(--icon-a); stroke-width: .8; opacity: .85; }
+            .curves .press { stroke: var(--chart-warm); stroke-width: 1.4; }
+            .curves .press, .curves .shelf, .curves .min, .curves .fill { transition: opacity .6s var(--ease-out) 1s; }
+            .curves:not(.drawn) .press, .curves:not(.drawn) .shelf, .curves:not(.drawn) .min, .curves:not(.drawn) .fill { opacity: 0; }
+            .curves .dot { fill: var(--panel-ink); }
+            .curves .ring { fill: var(--panel); stroke: var(--chart-warm); stroke-width: 1.4; }
             .curves .key { display: flex; flex-wrap: wrap; gap: .3rem 1rem; margin-top: .5rem; font: 500 .6875rem/1.3 var(--caps); letter-spacing: .13em; text-transform: uppercase; color: var(--panel-ink-2); }
             .curves .key span { display: inline-flex; align-items: center; gap: .45rem; }
-            .curves .key .sw { width: 1.1rem; border-top: 2px solid currentColor; }
-            .curves .key .sw.shelf { border-top-width: 1px; opacity: .45; }
-            .curves .key .sw.press { border-top: 1.5px dashed currentColor; }
+            .curves .key .sw { width: 1.1rem; border-top: 2px solid var(--panel-ink); }
+            .curves .key .sw.shelf { border-top: 1px solid var(--icon-a); }
+            .curves .key .sw.press { border-top: 2px solid var(--chart-warm); }
             @media (hover: hover) and (pointer: fine) { .btn:hover { background: currentColor; } .card .btn:hover, .notice .btn:hover { background: var(--panel-ink); color: var(--panel); } .row .v a:hover { border-color: var(--panel-ink); } }
 
             /* 4 · the arithmetic, set on the ground of the bag like the lines of its front */
@@ -418,10 +439,11 @@
                 .life-grid { display: none; }
                 .card, .label, .notice, .photo { border: 1px solid CanvasText; }
                 .mark, .step .tile::before { forced-color-adjust: none; }
-                .curves .axis, .curves .press, .curves .ring { stroke: currentColor; }
-                .curves text, .curves .dot { fill: currentColor; }
-                .curves .ring, .curves text.min { fill: Canvas; }
-                .curves text.min { fill: currentColor; stroke: Canvas; }
+                .curves .axis, .curves .press, .curves .shelf, .curves .ring { stroke: currentColor; }
+                .curves text, .curves .dot, .curves .fill { fill: currentColor; }
+                .curves .ring { fill: Canvas; }
+                .minima .mk-cold { background: CanvasText; } .minima .mk-low { border-color: CanvasText; }
+                .glyph .ga, .glyph .gb, .glyph .gc { fill: CanvasText; } .glyph .gs { stroke: CanvasText; }
             }
         </style>
     </head>
