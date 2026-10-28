@@ -885,6 +885,189 @@ test('a table with more rows than a label has room for: the page takes the first
     assert.equal($('fruit-origin').textContent.includes('Mineral 13'), false)
 })
 
+// ---------- the walk, and a gateway that keeps it waiting ----------
+// A record is asked of the gateways and its anchor of the source at once, and its card waits for both. When no gateway
+// answers, the page says so as soon as that is known, whatever the source is doing. A gateway that takes the request and
+// never answers, or cannot be reached, costs its wait once: what the page asks after that goes to the other first.
+
+// the anchors the first source is asked for, kept in order; `then` is what it does before it answers, to hold the answer
+// back or to fail
+function anchorsAsked(then = () => {}) {
+    const anchors = []
+    net.says.set(rpc1, async (method, params) => {
+        const call = method === 'eth_call' && params[0].to.toLowerCase() === contract ? decodeFunctionData({ abi, data: params[0].data }) : null
+        if (call?.functionName === 'anchoredAt') {
+            anchors.push(call.args[0])
+            await then()
+        }
+        return rpc(method, params)
+    })
+    return anchors
+}
+
+test('a record that is slow to come: its anchor is asked while it is on its way, and its card waits for both', async () => {
+    net.head = put(packed())
+    const open = slow({ ref: net.head.slice(2) })
+    const anchors = anchorsAsked()
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    await turns()
+    assert.equal(done, false)
+    assert.deepEqual(anchors, [net.head])
+    assert.equal(cards().length, 0)
+    open()
+    await turns()
+    await scanning
+    assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
+    assert.match(cards()[0].querySelector('.check').textContent, /^✓ Matches its Ethereum anchor of /)
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(anchors, [net.head])
+})
+
+test('no gateway answers while the source keeps the anchor back: the page says so without waiting for the source', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    net.instead.set(first, down)
+    net.instead.set(second, down)
+    let open
+    const held = new Promise((resolve) => (open = resolve))
+    const anchors = anchorsAsked(() => held)
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    await turns()
+    assert.equal(done, true)
+    assert.deepEqual(anchors, [net.head]) // asked, and not answered yet
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example, second\.example\./)
+    assert.ok(document.getElementById('retry'))
+    assert.equal(cards().length, 0)
+    open()
+    await scanning
+})
+
+test('a source that fails when asked for an anchor, while a gateway serves the record: the page says it could not reach the records', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    anchorsAsked(fails)
+    await scan()
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example\./)
+    assert.match($('notice').querySelector('pre').textContent, /Status: 429/) // what the source said, in the details
+    assert.ok(document.getElementById('retry'))
+    assert.equal(cards().length, 0)
+    assert.equal($('hero').classList.contains('verified'), false)
+})
+
+// the rejections nobody handled while `scanning` ran, and for a few turns after it: an anchor that fails when its answer
+// is no longer read must not become one
+async function unhandled(scanning) {
+    const seen = []
+    const on = (reason) => seen.push(reason)
+    process.on('unhandledRejection', on)
+    try {
+        await scanning()
+        await turns(40)
+    } finally {
+        process.off('unhandledRejection', on)
+    }
+    return seen
+}
+
+test('no gateway answers, and the source fails when asked for the anchor: the page says so, and leaves no rejection unhandled', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    net.instead.set(first, down)
+    net.instead.set(second, down)
+    const anchors = anchorsAsked(fails)
+    const seen = await unhandled(() => scan())
+    assert.equal(anchors.length, 2) // asked, and asked again, before it gave up
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').querySelector('pre').textContent, /download failed: 502/)
+    assert.deepEqual(seen, [])
+})
+
+test('the source fails when asked for the anchor while a gateway still serves the record: the page says so once the bytes are in, and leaves no rejection unhandled', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    const open = slow({ ref: net.head.slice(2) })
+    const anchors = anchorsAsked(fails)
+    location.hash = `#11155111:${contract}/1`
+    const seen = await unhandled(async () => {
+        const scanning = page.main()
+        await turns(80)
+        assert.equal(anchors.length, 2)
+        assert.equal($('notice').hidden, true)
+        open()
+        await turns()
+        await scanning
+    })
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').querySelector('pre').textContent, /Status: 429/)
+    assert.deepEqual(seen, [])
+})
+
+test('a first gateway that takes the request and never answers, and a bag of three records and two files: it is asked once, not once for each, and the bag seals', async (t) => {
+    const timeout = AbortSignal.timeout.bind(AbortSignal)
+    t.mock.method(AbortSignal, 'timeout', () => timeout(5)) // the wait, cut short for the test
+    bag([description(), photo()])
+    net.instead.set(first, silent)
+    await scan()
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches')
+    assert.ok($('hero').classList.contains('verified'))
+    for (const li of cards()) assert.ok(li.querySelector('.links a:not(.anchor)').href.startsWith(`${second}/bytes/`))
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.deepEqual([asked(first), asked(second)], [1, 5])
+    // a check after it, as Try again starts one, asks in the order of the configuration
+    net.instead.clear()
+    net.asked.length = 0
+    await scan()
+    assert.deepEqual([asked(first), asked(second)], [5, 0])
+})
+
+test('a first gateway that answers with an error, for a bag of three records: it keeps its place, and is asked for each', async () => {
+    bag([])
+    net.instead.set(first, down)
+    await scan()
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches')
+    assert.deepEqual([asked(first), asked(second)], [3, 3])
+})
+
+test('a first gateway that never answers, and a second that fails the next record: the details say what the second said, as they would have in the order of the configuration', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    const timeout = AbortSignal.timeout.bind(AbortSignal)
+    t.mock.method(AbortSignal, 'timeout', () => timeout(5)) // the wait, cut short for the test
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' })
+    const cycle = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', start: '2026-09-28T10:00:00Z', end: '2026-09-29T08:00:00Z', loads: [{ trays: 10, kg: 20 }], kg_out: 2, inputs: [intake] })
+    net.head = put(packed({ inputs: [cycle] }))
+    net.instead.set(first, silent)
+    net.instead.set(second, but({ ref: cycle.slice(2) }, down))
+    await scan()
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example, second\.example\./)
+    assert.match($('notice').querySelector('pre').textContent, /download failed: 502/)
+})
+
+test('a first gateway that serves the records and cannot be reached for the files: it is asked for the first of them, and the rest go to the second first', async () => {
+    const files = [description(), photo(), cover()]
+    bag(files)
+    const refused = new Set(files.map((document) => document.ref))
+    net.instead.set(first, (request) => {
+        const ref = request.url.split('/bytes/')[1]
+        if (refused.has(ref)) throw new TypeError('Failed to fetch')
+        return answer(net.files.get(`0x${ref}`), 'application/octet-stream')
+    })
+    await scan()
+    const of = (gateway, document) => net.asked.filter((url) => url === `${gateway}/bytes/${document.ref}`).length
+    assert.deepEqual(files.map((document) => of(first, document)), [1, 0, 0])
+    assert.deepEqual(files.map((document) => of(second, document)), [1, 1, 1])
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal(root().dataset.art, 'front')
+})
+
 // ---------- the plant: the file the intake record names ----------
 // Where the plant is comes from a file, as what the bag holds does: the intake record names `site-location.geojson` among
 // its documents, and the page reads it against its reference once the records are checked. The Received card then says
