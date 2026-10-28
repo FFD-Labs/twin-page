@@ -123,25 +123,32 @@ function rules(css) {
     walk(css.replace(/\/\*[\s\S]*?\*\//g, ''))
     return found
 }
-const styles = rules(/<style>([\s\S]*?)<\/style>/.exec(html)[1])
+// every style of the page; the @font-face rules set no element, and are left out
+const styles = rules([...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(([, css]) => css).join('\n'))
 // The family and the weight a rule sets: the shorthand gives both, and a weight of 400 when it names none; font-family
-// and font-weight give one each. The families are the page's three, by their custom property.
-const FAMILIES = { 'var(--caps)': 'Montserrat', 'var(--text)': 'Fira Sans Condensed', 'var(--mono)': 'Spline Sans Mono' }
+// and font-weight give one each. The family is the first of the page's three a value names, by its custom property or
+// by its own name. A weight is a number, normal or bold; bolder and lighter, which depend on the parent, stay as they are
+// written, and the tests refuse them.
+const FAMILIES = [['Montserrat', /var\(--caps\)|Montserrat/], ['Fira Sans Condensed', /var\(--text\)|Fira Sans Condensed/], ['Spline Sans Mono', /var\(--mono\)|Spline Sans Mono/]]
+const familyOf = (value) => FAMILIES.map(([family, named]) => [family, value.search(named)]).filter(([, at]) => at >= 0).sort((a, b) => a[1] - b[1])[0]?.[0] ?? value
+const weightOf = (value) => ({ normal: 400, bold: 700 })[value] ?? (/^[1-9]00$/.test(value) ? Number(value) : value)
 function set({ declarations }) {
     let family, weight
     for (const [name, value] of declarations) {
-        if (name === 'font' || name === 'font-family') family = Object.entries(FAMILIES).find(([property]) => value.includes(property))?.[1] ?? value
+        if (name === 'font' || name === 'font-family') family = familyOf(value)
         if (name === 'font') {
-            // the weight comes before the size, which is the first length: a number with its unit, or a function of them
+            // the weight comes before the size, which is the first length: a number with its unit, or a function of them.
+            // A normal there may be the style's: the weight is normal unless another is named
             const tokens = value.split(/\s+/)
             const size = tokens.findIndex((token) => !/^[1-9]00$/.test(token) && /^[\d.]|^(calc|clamp|min|max)\(/.test(token))
-            weight = Number(tokens.slice(0, size).find((token) => /^[1-9]00$/.test(token)) ?? 400)
+            weight = weightOf(tokens.slice(0, Math.max(size, 0)).find((token) => /^([1-9]00|bold|bolder|lighter)$/.test(token)) ?? 'normal')
         }
-        if (name === 'font-weight') weight = Number(value)
+        if (name === 'font-weight') weight = weightOf(value)
     }
     return { family, weight }
 }
-const montserrat = styles.map((rule) => ({ ...rule, ...set(rule) })).filter((rule) => rule.family === 'Montserrat')
+const sets = styles.map((rule) => ({ ...rule, ...set(rule) }))
+const montserrat = sets.filter((rule) => rule.family === 'Montserrat')
 
 // The rules that set a weight and leave the family to the element's parents, with the family those parents give it
 const INHERITED = {
@@ -155,18 +162,22 @@ const INHERITED = {
 }
 
 // What the page writes in the cuts of numbers: the twin's number is the digits of the link, and the arithmetic its times
-// and its amounts, here for a bag whose figures give a point
+// and its amounts. Here for a bag whose figures give a point, and for records whose figures make those numbers negative,
+// very large or very small, which JavaScript writes with -, e+ and e-
 const { document, page } = await openPage()
 const twin = String(parseSticker('#11155111:0x240dfbca7064d091149169eff95f764d1e21cea7/1234567890').id)
 const event = (n, data) => ({ ref: `0x${String(n).repeat(64)}`, at: '2026-10-02T10:00:00.000Z', block: 7n, gateway: 'https://gateway.example', verified: true, tx: null, data })
-page.renderCo2({ co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' } }, [
-    event(1, { phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' }),
-    event(2, { phase: 'cycle', at: '2026-09-29T08:00:00Z', loads: [{ trays: 10, kg: 20 }], kg_out: 2.3 }),
-    event(3, { phase: 'packing', at: '2026-09-30T08:00:00Z', product: 'mango', bag_g: 30.5 })
-])
 // the text an element sets in its own face, without its children that set another (the g of an amount, in Fira)
 const own = (el) => [...el.childNodes].filter((node) => node.nodeType === 3).map((node) => node.data).join('')
 const written = (selector) => [...document.querySelectorAll(selector)].map(own)
+const arithmetic = [[2.3, 30.5], [-2.3, 30.5], [1e-22, 30.5], [2.3, 1e-7]].map(([kg_out, bag_g]) => {
+    page.renderCo2({ co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' } }, [
+        event(1, { phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' }),
+        event(2, { phase: 'cycle', at: '2026-09-29T08:00:00Z', loads: [{ trays: 10, kg: 20 }], kg_out }),
+        event(3, { phase: 'packing', at: '2026-09-30T08:00:00Z', product: 'mango', bag_g })
+    ])
+    return { times: written('.ring .times'), amounts: written('.ledger .amt') }
+})
 
 test('the page declares five faces, each a file of web/public/fonts, and that folder holds nothing else', () => {
     assert.deepEqual(faces.map((f) => `${f.family} ${f.weight} ${f.format}`), ['Montserrat 300 woff2', 'Montserrat 400 woff2', 'Montserrat 500 woff2', 'Fira Sans Condensed 400 woff2', 'Spline Sans Mono 400 woff2'])
@@ -179,24 +190,28 @@ test('every face sets text on the lines of its master: the same em, box, ascent,
 })
 
 test('only the known rules ask for Montserrat at 300 and 400, and they write numbers, and DEVCON', () => {
+    // a weight is a number: bolder and lighter depend on the parent, and a rule that names Montserrat says which cut it takes
+    for (const rule of sets.filter((rule) => rule.weight !== undefined)) assert.equal(typeof rule.weight, 'number', `${rule.selector}: a weight of ${rule.weight} depends on the parent; give the number`)
+    for (const rule of montserrat) assert.notEqual(rule.weight, undefined, `${rule.selector} names Montserrat and not its weight`)
     const light = montserrat.filter((rule) => rule.weight === 300 || rule.weight === 400).map((rule) => `${rule.selector} ${rule.weight}`)
     assert.deepEqual(light, ['.devcon 400', '.twin b 300', '.ring .times 300', '.ledger .amt 300'])
-    const weighted = styles.filter((rule) => rule.declarations.some(([name]) => name === 'font-weight') && !rule.declarations.some(([name]) => name === 'font' || name === 'font-family'))
+    const weighted = sets.filter((rule) => rule.weight !== undefined && rule.family === undefined)
     assert.deepEqual(weighted.map((rule) => rule.selector), Object.keys(INHERITED), 'a rule sets a weight and not a family: name the family its element inherits')
-    const inherited = weighted.filter((rule) => INHERITED[rule.selector] === 'Montserrat' && [300, 400].includes(set(rule).weight)).map((rule) => rule.selector)
+    const inherited = weighted.filter((rule) => INHERITED[rule.selector] === 'Montserrat' && [300, 400].includes(rule.weight)).map((rule) => rule.selector)
     assert.ok(inherited.every((selector) => selector.startsWith('.twin b')), 'only the twin\'s number changes weight on Montserrat')
     // the page writes nothing in a face of its own: the looks live in devcon8.html
     assert.doesNotMatch(readFileSync(resolve(root, 'web/devcon8.ts'), 'utf8'), /font-(family|weight)|[{;"]\s*font:/)
 
     assert.match(twin, /^\d+$/)
-    const times = written('.ring .times'), amounts = written('.ledger .amt')
-    assert.deepEqual([times.length, amounts.length], [1, 3])
+    for (const { times, amounts } of arithmetic) assert.deepEqual([times.length, amounts.length], [1, 3])
+    const numbers = arithmetic.flatMap(({ times, amounts }) => [...times, ...amounts]).join(' ')
+    for (const sign of ['-', 'e+', 'e-']) assert.ok(numbers.includes(sign), `no number written with ${sign}`)
     const devcon = /<p class="devcon">([^<]*)<\/p>/.exec(html)[1]
     assert.equal(devcon, 'DEVCON')
-    assert.deepEqual(has(face('Montserrat', 300), twin + times.join('') + amounts.join('')), [])
+    assert.deepEqual(has(face('Montserrat', 300), twin + numbers), [])
     assert.deepEqual(has(face('Montserrat', 400), twin + devcon), [])
     // and nothing else: a cut of numbers that drew more would be weight for nothing
-    assert.deepEqual([...characters(face('Montserrat', 300))].sort((a, b) => a - b), [...' ,.0123456789×≈'].map((c) => c.codePointAt(0)).sort((a, b) => a - b))
+    assert.deepEqual([...characters(face('Montserrat', 300))].sort((a, b) => a - b), [...' +,-.0123456789e×≈'].map((c) => c.codePointAt(0)).sort((a, b) => a - b))
     assert.deepEqual([...characters(face('Montserrat', 400))].sort((a, b) => a - b), [...' ,.0123456789CDENOV×≈'].map((c) => c.codePointAt(0)).sort((a, b) => a - b))
 })
 
@@ -233,7 +248,7 @@ test('Spline Sans Mono is its master at 400, with every character, and every rul
     const spline = face('Spline Sans Mono', 400)
     assert.equal(spline.fvar, undefined, 'it is still variable')
     assert.deepEqual([...characters(spline)].sort((a, b) => a - b), [...characters(master('spline-sans-mono-var.woff2'))].sort((a, b) => a - b))
-    const mono = styles.map((rule) => ({ ...rule, ...set(rule) })).filter((rule) => rule.family === 'Spline Sans Mono')
+    const mono = sets.filter((rule) => rule.family === 'Spline Sans Mono')
     assert.ok(mono.length)
     for (const rule of mono) assert.equal(rule.weight, 400, rule.selector)
 })

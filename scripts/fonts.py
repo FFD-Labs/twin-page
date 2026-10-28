@@ -15,7 +15,8 @@ Every character a face keeps keeps its outline, its advance, its kerning and its
 drops is what the page never asks of it:
 
 - Montserrat 300 draws numbers only: the twin's number in the window (.twin b), the times in the ring of the arithmetic
-  (.ring .times, ≈4.1×) and the amounts of its ledger (.ledger .amt, ≈61). Figures, the point and the comma, ≈ and ×.
+  (.ring .times, ≈4.1×) and the amounts of its ledger (.ledger .amt, ≈61). Figures, the point and the comma, ≈ and ×,
+  and the signs a number is written with when a record makes it negative, very large or very small: -, + and e.
 - Montserrat 400 draws DEVCON over the city, and the twin's number when it has four to seven figures.
 - Montserrat 500 draws the small capitals of the page, all of them uppercase but one: the units over the chart of a
   cycle, °C and Pa. It keeps every character of its master but the lowercase letters from b to z: the a stays, for Pa.
@@ -38,6 +39,8 @@ MASTERS = ROOT / "fonts-src"
 OUT = ROOT / "web" / "public" / "fonts"
 
 NUMBERS = " .,0123456789≈×"
+# what JavaScript writes a number with besides its figures: -5.2, 6.1e+24, 1e-7
+SIGNS = "-+e"
 LOWER_B_TO_Z = "bcdefghijklmnopqrstuvwxyz"
 
 # The vertical metrics a face keeps from its master: the size of its em, its box and the lines a browser sets text on.
@@ -95,7 +98,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 faces = []
 
 m500 = cmap(master("montserrat-500.woff2"))
-for weight, chars in ((300, set(map(ord, NUMBERS))), (400, set(map(ord, NUMBERS + "DEVCON"))), (500, m500 - set(map(ord, LOWER_B_TO_Z)))):
+for weight, chars in ((300, set(map(ord, NUMBERS + SIGNS))), (400, set(map(ord, NUMBERS + "DEVCON"))), (500, m500 - set(map(ord, LOWER_B_TO_Z)))):
     name = f"montserrat-{weight}.woff2"
     faces.append((name, master(name), chars, ["kern", "tnum"], name))
 
