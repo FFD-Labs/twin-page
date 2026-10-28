@@ -6,7 +6,7 @@ import { beforeEach, test } from 'node:test'
 import { clean, hostile, openPage } from './page.mjs'
 
 const { document, page } = await openPage()
-const { placeCard, productFiles, readDescription, renderCo2, reset, revealFruit } = page
+const { documentOf, placeCard, productFiles, readDescription, readPoint, renderCo2, reset, revealFruit } = page
 
 const config = { co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' } }
 // The description of the product, as the file a packing record names would give it.
@@ -260,4 +260,63 @@ test('the dates go under the full table as the pouch prints them, and the line i
     revealFruit([packed], readDescription(bytes(mango)))
     assert.equal($('fruit-origin').querySelector('.origin-dates'), null)
     clean(document)
+})
+
+// ---------- where a location file says the plant is, and the documents a record names ----------
+const india = { type: 'Feature', geometry: { type: 'Point', coordinates: [85.109112, 20.235281] }, properties: { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India' } }
+
+test('a location file gives its place, its site and its coordinates, the longitude first as GeoJSON writes it', () => {
+    assert.deepEqual(readPoint(bytes(india)), { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', lat: 20.235281, lon: 85.109112 })
+    // the words are read when they are lines of text, and the point is there without them
+    assert.deepEqual(readPoint(bytes({ ...india, properties: { site: 7, place: 'x'.repeat(301) } })), { site: null, place: null, lat: 20.235281, lon: 85.109112 })
+    assert.deepEqual(readPoint(bytes({ ...india, properties: undefined })), { site: null, place: null, lat: 20.235281, lon: 85.109112 })
+    // the ends of the Earth are on it
+    assert.deepEqual(readPoint(bytes({ type: 'Feature', geometry: { type: 'Point', coordinates: [-180, -90] } })), { site: null, place: null, lat: -90, lon: -180 })
+})
+
+test('what a location file says that is HTML is read as text, for the page to write as text', () => {
+    const loud = readPoint(bytes({ ...india, properties: { site: hostile('site'), place: hostile('place') } }))
+    assert.equal(loud.place, hostile('place'))
+    assert.equal(loud.site, hostile('site'))
+})
+
+for (const [what, file] of [
+    ['is not JSON', '{"type": '],
+    ['is not text', new Uint8Array([0x7b, 0x22, 0xe9, 0x22, 0x7d])],
+    ['is a list', [india]],
+    ['is nothing', 'null'],
+    ['is not a Feature', { ...india, type: 'FeatureCollection' }],
+    ['has no geometry', { ...india, geometry: null }],
+    ['has a geometry that is not a Point', { ...india, geometry: { type: 'Polygon', coordinates: [[[85, 20], [86, 20], [86, 21], [85, 20]]] } }],
+    ['has one coordinate', { ...india, geometry: { type: 'Point', coordinates: [85.109112] } }],
+    ['has three coordinates', { ...india, geometry: { type: 'Point', coordinates: [85.109112, 20.235281, 40] } }],
+    ['has coordinates that are text', { ...india, geometry: { type: 'Point', coordinates: ['85.109112', '20.235281'] } }],
+    ['has coordinates that are nothing', { ...india, geometry: { type: 'Point', coordinates: [null, null] } }],
+    ['has a longitude past 180', { ...india, geometry: { type: 'Point', coordinates: [180.1, 20] } }],
+    ['has a latitude past 90', { ...india, geometry: { type: 'Point', coordinates: [85, -90.1] } }],
+    // JSON has no word for a number that is not finite: a file can only say it as one too large to hold, 1e999
+    ['has a coordinate that is not finite', '{"type":"Feature","geometry":{"type":"Point","coordinates":[1e999,20]}}']
+])
+    test(`a location file that ${what} says nothing`, () => {
+        assert.equal(readPoint(file instanceof Uint8Array ? file : bytes(file)), null)
+    })
+
+test('the document of a record is the first under its name and its type whose reference is one', () => {
+    const ref = (n) => String(n).repeat(64)
+    const documents = [
+        { name: 'site-location.geojson', type: 'application/json', ref: ref(1) },
+        { name: 'site-location.geojson', type: 'application/geo+json', ref: 'not a reference' },
+        { name: 'site-location.geojson', type: 'application/geo+json', ref: ref(3) },
+        { name: 'site-location.geojson', type: 'application/geo+json', ref: ref(4) },
+        { name: hostile('name'), type: hostile('type'), ref: ref(5) },
+        null,
+        'site-location.geojson'
+    ]
+    const record = { phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', documents }
+    assert.equal(documentOf(record, 'site-location.geojson', 'application/geo+json'), `0x${ref(3)}`)
+    assert.equal(documentOf(record, 'site-location.geojson', 'application/json'), `0x${ref(1)}`)
+    assert.equal(documentOf(record, 'site.geojson', 'application/geo+json'), null)
+    assert.equal(documentOf(record, 'site-location.geojson', 'application/geo+json; charset=utf-8'), null)
+    for (const not of [undefined, null, 'site-location.geojson', { name: 'site-location.geojson' }, 7, []]) assert.equal(documentOf({ ...record, documents: not }, 'site-location.geojson', 'application/geo+json'), null)
+    for (const none of [null, undefined]) assert.equal(documentOf(none, 'site-location.geojson', 'application/geo+json'), null)
 })

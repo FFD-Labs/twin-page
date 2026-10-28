@@ -2,8 +2,9 @@
 // verification report. The looks live in devcon8.html; this file reads, checks and paints.
 //
 // Reads ./config.json. The keys of the blocks are optional: a block whose data or assumptions are missing is not painted.
-// What the page says of the fruit is not in the config: the bag's packing record names the files of its product, and the
-// page reads them from Swarm against their references, as it reads the records.
+// What the page says of the fruit, and where the plant is, is not in the config: the bag's records name the files, the
+// packing record those of its product and the intake record the location of the plant, and the page reads them from Swarm
+// against their references, as it reads the records.
 
 import { NotOfficial, abi, download, hex, parseSticker, swarmHash, type Config } from '../src/lib.ts'
 import './life-grid.ts'
@@ -42,7 +43,7 @@ type Record = {
     arrival?: string
     carrier?: string | null
     tracking?: string | null
-    // the files behind the record, as it names them: read by productFiles, never taken as they come
+    // the files behind the record, as it names them: read by documentOf, never taken as they come
     documents?: unknown
     inputs?: Hex[]
 }
@@ -65,6 +66,10 @@ type Nutrition = {
 // The two dates of the pouch's label, as the description gives them: `manufactured` and `expires`, a month (`2026-09`) or
 // a day (`2026-09-24`), and null when the description leaves one out or writes it another way.
 type Description = { fruit: string | null; name: string | null; nutrition: Nutrition | null; alt: string | null; credit: string | null; manufactured: string | null; expires: string | null }
+
+// A place of the path, from the file a record names: the key the records call it by (`urn:bdf:site:india-1`), the words
+// for it, and where it is. The intake record names the file of the plant.
+type Point = { site: string | null; place: string | null; lat: number; lon: number }
 
 // The arithmetic of block 5.
 type Co2 = {
@@ -129,10 +134,12 @@ const farm = (f: Farm) =>
     [[f.zone, f.country && country(f.country)].filter(Boolean).join(', '), f.variety, f.harvested && `harvested ${day(f.harvested)}`, f.kg != null && `${f.kg} kg`]
         .filter(Boolean)
         .join(' · ') || null
+// The rows of a card: a key and a value, written as text. A third element is an address of the page's own making, and the
+// value is then a link to it, opened beside the page; nothing a record or a file says is ever one.
 const rows = (list: (string | null | undefined)[][]) =>
     list
         .filter(([, value]) => value != null && value !== '')
-        .map(([key, value]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${esc(value)}</span></div>`)
+        .map(([key, value, href]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(value)} ↗</a>` : esc(value)}</span></div>`)
         .join('')
 
 const EDGE_GAP = 420
@@ -426,13 +433,34 @@ function markCheck(li: HTMLElement, event: Event) {
     swap(check as HTMLElement, event.verified ? `✓ Matches its Ethereum anchor of ${date(event.at!)}` : '✗ Does not match any Ethereum anchor')
 }
 
+// ---------- the files a record names ----------
+
+// A record names files among its documents, each by its name, its type and its reference. The page knows the ones it reads
+// by their name and the type each must declare, and looks for each in the record that names it: the packing record names
+// the files of the product, the intake record the location of the plant. A document under another name, of another type,
+// or whose reference is not one, is not that file, and the page does not ask for it; a record that was not read, or not
+// understood, names nothing.
+export function documentOf(record: Record | null | undefined, name: string, type: string): Hex | null {
+    const documents = record?.documents
+    if (!Array.isArray(documents)) return null
+    for (const entry of documents as unknown[]) {
+        if (typeof entry !== 'object' || entry === null) continue
+        const { name: named, type: typed, ref } = entry as { name?: unknown; type?: unknown; ref?: unknown }
+        if (named !== name || typed !== type) continue
+        try {
+            return hex(ref)
+        } catch {
+            // not a reference: there is nothing to ask a gateway for, and the next of that name may be one
+        }
+    }
+    return null
+}
+
 // ---------- the product: the files the packing record names ----------
 
-// What the page says of the fruit hangs from the bag's packing record: among its documents, four files the page finds by
-// their name, each with the type it must declare. The description says what the bag holds; the other three are the
-// photograph of the fruit and the two illustrations of the twin, taken from the art of its pouch: the cover, which opens
-// the page, and the background of the label. A document under another name, of another type, or whose reference is not
-// one, is not a file of the product, and the page does not ask for it.
+// What the page says of the fruit hangs from the bag's packing record: among its documents, four files. The description
+// says what the bag holds; the other three are the photograph of the fruit and the two illustrations of the twin, taken
+// from the art of its pouch: the cover, which opens the page, and the background of the label.
 const DESCRIPTION = 'product-description.json'
 const PHOTO = 'photo.webp'
 const COVER = 'cover.webp'
@@ -441,17 +469,10 @@ const PRODUCT_FILES: { [name: string]: string } = { [DESCRIPTION]: 'application/
 
 export function productFiles(events: Event[]) {
     const files = new Map<string, Hex>()
-    const documents = events.find(e => e.data?.phase === 'packing')?.data?.documents
-    if (!Array.isArray(documents)) return files
-    for (const entry of documents as unknown[]) {
-        if (typeof entry !== 'object' || entry === null) continue
-        const { name, type, ref } = entry as { name?: unknown; type?: unknown; ref?: unknown }
-        if (typeof name !== 'string' || !Object.hasOwn(PRODUCT_FILES, name) || files.has(name) || type !== PRODUCT_FILES[name]) continue
-        try {
-            files.set(name, hex(ref))
-        } catch {
-            // not a reference: there is nothing to ask a gateway for
-        }
+    const packing = events.find(e => e.data?.phase === 'packing')?.data
+    for (const [name, type] of Object.entries(PRODUCT_FILES)) {
+        const ref = documentOf(packing, name, type)
+        if (ref) files.set(name, ref)
     }
     return files
 }
@@ -515,6 +536,62 @@ function readProduct(gateways: string[], events: Event[]): Product {
     const ref = files.get(DESCRIPTION)
     const description = ref ? fileOf(gateways, ref).then(bytes => (bytes ? readDescription(bytes) : null)) : Promise.resolve(null)
     return { files, gateways, description }
+}
+
+// ---------- the plant: where the intake record says it is ----------
+
+const SITE_LOCATION = 'site-location.geojson'
+const GEOJSON = 'application/geo+json'
+// a coordinate: a number, finite, within so many degrees of zero
+const coordinate = (value: unknown, most: number): value is number => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= most
+
+// Where a location file says a place is, when the page can show it: a GeoJSON Feature whose geometry is a Point, with two
+// coordinates, the longitude and then the latitude, as GeoJSON writes them, that are on Earth; and the words for the place
+// and the key of the site, each when it is a line of text. Like a description it is found out here, once, before anything
+// is painted from it. A file of another shape, or that is not JSON, says nothing.
+export function readPoint(bytes: Uint8Array): Point | null {
+    try {
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { [key: string]: unknown } | null
+        if (typeof value !== 'object' || value === null || value.type !== 'Feature') return null
+        const geometry = (typeof value.geometry === 'object' && value.geometry !== null ? value.geometry : {}) as { [key: string]: unknown }
+        const coordinates = Array.isArray(geometry.coordinates) ? (geometry.coordinates as unknown[]) : []
+        const [lon, lat] = coordinates
+        if (geometry.type !== 'Point' || coordinates.length !== 2 || !coordinate(lon, 180) || !coordinate(lat, 90)) return null
+        const properties = (typeof value.properties === 'object' && value.properties !== null ? value.properties : {}) as { [key: string]: unknown }
+        return { site: line(properties.site), place: line(properties.place), lat, lon }
+    } catch {
+        return null
+    }
+}
+
+// The places of the path, kept as each file comes, with their coordinates: the plant, from the file the intake record
+// names, and in time the destination of the transport, for a map to join them. Another bag starts from none.
+export const places: { plant: Point | null } = { plant: null }
+
+// The coordinates as a visitor reads them, 20.2353° N, 85.1091° E, and as OpenStreetMap takes them: in the address only
+// numbers of the page's own making, to six decimals, and nothing the file said.
+const geo = ({ lat, lon }: Point) => `${Math.abs(lat).toFixed(4)}° ${lat < 0 ? 'S' : 'N'}, ${Math.abs(lon).toFixed(4)}° ${lon < 0 ? 'W' : 'E'}`
+const osm = ({ lat, lon }: Point) => `https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lon.toFixed(6)}#map=15/${lat.toFixed(6)}/${lon.toFixed(6)}`
+
+// Where the plant is. The intake record names the file among its documents; it is asked for once the records are checked,
+// with the description, and read like it: hashed against its reference, then found out once. When it has come, the
+// Received card, already on screen, gains two rows before its check: the place, and the coordinates, linked to
+// OpenStreetMap, which is asked for nothing unless the link is tapped.
+async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
+    const intake = events.find(e => e.data?.phase === 'intake')
+    const ref = documentOf(intake?.data, SITE_LOCATION, GEOJSON)
+    if (!intake || !ref) return
+    const bytes = await fileOf(mine.gateways, ref)
+    const point = bytes ? readPoint(bytes) : null
+    if (!point || product !== mine) return // it did not come, or another bag is being read
+    places.plant = point
+    const check = cards.get(intake.ref)?.querySelector('.check')
+    if (!check) return
+    // the rows land as the blocks do
+    const late = document.createElement('template')
+    late.innerHTML = rows([['Site', point.place], ['GPS', geo(point), osm(point)]])
+    late.content.querySelectorAll('.row').forEach(row => row.classList.add('late'))
+    check.before(late.content)
 }
 
 // ---------- the fruit (block 2) ----------
@@ -982,6 +1059,7 @@ export function reset() {
     $<HTMLOListElement>('path').innerHTML = ''
     resetLater()
     resetFruit()
+    places.plant = null
     row(1, 'reading…', 'busy')
     row(2, 'waiting', 'idle')
     row(3, 'waiting', 'idle')
@@ -1147,8 +1225,9 @@ async function check(config: Page) {
         const mine = product
         later(() => {
             revealFruit(events)
-            // the description fills the label when it has come, now or later
+            // the description fills the label when it has come, now or later; the location of the plant, the Received card
             void mine.description.then(described => product === mine && revealFruit(events, described))
+            void placePlant(mine, events, cards)
         }, 120)
         const lastCard = openPath(path, 1100)
         later(() => renderCo2(config, events), lastCard + UNFOLD_GAP + 120)
