@@ -31,6 +31,8 @@
                               next source is then asked whether it says the same
               Swarm           public gateways, read only: the records themselves, and the files of the product the packing
                               record names, each hashed before it is read (config: gateways)
+              Gnosis          read only, through the RPCs of the config and never a wallet: how long the stamp the bag's
+                              record names is paid for, once every record has matched (config: rpcs, storage)
               the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
               this file       itself, once more, to show its fingerprint in the footer
             What the page asks Ethereum about, the bag in the link, is seen by the source it asks. No cookies, no storage,
@@ -181,7 +183,8 @@
             .proof-clip .orn { margin-top: 1.5rem; }
             .proof { max-width: 17.5rem; margin: .8rem auto 0; font: 400 1.09rem/1.32 var(--text); text-wrap: balance; }
             .stored-slot { min-height: .6rem; margin-top: .75rem; }
-            .stored { display: inline-block; font: 500 .6875rem/1 var(--caps); letter-spacing: .22em; margin-right: -.22em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+            /* the day under the seal: a link to the stamp's page when the bag's record names a stamp (the script sets the href), and the same to look at either way */
+            .stored { display: inline-block; font: 500 .6875rem/1 var(--caps); letter-spacing: .22em; margin-right: -.22em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; transition: color var(--t-hover) var(--ease-out); }
             .stored b { font-weight: 500; }
 
             /* shared: the label panel of the back of the bag, white with a keyline inside its edge, and what is set on it */
@@ -362,7 +365,7 @@
             @media (hover: hover) and (pointer: fine) {
                 .chain-eth:hover { color: var(--eth); border-color: currentColor; }
                 .chain-swarm:hover { color: var(--swarm); border-color: currentColor; }
-                .home:hover span, .colophon a:hover { color: var(--ink); border-color: var(--ink); }
+                .home:hover span, .colophon a:hover, .stored[href]:hover { color: var(--ink); border-color: var(--ink); }
                 .holder-line .go:hover { border-color: var(--panel-ink); }
             }
             @media (max-width: 22.5rem) {
@@ -433,7 +436,7 @@
                     <div class="proof-fold" id="proof-fold"><div class="proof-clip">
                         <div class="orn" aria-hidden="true"><i></i></div>
                         <p class="proof" id="proof">Your device just checked this bag with Ethereum and Swarm.</p>
-                        <p class="stored-slot"><span class="stored" id="alive" hidden>Stored until <b id="alive-until"></b></span></p>
+                        <p class="stored-slot"><a class="stored" id="alive" target="_blank" rel="noopener" hidden>Stored until <b id="alive-until"></b></a></p>
                     </div></div>
                 </section>
                 <!-- 2 · the back of the bag: the fruit -->

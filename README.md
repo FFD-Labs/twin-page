@@ -34,7 +34,7 @@ Top to bottom, each block filling in as its records arrive. The page looks like 
 
 | Block | What it shows | Where it comes from |
 |---|---|---|
-| The front | The front of the pouch: its lockup and its crystal, with the twin's number inside the hexagon at its heart, the name of the fruit, and the three reads on one line, in the order they happen: your device asks Ethereum (the bag's latest record and who holds it), then Swarm (the records), and hashes every record to compare it with its anchor. Each read draws its stretch of the line and two edges of the hexagon; the hexagon closes when every record matches and the sealing line appears, with the date the records are paid up to on Swarm under it. The crystal is drawn by the page: an outline, then the colours of the pouch, and the pouch's own illustration when it arrives | Ethereum and Swarm, read by the device |
+| The front | The front of the pouch: its lockup and its crystal, with the twin's number inside the hexagon at its heart, the name of the fruit, and the three reads on one line, in the order they happen: your device asks Ethereum (the bag's latest record and who holds it), then Swarm (the records), and hashes every record to compare it with its anchor. Each read draws its stretch of the line and two edges of the hexagon; the hexagon closes when every record matches and the sealing line appears, with the day the records are paid up to on Swarm under it: the day of the stamp the bag's record names, read from Gnosis, with the day written in the configuration in its place until it comes and when it does not. Tap it to see the stamp on Stamptime. The crystal is drawn by the page: an outline, then the colours of the pouch, and the pouch's own illustration when it arrives | Ethereum, Swarm and, for the stamp, Gnosis, read by the device |
 | The fruit | The back of the pouch: the photograph of the fruit where the QR sticker sits, and in the label panel the grams per bag, what the bag holds (energy, sugars, protein, fat, fibre) and the full table per 100 g | The packing record names the product and the files of its description and its photograph, read from Swarm (see The product) |
 | The path | One card per record: received, freeze-dried, packed, delivered. The data rows, the check against the record's Ethereum anchor with the anchor's date, a link to the Ethereum anchor (its block, or the transaction once found) and to the file on Swarm, and the raw record | The records on Swarm |
 | The arithmetic | If this fruit was rescued: the grams in the bag, the fresh fruit they came from and the CO₂e that stays out of the air, every assumption in view | The cycle and packing records, and the factors in the configuration |
@@ -53,6 +53,8 @@ The records are checked by arithmetic: whatever gateway serves them, their bytes
 2. The RPCs of the configuration, in order: for Sepolia, an Alchemy endpoint and then a public one. The key in the Alchemy address is public, like the rest of the file; it is limited to the page's contracts and to ENS.
 
 When every record matches, the next source is asked the two things the check rests on: which record the bag has, and whether each record has its anchor, and since when. Its answer is kept on the plate (`data-sources`: `agree`, `differ` or `single`) and is not shown yet. Until it is, the plate closes on what the first source says, and the check is as good as that source: one that lied could have a record that was never anchored shown as checked.
+
+One more thing is asked, of another chain, for the line under the seal. The records are stored on Swarm under a stamp, a postage batch that is paid for by the block, and the bag's record names it (`stamp`). Once every record has matched, the page asks the PostageStamp contract on Gnosis what is left on that batch and the price of a block, through the RPCs the configuration lists for Gnosis, in order, and never through a wallet: a wallet is on the network of the bag, and the page does not ask it to change. The day that gives is the one shown. The day written in the configuration goes up first and stands when the stamp has run out, when no RPC answers, or when the record names no stamp. Tap the line and the stamp opens on Stamptime, where anyone can see how long it lasts and add to it.
 
 ## The fingerprint
 
@@ -119,10 +121,11 @@ The description is an `ffd/product-description/1.0` file. The page reads `name`,
 
 ## What the page never does
 
-- It reads Ethereum, through the visitor's wallet or the RPCs it lists, and Swarm, through public gateways (see Who the page asks). No server of ours.
+- It reads Ethereum, through the visitor's wallet or the RPCs it lists, Swarm, through public gateways, and Gnosis, through the RPCs it lists and for the stamp alone (see Who the page asks). No server of ours.
 - It loads no image until everything else is on screen. Then it asks the Swarm gateways for the art of the bag's pouch and the photograph of its fruit, by the references the packing record names, and shows each only when its bytes give that reference. The gateways see which files are fetched, as they see the records. Whoever served the page is asked for nothing more. A bag whose record names no image shows the drawn crystal, and nothing is missing.
 - When a twin has moved to an address with an ENS name, the page asks ENS for the name and the avatar through the same source, and loads the avatar from wherever its holder keeps it: an address of their choosing, ipfs.io or arweave.net, and for an NFT its contract and the metadata that contract names. Whoever serves it sees that the page was opened.
 - It follows no off-chain lookup (CCIP-Read). A name kept off-chain is not resolved, and its holder is shown by address.
+- Stamptime, where the stamp is looked up, opens only when the visitor taps the line under the seal, in a new tab. The page loads nothing from it.
 - It sets no cookies and keeps nothing on the device.
 - What follows `#` in the link is not sent to whoever serves the page. The network, the contract and the bag number in it are what the page asks Ethereum about, so the source it asks sees them, and the gateways see which records are fetched.
 - Nothing here signs, uploads or moves anything.
@@ -146,11 +149,11 @@ Open the built file with the network, the contract and the bag number after a ha
 | File | What it is |
 |---|---|
 | `web/devcon8.html` | The page: markup and styles |
-| `web/devcon8.ts` | The script: the reads, the check, the arrival of every block, the holder's jazzicon and ENS name, the fingerprint |
+| `web/devcon8.ts` | The script: the reads, the check, the arrival of every block, the day the stamp is paid up to, the holder's jazzicon and ENS name, the fingerprint |
 | `web/life-grid.ts` | The field behind the footer |
 | `src/lib.ts` | The contract's read side, the link format, downloading a record, and the Swarm reference of a file computed the way Swarm computes it, written here so anyone can read how a record is checked |
 | `src/rails.ts` | Everything the page takes from viem, by name: the read side of Ethereum and ENS, keccak256 |
-| `web/public/config.json` | What the page reads: the RPCs it asks, by network and in order, the contract it trusts, the custody address, the gateways in order, the day the storage is paid up to, the links, this repository and the CO₂ assumptions. Nothing about the fruit |
+| `web/public/config.json` | What the page reads: the RPCs it asks, by network and in order, the contract it trusts, the custody address, the gateways in order, the chain and the contract the stamp of a bag is read from and the page it is looked up on, the day the storage is paid up to when the stamp cannot be read, the links, this repository and the CO₂ assumptions. Nothing about the fruit |
 | `test/paint.test.mjs` | The paint functions, given a record or a product description whose values are HTML: nothing of it may become an element of the page. What a description says when it is not what it should be, and which documents of a record are the files of its product |
 | `test/check.test.mjs` | The whole check against gateways, RPCs and a wallet that lie, fail or do not answer: bytes that fail it are never read, a record of any shape leaves the page standing, and a source that fails is not taken for an answer. The same for the files of the product: one that does not match its reference, is too heavy or is not an image is not shown, and the page is the same without it |
 | `test/products.test.mjs` | The files in `products/`: each description is one the page reads, and each image a WebP of a weight the page takes |
