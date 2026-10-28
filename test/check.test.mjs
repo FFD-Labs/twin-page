@@ -885,9 +885,10 @@ test('a table with more rows than a label has room for: the page takes the first
     assert.equal($('fruit-origin').textContent.includes('Mineral 13'), false)
 })
 
-// ---------- the walk: a record and its anchor at once ----------
+// ---------- the walk, and a gateway that keeps it waiting ----------
 // A record is asked of the gateways and its anchor of the source at once, and its card waits for both. When no gateway
-// answers, the page says so as soon as that is known, whatever the source is doing.
+// answers, the page says so as soon as that is known, whatever the source is doing. A gateway that takes the request and
+// never answers, or cannot be reached, costs its wait once: what the page asks after that goes to the other first.
 
 // the anchors the first source is asked for, kept in order; `then` is what it does before it answers, to hold the answer
 // back or to fail
@@ -1005,6 +1006,66 @@ test('the source fails when asked for the anchor while a gateway still serves th
     assert.match($('notice').textContent, /We couldn’t reach the records right now/)
     assert.match($('notice').querySelector('pre').textContent, /Status: 429/)
     assert.deepEqual(seen, [])
+})
+
+test('a first gateway that takes the request and never answers, and a bag of three records and two files: it is asked once, not once for each, and the bag seals', async (t) => {
+    const timeout = AbortSignal.timeout.bind(AbortSignal)
+    t.mock.method(AbortSignal, 'timeout', () => timeout(5)) // the wait, cut short for the test
+    bag([description(), photo()])
+    net.instead.set(first, silent)
+    await scan()
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches')
+    assert.ok($('hero').classList.contains('verified'))
+    for (const li of cards()) assert.ok(li.querySelector('.links a:not(.anchor)').href.startsWith(`${second}/bytes/`))
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.deepEqual([asked(first), asked(second)], [1, 5])
+    // a check after it, as Try again starts one, asks in the order of the configuration
+    net.instead.clear()
+    net.asked.length = 0
+    await scan()
+    assert.deepEqual([asked(first), asked(second)], [5, 0])
+})
+
+test('a first gateway that answers with an error, for a bag of three records: it keeps its place, and is asked for each', async () => {
+    bag([])
+    net.instead.set(first, down)
+    await scan()
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches')
+    assert.deepEqual([asked(first), asked(second)], [3, 3])
+})
+
+test('a first gateway that never answers, and a second that fails the next record: the details say what the second said, as they would have in the order of the configuration', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    const timeout = AbortSignal.timeout.bind(AbortSignal)
+    t.mock.method(AbortSignal, 'timeout', () => timeout(5)) // the wait, cut short for the test
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' })
+    const cycle = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', start: '2026-09-28T10:00:00Z', end: '2026-09-29T08:00:00Z', loads: [{ trays: 10, kg: 20 }], kg_out: 2, inputs: [intake] })
+    net.head = put(packed({ inputs: [cycle] }))
+    net.instead.set(first, silent)
+    net.instead.set(second, but({ ref: cycle.slice(2) }, down))
+    await scan()
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example, second\.example\./)
+    assert.match($('notice').querySelector('pre').textContent, /download failed: 502/)
+})
+
+test('a first gateway that serves the records and cannot be reached for the files: it is asked for the first of them, and the rest go to the second first', async () => {
+    const files = [description(), photo(), cover()]
+    bag(files)
+    const refused = new Set(files.map((document) => document.ref))
+    net.instead.set(first, (request) => {
+        const ref = request.url.split('/bytes/')[1]
+        if (refused.has(ref)) throw new TypeError('Failed to fetch')
+        return answer(net.files.get(`0x${ref}`), 'application/octet-stream')
+    })
+    await scan()
+    const of = (gateway, document) => net.asked.filter((url) => url === `${gateway}/bytes/${document.ref}`).length
+    assert.deepEqual(files.map((document) => of(first, document)), [1, 0, 0])
+    assert.deepEqual(files.map((document) => of(second, document)), [1, 1, 1])
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal(root().dataset.art, 'front')
 })
 
 // ---------- the plant: the file the intake record names ----------

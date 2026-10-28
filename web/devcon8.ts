@@ -537,6 +537,16 @@ export function documentOf(record: Record | null | undefined, name: string, type
     return null
 }
 
+// ---------- the gateways: in order, and one that did not answer last ----------
+
+// The gateways are asked in the order of the configuration. One that did not answer, that kept the page waiting until it
+// gave up or could not be reached at all, is asked after the others for whatever the page asks from then on, so that it
+// costs its wait once and not once per file; what was already asked of it waits for it as before. One that answered,
+// with an error or with other bytes, keeps its place. Try again starts from the order of the configuration.
+const stalled = new Set<string>()
+const unanswered = (error: unknown) => error instanceof Error && ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name)
+const inTurn = (gateways: string[]) => [...gateways.filter(gateway => !stalled.has(gateway)), ...gateways.filter(gateway => stalled.has(gateway))]
+
 // ---------- the product: the files the packing record names ----------
 
 // What the page says of the fruit hangs from the bag's packing record: among its documents, four files. The description
@@ -563,12 +573,13 @@ export function productFiles(events: Event[]) {
 // that has its anchor, so the file is the one that record was sealed with. Null when no gateway has it, when none answers,
 // or when it weighs more than the page takes.
 async function fileOf(gateways: string[], ref: Hex) {
-    for (const gateway of gateways) {
+    for (const gateway of inTurn(gateways)) {
         try {
             const bytes = await download(gateway, ref)
             if (swarmHash(bytes) === ref) return bytes
-        } catch {
+        } catch (error) {
             // the next gateway is asked
+            if (unanswered(error)) stalled.add(gateway)
         }
     }
     return null
@@ -1578,6 +1589,7 @@ export function reset() {
     resetLater()
     resetFruit()
     places.plant = places.destination = null
+    stalled.clear()
     row(1, 'reading…', 'busy')
     row(2, 'waiting', 'idle')
     row(3, 'waiting', 'idle')
@@ -1685,11 +1697,12 @@ async function check(config: Page) {
         const seen = new Set<Hex>()
         // What a gateway serves is hashed as it lands, and the first bytes that give the reference are the record. A gateway
         // that serves other bytes is passed over like one that does not answer. `bytes` is null when gateways answered and
-        // none of them had the record; when none answered at all, that is the network, and it is thrown.
+        // none of them had the record; when none answered at all, that is the network, and it is thrown: what the gateway
+        // the configuration names last said, whatever order they were asked in.
         const fetchBytes = async (ref: Hex) => {
-            let last: unknown
+            const failed = new Map<string, unknown>()
             let other: string | null = null
-            for (const gateway of gateways) {
+            for (const gateway of inTurn(gateways)) {
                 tried.add(gateway)
                 try {
                     const bytes = await download(gateway, ref)
@@ -1699,10 +1712,12 @@ async function check(config: Page) {
                     }
                     other ??= gateway
                 } catch (error) {
-                    last = error
+                    if (unanswered(error)) stalled.add(gateway)
+                    failed.set(gateway, error)
                 }
             }
             if (other) return { bytes: null, gateway: other }
+            const last = failed.get([...gateways].reverse().find(gateway => failed.has(gateway)) ?? '')
             throw last instanceof Error ? last : Error('no gateway answered')
         }
         while (queue.length) {
