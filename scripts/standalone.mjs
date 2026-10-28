@@ -70,9 +70,21 @@ execFileSync(process.execPath, ['--check', resolve(out, 'page.mjs')], { stdio: '
 // ---------- the page as written, with the pieces in their places ----------
 let html = text('web/devcon8.html')
 const data = (file, type) => `data:${type};base64,${read(`web/public/${file}`).toString('base64')}`
+// A mark is text, and travels as text: base64 would make it a third longer and hide it from compression. It goes inside a
+// double-quoted attribute, so its own quotes become single ones, and only what an address would read otherwise is escaped:
+// % and # as in any address, < and >. A browser drops every tab and line break from an address before it reads it, and
+// reads an & in an attribute as the start of a character; a single quote would end an attribute once the quotes are
+// swapped. A mark with any of them is written again, without, rather than published changed.
+const mark = (file) => {
+    const svg = text(`web/public/${file}`).trim()
+    if (svg.includes("'")) throw Error(`${file}: a single quote, which would end an attribute once its quotes are single`)
+    const uri = `data:image/svg+xml,${svg.replaceAll('"', "'").replace(/[%#<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`
+    if (/[\t\n\r&]/.test(uri)) throw Error(`${file}: a tab, a line break or an &, which a browser would drop from the address or read as markup`)
+    return uri
+}
 html = html.replace(/url\((['"]?)\.\/(fonts\/[^'")]+\.woff2)\1\)/g, (_, __, file) => `url('${data(file, 'font/woff2')}')`)
-html = html.replace(/src="\.\/(brand\/[^"]+\.svg)"/g, (_, file) => `src="${data(file, 'image/svg+xml')}"`)
-html = html.replace(/href="\.\/favicon\.svg"/, `href="${data('favicon.svg', 'image/svg+xml')}"`)
+html = html.replace(/src="\.\/(brand\/[^"]+\.svg)"/g, (_, file) => `src="${mark(file)}"`)
+html = html.replace(/href="\.\/favicon\.svg"/, () => `href="${mark('favicon.svg')}"`)
 if (/\.\/(fonts|brand)\/|\.\/favicon/.test(html)) throw Error('a font or a mark is still external')
 
 // 3 · the merged config, read by loadConfig() before it would fetch
