@@ -1388,18 +1388,25 @@ async function nameHolder(owner: Address, chainId: number, { transport }: Source
             swap(who, name)
         }
         const avatar = await getEnsAvatar(client, { name, assetGatewayUrls: { ipfs: 'https://ipfs.io' } }).catch(() => null)
-        if (!avatar) return
-        const img = new Image()
-        img.className = 'pic arrives'
-        img.alt = ''
-        img.onload = () => {
-            $('holder').querySelector('.pic')?.replaceWith(img)
-            requestAnimationFrame(() => requestAnimationFrame(() => img.classList.add('in')))
-        }
-        img.src = avatar
+        if (avatar) await holderPicture(avatar)
     } catch (error) {
         console.error(error)
     }
+}
+
+// The holder's picture, from wherever they keep it. Its host is not told which page asked for it, and it takes the place of
+// the jazzicon only once a browser has drawn it within the art's cap: a picture too large for a phone to hold, or one that
+// does not come, leaves the jazzicon.
+export async function holderPicture(src: string) {
+    if (!(await arrive(src))) return
+    const img = document.createElement('img')
+    img.className = 'pic arrives'
+    img.alt = ''
+    img.setAttribute('referrerpolicy', 'no-referrer')
+    img.decoding = 'async'
+    img.src = src
+    $('holder').querySelector('.pic')?.replaceWith(img)
+    requestAnimationFrame(() => requestAnimationFrame(() => img.classList.add('in')))
 }
 
 // ---------- the art: last of all ----------
@@ -1422,6 +1429,8 @@ const arrive = (src: string) =>
         // a small file can still name a picture too large for a phone to hold: that one is not shown either
         image.onload = () => done(image.naturalWidth * image.naturalHeight <= PIXELS_MOST ? src : null)
         image.onerror = () => done(null)
+        // the art is the page's own address; a holder's picture is not, and its host is not told which page asked
+        image.referrerPolicy = 'no-referrer'
         image.src = src
     })
 

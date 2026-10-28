@@ -2336,3 +2336,31 @@ test('another bag while the files of the route are still on their way: nothing o
     assert.equal(document.documentElement.outerHTML.includes('Jio'), false)
 })
 
+// ---------- the holder's picture ----------
+// A holder's ENS avatar lives wherever they keep it. It takes the jazzicon's place without its host being told which page
+// asked, and only once a browser has drawn it within the art's cap: one too large for a phone to hold, or one that does
+// not come, leaves the jazzicon.
+test('the holder’s picture: it takes the jazzicon’s place without telling its host which page asked, and not when too large or missing', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    net.owner = holder
+    net.head = put(packed())
+    await scan()
+    await turns()
+    const picture = 'https://pictures.example/holder.webp'
+    pictures.set(picture, webp(7))
+    await page.holderPicture(picture)
+    const shown = $('holder').querySelector('img.pic')
+    assert.equal(shown?.getAttribute('src'), picture)
+    assert.equal(shown.getAttribute('referrerpolicy'), 'no-referrer')
+    assert.equal($('holder').querySelector('.pic.jazz'), null)
+    for (const [name, content] of [['huge', webp(8, 64, true)], ['missing', null]]) {
+        net.head = put(packed())
+        await scan()
+        await turns()
+        const src = `https://pictures.example/${name}.webp`
+        if (content) pictures.set(src, content)
+        await page.holderPicture(src)
+        assert.equal($('holder').querySelector('img.pic'), null, name)
+        assert.ok($('holder').querySelector('.pic.jazz'), name)
+    }
+})
