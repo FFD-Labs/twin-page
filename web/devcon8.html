@@ -39,8 +39,8 @@
               the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
               this file       itself, once more, to show its fingerprint in the footer
               OpenStreetMap   not asked: the coordinates of the plant on the Received card and of the destination on the
-                              Delivered card are links to it, and so is the route under the map the Delivered card draws;
-                              each is followed only when tapped
+                              Delivered card are links to it, and the line under the map the Delivered card draws ends
+                              with one that opens it over the two places; each is followed only when tapped
             What the page asks Ethereum about, the bag in the link, is seen by the source it asks. No cookies, no storage,
             no server of ours. Nothing is signed or uploaded.
         -->
@@ -348,7 +348,9 @@
             /* the route of the bag, drawn in the Delivered card from the two files the records name: on a plate in the tint of
                the panel, the plant as the filled diamond and where the bag went as the ring in the one warm colour, each named
                under it, joined by a line that bows to the north and is drawn once the map has landed, the ring and its name
-               coming up behind it; under the map, the distance and the days of the journey, in the small print of the check */
+               coming up behind it; under the map, the distance and the days of the journey in the small print of the check, and
+               at the end of that line, or on a line of its own when the first is short of room, the link that opens
+               OpenStreetMap over the two places, set as the links of the small print are */
             .route { margin-top: 1rem; color: var(--panel-ink); animation: land var(--t-enter) var(--ease-out) both; }
             .route .map { display: block; width: 100%; height: auto; font: 400 9.5px var(--text); }
             .route .ground { fill: var(--panel-tint); }
@@ -359,7 +361,8 @@
             .route .dest { fill: var(--panel); stroke: var(--chart-warm); stroke-width: 1.4; }
             .route .dest, .route .to { transition: opacity .6s var(--ease-out) 1.2s; }
             .route:not(.drawn) .dest, .route:not(.drawn) .to { opacity: 0; }
-            .route .leg { margin-top: .5rem; font-size: .8rem; line-height: 1.3; color: var(--panel-ink-2); font-variant-numeric: tabular-nums; }
+            .route .leg { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 1rem; margin-top: .2rem; font-size: .8rem; line-height: 1.3; color: var(--panel-ink-2); font-variant-numeric: tabular-nums; }
+            .route .leg a { padding: .3rem 0; text-decoration: underline; text-decoration-color: var(--panel-rule); text-underline-offset: .2em; }
             @media (hover: hover) and (pointer: fine) { .btn:hover { background: currentColor; } .card .btn:hover, .notice .btn:hover { background: var(--panel-ink); color: var(--panel); } .row .v a:hover { border-color: var(--panel-ink); } }
 
             /* 4 · the arithmetic, set on the ground of the bag like the lines of its front */

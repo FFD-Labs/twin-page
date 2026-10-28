@@ -1435,8 +1435,8 @@ test('another bag while the curves of the first are still on their way: nothing 
 // Where the bag went comes from a file too: the transport record names `destination-location.geojson` among its
 // documents, and the page reads it like the plant's. The Delivered card then gains the coordinates on its To row and,
 // once the plant has come as well and the transport names its site as the origin, the map: the two places joined by a
-// line, the distance and the days under it, and a line of small print that opens the route on OpenStreetMap, which is
-// asked for nothing. The map is the page's own drawing: no tile, no script and no image from anyone.
+// line, the distance and the days under it, and at the end of that line a link that opens OpenStreetMap over the two
+// places, which is asked for nothing. The map is the page's own drawing: no tile, no script and no image from anyone.
 const mumbai = { type: 'Feature', geometry: { type: 'Point', coordinates: [72.867442, 19.064192] }, properties: { place: 'Jio World Convention Centre, G Block, Bandra Kurla Complex, Bandra East, Mumbai 400098, India' } }
 const destination = (value = mumbai, name = 'destination-location.geojson', type = 'application/geo+json') => file(name, type, bytes(value))
 const devcon = { site: null, place: mumbai.properties.place, lat: 19.064192, lon: 72.867442 }
@@ -1454,10 +1454,11 @@ const toRow = (li) => rowsOf(li).find(([key]) => key === 'To')
 const asDelivered = ['Product', 'From', 'To', 'Departed', 'Arrived', 'Carrier']
 const toDevcon = ['To', 'Devcon 8, Mumbai19.0642° N, 72.8674° E ↗']
 const point = 'https://www.openstreetmap.org/?mlat=19.064192&mlon=72.867442#map=15/19.064192/72.867442'
-const route = 'https://www.openstreetmap.org/directions?route=20.235281%2C85.109112%3B19.064192%2C72.867442'
-// the map of a card, when it has one, and whether the card has the line that opens the route
+// the view of OpenStreetMap over the two places: the destination marked, and zoom 6, the widest at which both fit, centred between them
+const view = 'https://www.openstreetmap.org/?mlat=19.064192&mlon=72.867442#map=6/19.649736/78.988277'
+// the map of a card, when it has one, and the links under it
 const mapOf = (li) => li.querySelector('.route')
-const opens = (li) => [...li.querySelectorAll('.quiet a')].map((a) => a.getAttribute('href'))
+const opens = (li) => [...li.querySelectorAll('.leg a')].map((a) => a.getAttribute('href'))
 
 test('the route: the Delivered card draws it from the two files, says the distance and the days, and opens it on OpenStreetMap', async () => {
     const files = [site(), destination()]
@@ -1478,7 +1479,7 @@ test('the route: the Delivered card draws it from the two files, says the distan
     assert.equal(way.getAttribute('pathLength'), '1')
     assert.match(way.getAttribute('d'), /^M[\d. ]+Q[\d. ]+$/)
     assert.deepEqual([...map.querySelectorAll('text')].map((t) => t.textContent), ['Dhodapalli', 'Jio World Convention Centre'])
-    assert.equal(map.querySelector('.leg').textContent, '≈ 1,290 km · 6 days')
+    assert.equal(map.querySelector('.leg .far').textContent, '≈ 1,290 km · 6 days')
     assert.equal(map.querySelector('svg').getAttribute('aria-label'), 'The route from Dhodapalli to Jio World Convention Centre: about 1,290 km in 6 days')
     // the To row gains the coordinates of the destination under the record's words, linked as the GPS of the plant is
     assert.deepEqual(toRow(card), toDevcon)
@@ -1487,13 +1488,15 @@ test('the route: the Delivered card draws it from the two files, says the distan
     assert.equal(links[0].getAttribute('href'), point)
     assert.equal(links[0].getAttribute('rel'), 'noopener')
     assert.ok(links[0].closest('.late'))
-    // the route, in the small print after the links: numbers the page wrote, and nothing of the files
-    const open = card.querySelector('.quiet a')
-    assert.equal(open.textContent, 'Open the route in OpenStreetMap ↗')
-    assert.equal(open.getAttribute('href'), route)
+    // the link at the end of the line under the map: OpenStreetMap over the two places, from numbers the page wrote and
+    // nothing of the files; the small print of the card has no line of its own for it
+    const open = map.querySelector('.leg a')
+    assert.equal(open.textContent, 'Open in OpenStreetMap ↗')
+    assert.equal(open.getAttribute('href'), view)
     assert.equal(open.getAttribute('target'), '_blank')
     assert.equal(open.getAttribute('rel'), 'noopener')
-    assert.ok(card.querySelector('.links').nextElementSibling.classList.contains('quiet'))
+    assert.equal(open.previousElementSibling.textContent, '≈ 1,290 km · 6 days')
+    assert.equal(card.querySelector('.quiet'), null)
     assert.equal(card.querySelectorAll('.links a').length, 2)
     // the Received card has its own rows, and the raw records are the records
     assert.deepEqual(rowsOf(receivedCard()).slice(-2).map(([key]) => key), ['Site', 'GPS'])
@@ -1559,9 +1562,9 @@ test('a destination file whose words are HTML, and a transport whose dates are n
     assert.ok(map)
     // a name is cut at 32 characters; the words reach the map as text and the label of the map as an attribute, escaped
     assert.deepEqual([...map.querySelectorAll('text')].map((t) => t.textContent), ['Dhodapalli', `${hostile('place').slice(0, 32)}…`])
-    assert.equal(map.querySelector('.leg').textContent, '≈ 1,290 km')
+    assert.equal(map.querySelector('.leg .far').textContent, '≈ 1,290 km')
     assert.equal(map.querySelector('svg').getAttribute('aria-label'), `The route from Dhodapalli to ${hostile('place').slice(0, 32)}…: about 1,290 km`)
-    assert.deepEqual(opens(card), [route])
+    assert.deepEqual(opens(card), [view])
     assert.equal(page.places.destination.place, hostile('place'))
 })
 
@@ -1638,7 +1641,7 @@ test('another bag after one with its route: nothing of it is left', async () => 
     await scan()
     assert.deepEqual(page.places, { plant: null, destination: null })
     assert.deepEqual(cards().map((li) => li.querySelector('h2').textContent), ['Packed'])
-    for (const word of ['Jio', 'Dhodapalli', 'directions?route', 'class="route"']) assert.equal(document.documentElement.outerHTML.includes(word), false, word)
+    for (const word of ['Jio', 'Dhodapalli', 'map=6/', 'class="route"']) assert.equal(document.documentElement.outerHTML.includes(word), false, word)
 })
 
 test('a file of the route that is slow to come: the seal does not wait for it, the other place takes its card, and the map comes when both are in', async () => {
@@ -1660,7 +1663,7 @@ test('a file of the route that is slow to come: the seal does not wait for it, t
     await scanning
     assert.deepEqual(toRow(deliveredCard()), toDevcon)
     assert.ok(mapOf(deliveredCard()))
-    assert.deepEqual(opens(deliveredCard()), [route])
+    assert.deepEqual(opens(deliveredCard()), [view])
     // the plant held back: the destination lands on the Delivered card, and the map waits for the plant
     net.instead.clear()
     files = [site(), destination()]

@@ -609,11 +609,9 @@ export function readPoint(bytes: Uint8Array): Point | null {
 export const places: { plant: Point | null; destination: Point | null } = { plant: null, destination: null }
 
 // The coordinates as a visitor reads them, 20.2353° N, 85.1091° E, and as OpenStreetMap takes them: in the address only
-// numbers of the page's own making, to six decimals, and nothing the file said. The route between two places the same
-// way, from the first to the second.
+// numbers of the page's own making, to six decimals, and nothing the file said.
 const geo = ({ lat, lon }: Point) => `${Math.abs(lat).toFixed(4)}° ${lat < 0 ? 'S' : 'N'}, ${Math.abs(lon).toFixed(4)}° ${lon < 0 ? 'W' : 'E'}`
 const osm = ({ lat, lon }: Point) => `https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lon.toFixed(6)}#map=15/${lat.toFixed(6)}/${lon.toFixed(6)}`
-const osmRoute = (from: Point, to: Point) => `https://www.openstreetmap.org/directions?route=${from.lat.toFixed(6)}%2C${from.lon.toFixed(6)}%3B${to.lat.toFixed(6)}%2C${to.lon.toFixed(6)}`
 
 // The rows a file adds to a card already on screen, set before the element given: they land as the blocks do.
 function landRows(before: Element, list: (string | null | undefined)[][]) {
@@ -930,6 +928,19 @@ function daysBetween(from: unknown, to: unknown) {
     return Number.isFinite(ms) && ms >= 0 ? Math.round(ms / 864e5) : null
 }
 
+// The map of OpenStreetMap over the two places, for the link under the map: the destination marked, the view centred
+// between them at the widest zoom, 2 to 15, at which both fit in about 700 by 500 pixels of its Web Mercator, where the
+// world is 256 pixels wide at zoom 0 and twice as wide each zoom in. In the address, numbers of the page's own making.
+const VIEW = { w: 700, h: 500, tile: 256, least: 2, most: 15 }
+const mercator = (lat: number) => Math.log(Math.tan(Math.PI / 4 + rad(lat) / 2))
+function zoomOver(from: Point, to: Point) {
+    const fits = (span: number, px: number, world: number) => Math.log2((px * world) / (VIEW.tile * span))
+    const z = Math.min(fits(Math.abs(to.lon - from.lon), VIEW.w, 360), fits(Math.abs(mercator(to.lat) - mercator(from.lat)), VIEW.h, 2 * Math.PI))
+    return z >= VIEW.most ? VIEW.most : z >= VIEW.least ? Math.floor(z) : VIEW.least
+}
+const osmView = (from: Point, to: Point) =>
+    `https://www.openstreetmap.org/?mlat=${to.lat.toFixed(6)}&mlon=${to.lon.toFixed(6)}#map=${zoomOver(from, to)}/${((from.lat + to.lat) / 2).toFixed(6)}/${((from.lon + to.lon) / 2).toFixed(6)}`
+
 // The map: a box in units of its own, scaled to the width of the card, with the two places inside margins that hold their
 // names; the line between them bows to the north by this much of its length
 const MAP = { w: 300, h: 170, x0: 36, x1: 264, y0: 24, y1: 146 }
@@ -944,8 +955,9 @@ function nameOf(place: string | null) {
 // The route drawn: the plant as the filled diamond and where the bag went as the ring, set on a flat map, degrees east
 // scaled by the cosine of the middle latitude and degrees north upward, framed with a margin, and joined by a line that
 // bows to the north and is drawn once the map has landed; under it, the distance as the crow flies and the days from
-// departure to arrival. The names are the words of the files before their first comma, written as text; the rest of the
-// markup is the page's own words and numbers. Empty when the two places are one, within a kilometre of each other.
+// departure to arrival, and at the end of that line the link that opens OpenStreetMap over the two places. The names
+// are the words of the files before their first comma, written as text; the rest of the markup is the page's own words
+// and numbers. Empty when the two places are one, within a kilometre of each other.
 export function drawRoute(from: Point, to: Point, record: Record): string {
     const km = distance(from, to)
     if (!(km >= 1)) return ''
@@ -977,14 +989,14 @@ export function drawRoute(from: Point, to: Point, record: Record): string {
             <circle class="dest" cx="${n(q.x)}" cy="${n(q.y)}" r="3.8"/>
             ${name(from, p, 'from')}${name(to, q, 'to')}
         </svg>
-        <figcaption class="leg">≈ ${kilometres(km)} km${journey ? ` · ${journey}` : ''}</figcaption>
+        <figcaption class="leg"><span class="far">≈ ${kilometres(km)} km${journey ? ` · ${journey}` : ''}</span>${linked('Open in OpenStreetMap', osmView(from, to))}</figcaption>
     </figure>`
 }
 
 // The route of the bag, drawn in the Delivered card once both places have come: from the plant, when the transport record
 // names its site as the origin, to where the bag went. Set between the rows and the check line, as the curves are in the
-// card of a cycle, with the line that opens the route on OpenStreetMap among the small print, after the links. Nothing
-// is drawn without both places, from a plant that is not the transport's origin, or once another bag is being read.
+// card of a cycle. Nothing is drawn without both places, from a plant that is not the transport's origin, or once another
+// bag is being read.
 function drawMap(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
     const transport = events.find(e => e.data?.phase === 'transport')
     const record = transport?.data
@@ -995,7 +1007,6 @@ function drawMap(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
     const li = cards.get(transport.ref)
     if (!drawn || !li) return
     li.querySelector('.card .check')?.insertAdjacentHTML('beforebegin', drawn)
-    li.querySelector('.card .links')?.insertAdjacentHTML('afterend', `<p class="quiet">${linked('Open the route in OpenStreetMap', osmRoute(plant, destination))}</p>`)
     requestAnimationFrame(() => requestAnimationFrame(() => li.querySelector('.route')?.classList.add('drawn')))
 }
 

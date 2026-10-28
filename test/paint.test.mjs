@@ -448,13 +448,18 @@ test('the route is drawn from the two points: the words of the places as text, t
     card.innerHTML = drawRoute({ ...plant, place: hostile('place') }, { ...devcon, place: hostile('place') }, carried({ departure: hostile('departure'), arrival: hostile('arrival'), origin: hostile('origin'), destination: hostile('destination') }))
     clean(document)
     assert.deepEqual([...card.querySelectorAll('text')].map((t) => t.textContent), [`${hostile('place').slice(0, 32)}…`, `${hostile('place').slice(0, 32)}…`])
-    assert.equal(card.querySelector('.leg').textContent, '≈ 1,290 km')
+    assert.equal(card.querySelector('.leg .far').textContent, '≈ 1,290 km')
     assert.equal(card.querySelector('.plant').getAttribute('d').match(/[^\dMlz .-]/g), null)
+    // the link at the end of the line: OpenStreetMap over the two places, the destination marked, from numbers alone
+    const open = card.querySelector('.leg a')
+    assert.equal(open.textContent, 'Open in OpenStreetMap ↗')
+    assert.equal(open.getAttribute('href'), 'https://www.openstreetmap.org/?mlat=19.064192&mlon=72.867442#map=6/19.649736/78.988277')
+    assert.equal(open.getAttribute('rel'), 'noopener')
     assert.equal(card.querySelectorAll('.way[pathLength="1"]').length, 1)
     // the honest route: the plant at the east edge of the frame, where the bag went at the west, named under each, and the
     // line between them bowing to the north
     card.innerHTML = drawRoute(plant, devcon, carried())
-    assert.equal(card.querySelector('.leg').textContent, '≈ 1,290 km · 6 days')
+    assert.equal(card.querySelector('.leg .far').textContent, '≈ 1,290 km · 6 days')
     assert.equal(card.querySelector('.map').getAttribute('aria-label'), 'The route from Dhodapalli to Jio World Convention Centre: about 1,290 km in 6 days')
     const [x1, y1, cx, cy, x2, y2] = lineOf(card)
     assert.deepEqual([x1, x2], [264, 36])
@@ -470,11 +475,20 @@ test('the route is drawn from the two points: the words of the places as text, t
 })
 
 test('the days of the journey are rounded, one day and less are said as such, and dates the record does not give leave the distance alone', () => {
-    const leg = (fields) => parsed(drawRoute(plant, devcon, carried(fields))).querySelector('.leg').textContent
+    const leg = (fields) => parsed(drawRoute(plant, devcon, carried(fields))).querySelector('.leg .far').textContent
     assert.equal(leg({ arrival: '2026-10-28T03:26:59Z' }), '≈ 1,290 km · 1 day')
     assert.equal(leg({ arrival: '2026-10-28T20:00:00Z' }), '≈ 1,290 km · 2 days')
     assert.equal(leg({ arrival: '2026-10-27T09:00:00Z' }), '≈ 1,290 km · under a day')
     for (const fields of [{ arrival: undefined }, { departure: undefined }, { arrival: '2026-10-26T09:00:00Z' }, { departure: 7, arrival: 8 }, { departure: 'yesterday', arrival: 'today' }]) assert.equal(leg(fields), '≈ 1,290 km')
+})
+
+test('the view of OpenStreetMap under the map takes the widest zoom at which the two places fit, from 2 to 15, centred between them', () => {
+    const view = (from, to) => parsed(drawRoute(from, to, carried())).querySelector('.leg a').getAttribute('href').split('#map=')[1]
+    const at = (lat, lon) => ({ site: null, place: null, lat, lon })
+    assert.equal(view(plant, devcon), '6/19.649736/78.988277') // 12° of longitude: 557 of 700 pixels at zoom 6, twice that at 7
+    assert.equal(view(at(0, 10), at(60, 10)), '3/30.000000/10.000000') // 60° of latitude: 429 of 500 pixels at zoom 3
+    assert.equal(view(at(0, 0), at(0, 0.02)), '15/0.000000/0.010000') // two kilometres: no closer than 15
+    assert.equal(view(at(0, -170), at(0, 170)), '2/0.000000/0.000000') // most of the world: no wider than 2
 })
 
 test('two places that are one, within a kilometre, draw nothing; places without words have no names, and the map is drawn', () => {
