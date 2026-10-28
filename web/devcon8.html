@@ -21,7 +21,8 @@
             the crystal, its window, the colours. The name of the fruit, what the bag holds, its photograph and the illustrations of its
             pouch are files the bag's packing record names, and where the plant is and where the bag went, files its intake
             and its transport records name: the page reads them from Swarm, each checked against its reference, the images
-            last of all; without them nothing is missing. The map of the route is drawn by the page from the two points.
+            last of all, the photograph first and then the cover and the background; without them nothing is missing. The
+            map of the route is drawn by the page from the two points.
 
             The file runs two scripts, 4 and 5, and no other: the Content-Security-Policy in the head names each by its SHA-256
             (added by the build), so nothing written into the page afterwards can run as script.
@@ -261,7 +262,7 @@
             .photo img { position: relative; display: block; width: 100%; height: 100%; object-fit: cover; border-radius: .55rem; transition: opacity .7s var(--ease-out), filter .7s var(--ease-out); }
             .photo img.in { opacity: 1; filter: none; }
             .photo img:not(.in) { opacity: 0; filter: blur(6px); }
-            /* the place of the photograph is kept from the start: it is the last thing to arrive, and nothing moves when it does */
+            /* the place of the photograph is kept from the start: it arrives with the art, last of all, and nothing moves when it does */
             .photo .slot { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--rule); stroke-width: .6; transition: opacity .7s var(--ease-out); }
             .photo .slot .dot { fill: var(--rule); stroke: none; }
             .photo.on .slot { opacity: 0; }

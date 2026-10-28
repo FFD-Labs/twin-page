@@ -506,10 +506,12 @@ test('a link to a network the page has no RPC for: a wallet that is on it is not
 // The page tries an image before it shows it, and holds it under an address of its own making. Here an image is one when
 // its bytes begin as a WebP file does, which stands for a picture a browser can draw; the bytes behind each address are
 // kept, to tell, with the type the page gave them and whether it let the address go. A picture is 720 px a side, unless
-// its bytes say it is one too large to hold (`webp(mark, size, true)`).
+// its bytes say it is one too large to hold (`webp(mark, size, true)`). One whose mark a test puts in `undrawn` never
+// loads, nor fails: the page stops waiting for it when it has waited long enough.
 const pictures = new Map()
 const made = []
 const letGo = new Set()
+const undrawn = new Set()
 const createObjectURL = URL.createObjectURL.bind(URL)
 const revokeObjectURL = URL.revokeObjectURL.bind(URL)
 URL.createObjectURL = (blob) => {
@@ -525,6 +527,7 @@ URL.revokeObjectURL = (url) => {
 beforeEach(() => {
     made.length = 0
     letGo.clear()
+    undrawn.clear()
 })
 const NodeBlob = globalThis.Blob
 globalThis.Blob = class extends NodeBlob {
@@ -539,6 +542,7 @@ globalThis.Image = class {
         const file = pictures.get(url)
         const drawn = file && ascii(file, 0, 4) === 'RIFF' && ascii(file, 8, 12) === 'WEBP'
         this.naturalWidth = this.naturalHeight = drawn && file[21] ? 20000 : 720
+        if (drawn && undrawn.has(file[20])) return
         queueMicrotask(() => (drawn ? this.onload?.() : this.onerror?.()))
     }
 }
@@ -864,6 +868,172 @@ test('another bag while the files of the first are still on their way: nothing o
     assert.equal($('fruit-contains').hidden, true)
     assert.equal(before.length, 2) // the cover, on screen, and the photograph, held until the description comes
     for (const url of before) assert.ok(letGo.has(url))
+})
+
+// ---------- the images in turn: the photograph, then the cover, then the background ----------
+// Each image is asked for once the one before it is in, or four seconds after it was asked for. The scan runs every timer
+// at once, which would let those four seconds pass at once: here it runs until the page asks for the image the test holds
+// back, and the test then moves the clock itself.
+async function until(document) {
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    while (!askedFor(document) && !done) {
+        mock.timers.runAll()
+        await new Promise((turn) => setImmediate(turn))
+    }
+    return scanning
+}
+// a few turns with the clock stopped
+async function still(count = 20) {
+    for (let i = 0; i < count; i++) await new Promise((turn) => setImmediate(turn))
+}
+const firstAsked = (document) => net.asked.findIndex((url) => url.endsWith(`/bytes/${document.ref}`))
+
+test('a photograph that is slow to come: no art is asked for until it is in, or until four seconds have passed', async () => {
+    // it comes before the four seconds: the cover is asked for when it does, and then the background
+    let files = [description(), photo(), cover(), background()]
+    bag(files)
+    let open = slow(files[1])
+    let scanning = until(files[1])
+    await still()
+    mock.timers.tick(3999)
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [0, 0])
+    open()
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [1, 1])
+    await turns()
+    await scanning
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal(root().dataset.art, 'front back')
+    // it does not come in four seconds: the art is asked for then, and shown, and the photograph when it comes
+    net.instead.clear()
+    files = [description(), photo(webp(4)), cover(webp(5)), background(webp(6))]
+    bag(files)
+    open = slow(files[1])
+    scanning = until(files[1])
+    await still()
+    mock.timers.tick(3999)
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [0, 0])
+    mock.timers.tick(1)
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [1, 1])
+    assert.equal(root().dataset.art, 'front back')
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    open()
+    await turns()
+    await scanning
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal($('fruit-photo').alt, 'A pineapple cut in half')
+    assert.equal($('stage').hidden, false)
+    clean(document)
+})
+
+test('a cover that is slow to come: the background is asked for four seconds after it, and shown, and the cover when it comes', async () => {
+    // its bytes are in and it is slow to be drawn: the background is asked for at once, and does not wait for it
+    let files = [description(), photo(), cover(webp(8)), background()]
+    undrawn.add(8)
+    bag(files)
+    let scanning = until(files[2])
+    await still()
+    assert.equal(askedFor(files[3]), 1)
+    assert.equal(root().dataset.art, 'back')
+    await turns()
+    await scanning
+    assert.equal(art('front'), '')
+    assert.equal(root().dataset.art, 'back')
+    // its bytes are slow to come
+    net.instead.clear()
+    net.asked.length = 0
+    made.length = 0
+    files = [description(), photo(), cover(), background()]
+    bag(files)
+    const open = slow(files[2])
+    scanning = until(files[2])
+    await still()
+    // the photograph was in before the cover was asked for
+    assert.match($('fruit-photo').src, /^blob:/)
+    mock.timers.tick(3999)
+    await still()
+    assert.equal(askedFor(files[3]), 0)
+    mock.timers.tick(1)
+    await still()
+    assert.equal(askedFor(files[3]), 1)
+    assert.equal(root().dataset.art, 'back')
+    assert.equal(art('front'), '')
+    open()
+    await turns()
+    await scanning
+    assert.equal(root().dataset.art, 'front back')
+    assert.match(art('front'), /^url\("blob:[^"]+"\)$/)
+    // none of the three is let go while it is on screen
+    assert.equal(made.length, 3)
+    for (const { url } of made) assert.equal(letGo.has(url), false)
+})
+
+test('another bag while the photograph of the first is on its way: the art of the first is never asked for', async () => {
+    const files = [description(), photo(), cover(), background()]
+    bag(files)
+    const open = slow(files[1])
+    const scanning = until(files[1])
+    await still()
+    net.instead.clear()
+    net.head = put(packed())
+    await scan()
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [0, 0])
+    assert.equal(root().dataset.art, undefined)
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    assert.equal(made.length, 0)
+})
+
+test('a photograph no gateway has: its place is given back, and the art is asked for after it, in turn, and comes', async () => {
+    const files = [description(), photo(), cover(), background()]
+    bag(files)
+    for (const gateway of [first, second]) net.instead.set(gateway, but(files[1], down))
+    await scan()
+    assert.equal($('stage').hidden, true)
+    assert.equal(root().dataset.art, 'front back')
+    assert.deepEqual(files.slice(1).map(askedFor), [2, 1, 1])
+    const photoLast = net.asked.findLastIndex((url) => url.endsWith(`/bytes/${files[1].ref}`))
+    assert.ok(photoLast < firstAsked(files[2]) && firstAsked(files[2]) < firstAsked(files[3]))
+})
+
+test('a photograph whose pixels are slow to decode: it is in its place, and fades in once they are, once the browser gives up on them, or four seconds after', async () => {
+    const { prototype } = window.HTMLImageElement
+    let decoded
+    prototype.decode = () => new Promise((resolve, reject) => (decoded = { resolve, reject }))
+    try {
+        for (const end of ['resolve', 'reject', 'never']) {
+            decoded = null
+            net.asked.length = 0
+            const files = [description(), photo()]
+            bag(files)
+            const scanning = until(files[1])
+            await still()
+            assert.ok(decoded, end)
+            assert.match($('fruit-photo').src, /^blob:/)
+            assert.equal($('fruit-photo').hidden, false)
+            assert.equal($('fruit-photo').classList.contains('in'), false)
+            if (end === 'never') {
+                // the browser draws nothing, as for a page in the background, and never says
+                mock.timers.tick(3999)
+                await still()
+                assert.equal($('fruit-photo').classList.contains('in'), false)
+                mock.timers.tick(1)
+            } else decoded[end](Error('the browser could not decode it'))
+            await still()
+            assert.ok($('fruit-photo').classList.contains('in'), end)
+            await turns()
+            await scanning
+        }
+    } finally {
+        delete prototype.decode
+    }
 })
 
 test('a photograph with a credit and a description with no table: the credit is said under the label', async () => {
