@@ -1,5 +1,5 @@
 // The page a bag opens: seven blocks, the states, a loading that tells the check as it happens, a list of gateways, the
-// verification report. The looks live in devcon8.html; this file reads, checks and paints.
+// small print of the footer. The looks live in devcon8.html; this file reads, checks and paints.
 //
 // Reads ./config.json. The keys of the blocks are optional: a block whose data or assumptions are missing is not painted.
 // What the page says of the fruit, where the plant is and where the bag went, is not in the config: the bag's records name
@@ -97,7 +97,6 @@ type Storage = { until?: string; chain?: number; contract?: Address; block_s?: n
 
 type Page = Config & {
     gateways?: string[]
-    report?: string | null
     links?: { ethereum?: string; swarm?: string; ens?: string }
     co2?: Co2
     storage?: Storage
@@ -1520,7 +1519,7 @@ const stampOf = (head: Record | null | undefined) => (typeof head?.stamp === 'st
 // What the page asks the PostageStamp contract: what is left on the batch, per chunk, and the price of a chunk per block.
 const stampAbi = parseAbi(['function remainingBalance(bytes32 batchId) view returns (uint256)', 'function lastPrice() view returns (uint64)'])
 
-// The day the stamp is paid up to, read from the chain it lives on (storage.chain: Gnosis) through the RPCs the
+// The day the stamp is paid up to, read from the chain it lives on (storage.chain) through the RPCs the
 // configuration lists for that chain, in order, and never through a wallet: a wallet is on the network of the bag, and
 // the page does not ask it to change. What is left divided by the price is blocks, and a block is storage.block_s
 // seconds, counted from now. Null when the batch has run out (the contract says 0, or reverts), when no RPC answers, or
@@ -1573,35 +1572,52 @@ function showStoredUntil(config: Page, stamp: string | null, until: Promise<Date
     })
 }
 
-// ---------- the report ----------
-
-async function report(config: Page, id: bigint, outcome: 'verified' | 'failed', gateway: string | null, reason?: string) {
-    if (!config.report) return
-    const body = JSON.stringify({ bag: Number(id), at: new Date().toISOString(), gateway, outcome, ...(reason ? { reason } : {}) })
-    try {
-        await fetch(config.report, { method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true, headers: { 'content-type': 'application/json' }, body })
-        $('reported').hidden = false
-    } catch {
-    }
-}
-
 // ---------- the fingerprint ----------
 
-// A page cannot carry its own hash: writing it in would change the bytes.
+// A page cannot carry its own hash: writing it in would change the bytes. So the device asks for the file once more, from
+// where it came, with a bag in the link or without one, and hashes it. Opened from the web, the head of the file has kept
+// the row's place (data-fingerprint) since the first paint; from disk, or with no way to hash, the row is not there.
 async function fingerprint(config: Page) {
-    if (!config.source || !location.protocol.startsWith('http') || !globalThis.crypto?.subtle) return
+    const root = document.documentElement
+    if (!config.source || !location.protocol.startsWith('http') || !globalThis.crypto?.subtle) return void delete root.dataset.fingerprint
+    root.dataset.fingerprint = ''
+    const source = $<HTMLAnchorElement>('fp-source')
+    source.href = config.source
+    source.textContent = config.source.replace(/^https?:\/\//, '').replace('/blob/main', '').replace(/\/SHA256SUMS$/, '')
     try {
         const bytes = await (await fetch(location.href.replace(/#.*$/, ''))).arrayBuffer()
         const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
         const hash = [...digest].map(b => b.toString(16).padStart(2, '0')).join('')
         $('fp-hash').innerHTML = (hash.match(/.{16}/g) ?? [hash]).map(group => `<span>${group}</span>`).join('')
-        const source = $<HTMLAnchorElement>('fp-source')
-        source.href = config.source
-        source.textContent = config.source.replace(/^https?:\/\//, '').replace('/blob/main', '').replace(/\/SHA256SUMS$/, '')
-        $('fingerprint').hidden = false
     } catch (error) {
         console.error(error)
+        delete root.dataset.fingerprint
     }
+}
+
+// ---------- the rest of the small print: the code and the contract ----------
+
+// The code: the repository that publishes the file, at its root, which config.source names with or without the folder of
+// a release. Without a source, no row.
+function showCode(source: string | undefined) {
+    $('code').hidden = !source
+    if (!source) return
+    const root = source.replace(/\/blob\/.*$/, '')
+    const link = $<HTMLAnchorElement>('code-link')
+    link.href = root
+    link.textContent = root.replace(/^https?:\/\//, '')
+}
+
+// The contract on the explorer of its network: the one the page trusts, from the config (`chain` and `contract`), in every
+// state; once the link's contract has proved one of Fair Food Data's, the one the bag is in. Without an explorer for the
+// network, or with something that is not an address, no row.
+function showContract(chainId: number | undefined, contract: string | undefined) {
+    const explorer = chainId === undefined ? undefined : explorers[chainId]
+    const shown = !!explorer && !!contract && isAddress(contract, { strict: false })
+    $('contract').hidden = !shown
+    if (!shown) return
+    $<HTMLAnchorElement>('contract-link').href = `${explorer}/address/${contract}`
+    $('contract-addr').textContent = contract
 }
 
 // ---------- the states ----------
@@ -1618,7 +1634,7 @@ function hideLead() {
 }
 
 export function reset() {
-    for (const id of ['notice', 'co2', 'twin', 'reported', 'alive']) $(id).hidden = true
+    for (const id of ['notice', 'co2', 'twin', 'alive']) $(id).hidden = true
     $('proof-fold').classList.remove('open')
     for (const id of ['notice', 'co2', 'twin']) $(id).innerHTML = ''
     $('co2').classList.remove('drawn')
@@ -1636,6 +1652,7 @@ export function reset() {
     status('checking')
     $('hero').hidden = false
     $('fruit').hidden = false
+    delete document.documentElement.dataset.empty
 }
 
 // ---------- the check ----------
@@ -1662,11 +1679,15 @@ async function check(config: Page) {
     if (config.links?.ethereum) $<HTMLAnchorElement>('eth-link').href = config.links.ethereum
     if (config.links?.swarm) $<HTMLAnchorElement>('swarm-link').href = config.links.swarm
     if (config.links?.ens) $<HTMLAnchorElement>('ens-link').href = config.links.ens
+    showCode(config.source)
+    showContract(config.chain, config.contract)
     const gateways = config.gateways
     const tried = new Set<string>()
-    let served: string | null = null
     const raw = location.hash.slice(1)
     const parsed = parseSticker(location.hash)
+    // with no bag in the link, or one cut short, the page opens on how it works: the head of the file has said so since
+    // the first paint, by the same test, and the notice of no bag is already written in the markup
+    if (!parsed) document.documentElement.dataset.empty = ''
     if (!raw) {
         hideLead()
         return notice('No bag to show yet. Go get one. They are yummy.', 'Scan the QR code on a bag to follow its fruit from the plant to your hands.')
@@ -1706,11 +1727,13 @@ async function check(config: Page) {
         }
         if (!first) throw failed
         const { source, reader, run, owner } = first
+        showContract(chainId, address)
         const others = asked.slice(asked.indexOf(source) + 1)
+        // ENS is asked for the holder's name only when the twin has moved: in custody it is Fair Food Data's, by the config
         const twin = () => {
             if (owner === undefined) return
             const state = renderTwin(parsed.id, owner, config, explorer, address)
-            if (state !== 'none' && owner) void nameHolder(owner, chainId, source)
+            if (state === 'held' && owner) void nameHolder(owner, chainId, source)
         }
         if (run === zeroHash) {
             twin()
@@ -1743,10 +1766,7 @@ async function check(config: Page) {
                 tried.add(gateway)
                 try {
                     const bytes = await download(gateway, ref)
-                    if (swarmHash(bytes) === ref) {
-                        served = gateway
-                        return { bytes, gateway }
-                    }
+                    if (swarmHash(bytes) === ref) return { bytes, gateway }
                     other ??= gateway
                 } catch (error) {
                     if (unanswered(error)) stalled.add(gateway)
@@ -1833,9 +1853,6 @@ async function check(config: Page) {
             const second = await secondOpinion(others, chainId, address, parsed.id, run, events)
             $('hero').dataset.sources = !second ? 'single' : second.same ? 'agree' : 'differ'
         }
-
-        const outcome = events.length && allGood ? 'verified' : 'failed'
-        await report(config, parsed.id, outcome, served, outcome === 'failed' ? 'mismatch' : undefined)
     } catch (error) {
         console.error(error)
         const details = `<details><summary>Technical details</summary><pre>${esc(error)}</pre></details>`
@@ -1845,7 +1862,6 @@ async function check(config: Page) {
         }
         const where = tried.size ? `<br><span class="tried">Tried ${[...tried].map(g => esc(new URL(g).host)).join(', ')}.</span>` : ''
         notice('We couldn’t reach the records right now.', `The records don’t expire. Try again in a moment.${where}${details}`, true)
-        await report(config, parsed.id, 'failed', served, 'unreachable')
     }
 }
 

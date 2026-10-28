@@ -9,8 +9,11 @@
             https://github.com/FFD-Labs/twin-page
 
             How this file is laid out, top to bottom:
+              the head        after the title, two lines of script that set the first paint: whether the link holds a bag,
+                              and whether the footer keeps the place of the fingerprint
               1 · Styles      the page's own CSS, in the order of the blocks on screen
-              2 · Markup      the front of the bag with the check, the fruit, the path, the arithmetic, the holder, the footer
+              2 · Markup      the front of the bag with the check, the fruit, the path, the arithmetic, the holder, the footer;
+                              with no bag in the link, its notice and how the page works
               3 · Config      the addresses the page reads from, as JSON (added by the build)
               4 · Library     viem, bundled and minified from npm, unchanged: what the page takes from it is the list in
                               src/rails.ts (added by the build)
@@ -24,8 +27,8 @@
             last of all, the photograph first and then the cover and the background; without them nothing is missing. The
             map of the route is drawn by the page from the two points.
 
-            The file runs two scripts, 4 and 5, and no other: the Content-Security-Policy in the head names each by its SHA-256
-            (added by the build), so nothing written into the page afterwards can run as script.
+            The file runs three scripts, the two lines of the head, 4 and 5, and no other: the Content-Security-Policy in the
+            head names each by its SHA-256 (added by the build), so nothing written into the page afterwards can run as script.
 
             What the page talks to:
               Ethereum        read only, through the first of these that answers: a wallet in the browser, then the RPCs of
@@ -34,11 +37,12 @@
               Swarm           public gateways, read only: the records themselves, and the files they name, each hashed before
                               it is read: the product's, from the packing record, where the plant is, from the intake
                               record, where the bag went, from the transport record, and the light file of the curves,
-                              from the cycle record (config: gateways)
-              Gnosis          read only, through the RPCs of the config and never a wallet: how long the stamp the bag's
-                              record names is paid for, once every record has matched (config: rpcs, storage)
+                              from the cycle record (config: gateways); and how long the stamp the bag's record names is
+                              paid for, read only, once every record has matched, from Swarm's PostageStamp contract
+                              through the RPCs of the config for its chain, never a wallet (config: rpcs, storage)
               the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
-              this file       itself, once more, to show its fingerprint in the footer
+              this file       itself, once more, to show its fingerprint in the footer, with a bag in the link or without one.
+                              With none, it is the one thing the page asks for
               OpenStreetMap   not asked: the coordinates of the plant on the Received card and of the destination on the
                               Delivered card are links to it, and the line under the map the Delivered card draws ends
                               with one that opens it over the two places; each is followed only when tapped
@@ -49,6 +53,13 @@
         <meta name="theme-color" content="#FBE8D3" />
         <meta name="robots" content="noindex" />
         <title>Twin</title>
+        <!-- Before the first paint: with no bag in the link, or one cut short, the root says so (data-empty, by the test of
+             parseSticker in src/lib.ts), and the page opens on how it works instead of the front of a bag it will not read.
+             Opened from the web, where the page computes its fingerprint, the footer keeps that row's place (data-fingerprint). -->
+        <script>
+            if (!/^#?(\d+):(0x[0-9a-fA-F]{40})\/(\d+)(?:\D|$)/.test(location.hash)) document.documentElement.dataset.empty = ''
+            if (location.protocol.startsWith('http') && isSecureContext) document.documentElement.dataset.fingerprint = ''
+        </script>
         <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
         <!-- 1 · Styles: every colour lives in :root; the blocks follow in the order they appear on screen -->
         <style>
@@ -249,6 +260,18 @@
             .notice br:first-of-type { display: none; }
             .notice .btn { margin-top: .9rem; }
             .notice .tried { font: .7rem var(--mono); color: var(--panel-ink-2); }
+            /* no bag in the link, or one cut short (data-empty, set before the first paint): no front and no fruit, but the notice
+               as the markup writes it, shown over its hidden, and how the page works, on the ground of the bag like the arithmetic */
+            :root[data-empty] #hero, :root[data-empty] #fruit, :root:not([data-empty]) #about { display: none; }
+            :root[data-empty] #notice { display: block !important; }
+            .about { margin-top: 2.4rem; }
+            .about h2 { text-align: center; }
+            .about p { margin-top: .8rem; }
+            .nets { margin: 1rem 0 .2rem; border-top: 1px solid var(--rule); }
+            .nets div { display: grid; grid-template-columns: 7.3rem 1fr; gap: .9rem; align-items: baseline; padding: .6rem 0; border-bottom: 1px solid var(--rule); }
+            .nets dt { font: 500 .6875rem/1.3 var(--caps); letter-spacing: .13em; text-transform: uppercase; }
+            .nets dd { margin: 0; }
+            .about .parts { color: var(--ink-2); }
 
             /* 2 · the back of the bag: the fruit. Its photograph sits where the QR sticker does, and what the bag holds in the
                label panel under it, with the art of the back at both sides */
@@ -433,7 +456,8 @@
             .home { display: inline-flex; flex-direction: column; align-items: center; gap: .5rem; margin-top: 2rem; }
             .home .lockup-ffd { display: block; height: 2.5rem; width: auto; }
             .home span { font: .72rem var(--mono); letter-spacing: .02em; color: var(--ink-2); border-bottom: 1px solid var(--rule); transition: border-color var(--t-hover) var(--ease-out), color var(--t-hover) var(--ease-out); }
-            .colophon { margin: 2.4rem 0 0; text-align: left; }
+            .asks { margin: 2.4rem 0 0; text-align: left; text-wrap: pretty; }
+            .colophon { margin: 1.2rem 0 0; text-align: left; }
             .colophon .fact { display: grid; grid-template-columns: 7.3rem minmax(0, 1fr); gap: .3rem 1rem; align-items: baseline; padding: .8rem 0; border-top: 1px solid var(--rule); }
             .colophon dt { font: 500 .6875rem/1.4 var(--caps); letter-spacing: .16em; text-transform: uppercase; }
             .colophon dd { margin: 0; min-width: 0; font-size: .92rem; color: var(--ink-2); }
@@ -441,6 +465,11 @@
             .colophon code span { display: inline-block; margin-right: .75ch; }
             .colophon .note { display: block; margin-top: .35rem; }
             .colophon a { border-bottom: 1px solid var(--rule); transition: color var(--t-hover) var(--ease-out), border-color var(--t-hover) var(--ease-out); }
+            .colophon a code { display: inline; }
+            /* the fingerprint while it is computed: four groups as wide as sixteen figures, so the row is as high as it will be;
+               from disk, or with no way to hash, no row */
+            :root:not([data-fingerprint]) #fingerprint { display: none; }
+            .colophon code .skel { width: 16ch; height: .5em; background: var(--rule); }
 
             @media (hover: hover) and (pointer: fine) {
                 .chain-eth:hover { color: var(--eth); border-color: currentColor; }
@@ -545,7 +574,21 @@
                     <p class="made">Made of fruit. Nothing else.</p>
                 </section>
                 <noscript><p class="notice">This page needs JavaScript: your device, not a server, reads Ethereum and Swarm.</p></noscript>
-                <div class="notice" id="notice" hidden></div>
+                <!-- the notice of each state, written by the script; that of no bag is written here too, for the first paint -->
+                <div class="notice" id="notice" hidden><strong>No bag to show yet. Go get one. They are yummy.</strong><br>Scan the QR code on a bag to follow its fruit from the plant to your hands.</div>
+                <!-- with no bag in the link, or one cut short: how the page works, and that without a bag it reads nothing -->
+                <section class="about" id="about">
+                    <h2>How this page works</h2>
+                    <p>This page is one file: its code, its fonts and the addresses it reads from. The bag comes in the link, after the #: a network, a contract and a bag number.</p>
+                    <p>With a bag, your device reads two public networks:</p>
+                    <dl class="nets">
+                        <div><dt>Ethereum</dt><dd>Where the bag’s records are anchored, and who holds its twin.</dd></div>
+                        <div><dt>Swarm</dt><dd>The records, each checked on your device against its anchor, the files they name, each checked against the reference its record gives, and how long Swarm is paid to keep them.</dd></div>
+                    </dl>
+                    <p>It also loads a holder’s ENS picture from wherever they keep it, and asks for this file once more to compute its fingerprint.</p>
+                    <p>Without a bag, it asks neither of them for anything.</p>
+                    <p class="parts">To see how, view the source of this file. A map at its head names its parts in order: 1 · Styles, 2 · Markup, 3 · Config, 4 · Library, 5 · Script and 6 · Fonts.</p>
+                </section>
                 <ol id="path"></ol>
                 <section id="co2" hidden></section>
                 <section id="twin" hidden></section>
@@ -560,10 +603,13 @@
                         <a class="plate-link chain-swarm" id="swarm-link" href="https://www.ethswarm.org" target="_blank" rel="noopener"><svg viewBox="0 0 1115 1115" aria-hidden="true"><polygon points="0 665.01 0 965 260 1115 520 964.99 520 664.96 260 515 0 665.01"/><polygon points="855 515 595 665 595 964.99 855 1115 1115 964.99 1115 664.95 855 515"/><polygon points="817.32 300.27 687.41 225.02 687.28 75.04 557.5 0 297.68 150.01 297.68 450 557.5 600 817.32 450 817.32 300.27"/><polygon points="817.32 300.27 947.23 224.97 947.23 75 817.52 0 687.28 75.04 817.52 149.87 817.32 300.27"/></svg>Swarm</a>
                     </div>
                     <a class="home" id="ens-link" href="https://fairfooddata.eth.limo" target="_blank" rel="noopener"><img class="lockup-ffd" src="./brand/ffd-lockup-dark.svg" width="255" height="64" alt="Fair Food Data" /><span>fairfooddata.eth.limo</span></a>
-                    <!-- the colophon: the small print as rows, key and value. -->
+                    <!-- the colophon: what the page asks, and the small print as rows, key and value, with a bag or without one. The
+                         fingerprint keeps its place while it is computed; the contract is written by the script -->
+                    <p class="asks">The page asks nothing of you. With a bag in its link, it reads two public networks, Ethereum and Swarm, and shows what it finds.</p>
                     <dl class="colophon">
-                        <div class="fact" id="fingerprint" hidden><dt>Fingerprint</dt><dd><code id="fp-hash"></code><span class="note">Computed by your device from the file it received. The same number is published, with the source, at <a id="fp-source" target="_blank" rel="noopener"></a>.</span></dd></div>
-                        <div class="fact" id="reported" hidden><dt>Report</dt><dd id="reported-text">Your device reported the outcome of this check to Fair Food Data: bag number and time, nothing else.</dd></div>
+                        <div class="fact" id="code"><dt>Code</dt><dd>Public, at <a id="code-link" href="https://github.com/FFD-Labs/twin-page" target="_blank" rel="noopener">github.com/FFD-Labs/twin-page</a>.</dd></div>
+                        <div class="fact" id="fingerprint"><dt>Fingerprint</dt><dd><code id="fp-hash"><span class="skel"></span><span class="skel"></span><span class="skel"></span><span class="skel"></span></code><span class="note">Computed by your device from this file, fetched once more from where it came. The same number is published, with the source, at <a id="fp-source" href="https://github.com/FFD-Labs/twin-page" target="_blank" rel="noopener">github.com/FFD-Labs/twin-page</a>.</span></dd></div>
+                        <div class="fact" id="contract" hidden><dt>Contract</dt><dd><a id="contract-link" target="_blank" rel="noopener"><code id="contract-addr"></code></a></dd></div>
                     </dl>
                 </div>
         </footer>
