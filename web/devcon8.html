@@ -30,8 +30,8 @@
                               the config (config: rpcs). The bag's record, the anchors, who holds the twin, ENS names. The
                               next source is then asked whether it says the same
               Swarm           public gateways, read only: the records themselves, and the files they name, each hashed before
-                              it is read: the product's, from the packing record, and where the plant is, from the intake
-                              record (config: gateways)
+                              it is read: the product's, from the packing record, where the plant is, from the intake
+                              record, and the light file of the curves, from the cycle record (config: gateways)
               Gnosis          read only, through the RPCs of the config and never a wallet: how long the stamp the bag's
                               record names is paid for, once every record has matched (config: rpcs, storage)
               the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
@@ -292,6 +292,30 @@
             .check.pending { color: var(--panel-ink-2); }
             .check.bad { color: var(--bad); }
             :root[data-way='banana'] .card .check.bad, :root[data-way='banana'] .card .chip.wait { color: #8E2A17; }
+            /* the curves of a cycle, drawn in its card from the light file the record names: the chamber temperature strong on the
+               scale of °C at the left, the shelves faint behind it, the pressure dashed on its own scale of Pa at the right, in powers
+               of ten, and the two minima the record declares set on their curves. The chamber line is drawn once the chart has landed */
+            .curves { margin-top: 1rem; color: var(--panel-ink); animation: land var(--t-enter) var(--ease-out) both; }
+            .curves .chart { display: block; width: 100%; height: auto; overflow: visible; font: 400 9.5px var(--text); font-variant-numeric: tabular-nums; }
+            .curves .axis { fill: none; stroke: var(--panel-rule); }
+            .curves .grid { stroke-dasharray: 1.5 3; }
+            .curves text { fill: var(--panel-ink-2); }
+            .curves .unit { font: 500 7px var(--caps); letter-spacing: .12em; }
+            .curves .line { fill: none; stroke: currentColor; stroke-linejoin: round; stroke-linecap: round; }
+            .curves .temp { stroke-width: 1.7; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1.4s var(--ease-out) .1s; }
+            .curves.drawn .temp { stroke-dashoffset: 0; }
+            .curves .shelf { stroke-width: .7; opacity: .3; }
+            .curves .press { stroke: var(--panel-ink-2); stroke-width: 1.2; stroke-dasharray: 3 2.4; }
+            .curves .press, .curves .shelf, .curves .min { transition: opacity .6s var(--ease-out) 1s; }
+            .curves:not(.drawn) .press, .curves:not(.drawn) .shelf, .curves:not(.drawn) .min { opacity: 0; }
+            .curves .dot { fill: currentColor; }
+            .curves .ring { fill: var(--panel); stroke: var(--panel-ink-2); stroke-width: 1.2; }
+            .curves text.min { fill: var(--panel-ink); paint-order: stroke; stroke: var(--panel); stroke-width: 3; stroke-linejoin: round; }
+            .curves .key { display: flex; flex-wrap: wrap; gap: .3rem 1rem; margin-top: .5rem; font: 500 .6875rem/1.3 var(--caps); letter-spacing: .13em; text-transform: uppercase; color: var(--panel-ink-2); }
+            .curves .key span { display: inline-flex; align-items: center; gap: .45rem; }
+            .curves .key .sw { width: 1.1rem; border-top: 2px solid currentColor; }
+            .curves .key .sw.shelf { border-top-width: 1px; opacity: .45; }
+            .curves .key .sw.press { border-top: 1.5px dashed currentColor; }
             @media (hover: hover) and (pointer: fine) { .btn:hover { background: currentColor; } .card .btn:hover, .notice .btn:hover { background: var(--panel-ink); color: var(--panel); } .row .v a:hover { border-color: var(--panel-ink); } }
 
             /* 4 · the arithmetic, set on the ground of the bag like the lines of its front */
@@ -385,7 +409,7 @@
             }
             @media (prefers-reduced-motion: reduce) {
                 * { animation: none !important; transition-property: color, background-color, background, border-color, opacity, filter !important; transition-duration: .15s !important; }
-                .tri .edge, .step::before, .reads li + li::after { transition: none; }
+                .tri .edge, .step::before, .reads li + li::after, .curves .temp { transition: none; }
                 .reads li.busy::after { background: none; }
                 .step .unfold, .proof-fold { transition: none; }
                 .btn:active, .plate-link:active { transform: none; }
@@ -394,6 +418,10 @@
                 .life-grid { display: none; }
                 .card, .label, .notice, .photo { border: 1px solid CanvasText; }
                 .mark, .step .tile::before { forced-color-adjust: none; }
+                .curves .axis, .curves .press, .curves .ring { stroke: currentColor; }
+                .curves text, .curves .dot { fill: currentColor; }
+                .curves .ring, .curves text.min { fill: Canvas; }
+                .curves text.min { fill: currentColor; stroke: Canvas; }
             }
         </style>
     </head>

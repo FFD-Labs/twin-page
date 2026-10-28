@@ -33,6 +33,9 @@ type Record = {
     loads?: { trays: number | null; kg: number }[]
     kg_out?: number | null
     moisture_pct?: number | null
+    // the curves of a cycle, as its record names them: the SenML the page links, and the light file it draws. Read by refOf, never taken as they come
+    telemetry?: unknown
+    telemetry_preview?: unknown
     bags?: number
     bag_g?: number
     stickers?: { from: number; to: number }
@@ -371,27 +374,36 @@ function card(event: Event, explorer: string | undefined) {
         <h2>Record not shown</h2>
         <p class="check pending">Checking against its Ethereum anchor…</p>
         <details><summary>Reference</summary><p>Swarm <code>${esc(event.ref)}</code></p></details>`
-    const links = `
+    // the check and the links of a record that was read: its anchor, its file, and what else the record names (`more`)
+    const links = (more = '') => `
         <p class="check pending">Checking against its Ethereum anchor…</p>
         <div class="links">
             ${explorer && event.block ? `<a class="btn anchor" href="${esc(`${explorer}/block/${event.block}`)}" target="_blank" rel="noopener">Ethereum anchor ↗</a>` : ''}
-            <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>
+            <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>${more}
         </div>`
     // A record that passed the check and is not one the page knows how to show: what it says, as it was written, and no rows.
     if (!data) {
         const raw = event.raw ?? ''
         return `
         <h2>Record not understood</h2>
-        <div class="chips"><span class="chip wait">A kind this page does not know</span></div>${links}
+        <div class="chips"><span class="chip wait">A kind this page does not know</span></div>${links()}
         <details><summary>Raw record</summary><pre>${esc(raw.length > RAW_SHOWN ? `${raw.slice(0, RAW_SHOWN)}…` : raw)}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
     }
     const { title, twin, rows: list } = steps[data.phase](data)
     const correction = typeof data.version === 'number' && data.version > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
+    // A cycle names the SenML of its curves, which the page links and never downloads: the link is there when the record
+    // names a reference, from the gateway that served the record, and nowhere otherwise. The curves themselves come later,
+    // drawn from the light file the record also names (drawCurves).
+    const telemetry = data.phase === 'cycle' ? refOf(data.telemetry) : null
+    const curves = telemetry
+        ? `
+            <a class="btn" href="${esc(`${event.gateway}/bytes/${telemetry.slice(2)}`)}" target="_blank" rel="noopener">Full curves on Swarm ↗</a>`
+        : ''
     return `
         <h2>${esc(title)}</h2>
         ${twin ? '<p class="twin-born">This bag’s twin starts here.</p>' : ''}
         ${correction ? `<div class="chips">${correction}</div>` : ''}
-        ${rows(list)}${links}
+        ${rows(list)}${links(curves)}
         <details><summary>Raw record</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
 
@@ -597,6 +609,223 @@ async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLEl
     late.innerHTML = rows([['Site', point.place], ['GPS', geo(point), osm(point)]])
     late.content.querySelectorAll('.row').forEach(row => row.classList.add('late'))
     check.before(late.content)
+}
+
+// ---------- the curves of a cycle: the light file its record names ----------
+
+// A cycle record names its curves twice: `telemetry`, the readings of the machine as SenML, about 2 MB, which the page
+// links and never downloads, and `telemetry_preview`, the same curves in columns, one clock and one list of values per
+// series, which the Notary publishes for the page. The page draws the second, read like a file of the product: hashed
+// against its reference, found out once, and drawn from its numbers alone. The names of its series are matched against
+// the ones the page knows, and nothing written in the file reaches the markup.
+const PREVIEW_SCHEMA = 'ffd/telemetry-preview/1.0'
+// a preview carries at most 600 points per series; the page draws up to this many
+const POINTS_MOST = 2000
+// the series the page draws, each in the unit the SenML gives it: the chamber, its pressure and up to eight shelves
+const CHAMBER = 'chamber_temperature'
+const PRESSURE = 'chamber_pressure'
+const SHELVES = Array.from({ length: 8 }, (_, i) => `shelf_${i + 1}_temperature`)
+const SERIES: { [name: string]: string } = { [CHAMBER]: 'Cel', [PRESSURE]: 'Pa', ...Object.fromEntries(SHELVES.map(name => [name, 'Cel'])) }
+type Preview = { t: number[]; series: Map<string, (number | null)[]> }
+
+// A Swarm reference a record names, or null: what is not one is asked of no gateway and linked nowhere.
+const refOf = (value: unknown) => {
+    try {
+        return hex(value)
+    } catch {
+        return null
+    }
+}
+
+// What a preview says, when the page can draw it: a clock of two to 2000 finite seconds that never goes back and does
+// advance, and for each series the page knows, in its unit, one number or null per tick of the clock. A series the page
+// does not know, or one in another unit, is passed over; one it knows whose values do not fit the clock makes the file
+// one the page does not draw. The cycle, the site and the device the file names are not read: the record says them.
+export function readPreview(bytes: Uint8Array): Preview | null {
+    try {
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { [key: string]: unknown } | null
+        if (typeof value !== 'object' || value === null || value.schema !== PREVIEW_SCHEMA) return null
+        const t = value.t
+        if (!Array.isArray(t) || t.length < 2 || t.length > POINTS_MOST || !Array.isArray(value.series)) return null
+        if (!t.every((s, i) => typeof s === 'number' && Number.isFinite(s) && (i === 0 || s >= t[i - 1])) || t[t.length - 1] <= t[0]) return null
+        const series = new Map<string, (number | null)[]>()
+        for (const entry of value.series as unknown[]) {
+            if (typeof entry !== 'object' || entry === null) continue
+            const { n, u, v } = entry as { n?: unknown; u?: unknown; v?: unknown }
+            if (typeof n !== 'string' || !Object.hasOwn(SERIES, n) || series.has(n) || (u != null && u !== SERIES[n])) continue
+            if (!Array.isArray(v) || v.length !== t.length || !v.every(x => x === null || (typeof x === 'number' && Number.isFinite(x)))) return null
+            series.set(n, v as (number | null)[])
+        }
+        return series.size ? { t: t as number[], series } : null
+    } catch {
+        return null
+    }
+}
+
+// The chart: a box in units of its own, scaled to the width of the card, with the plot inside margins that hold the marks
+const CHART = { w: 300, h: 172, x0: 30, x1: 266, y0: 16, y1: 150 }
+// the steps a scale of °C may take, and the ones a scale of hours may
+const DEGREE_STEPS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000]
+const HOUR_STEPS = [0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 24, 48, 96, 168, 336, 720]
+// a number as a mark reads it, without the noise of the arithmetic of the scale
+const num = (value: number) => String(Number(value.toPrecision(12)))
+// a pressure as the scale of Pa marks it: 20, 500, 1k, 100k
+const pascal = (value: number) => (value < 1000 ? num(value) : value < 1e6 ? `${num(value / 1000)}k` : value < 1e9 ? `${num(value / 1e6)}M` : `1e${Math.round(Math.log10(value))}`)
+const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
+// the step of a scale: the first of the steps it may take that divides the span into `parts` or fewer, else a round number that does
+function stepOf(span: number, parts: number, steps: number[]) {
+    const least = span / parts
+    const fit = steps.find(step => step >= least)
+    if (fit) return fit
+    const pow = 10 ** Math.floor(Math.log10(least))
+    return [1, 2, 2.5, 5, 10].map(m => m * pow).find(step => step >= least) ?? least
+}
+const given = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const numbers = (values: (number | null)[]) => values.filter((v): v is number => v !== null)
+const minOf = (values: number[]) => values.reduce((a, b) => Math.min(a, b), Infinity)
+const maxOf = (values: number[]) => values.reduce((a, b) => Math.max(a, b), -Infinity)
+// where a series is lowest: the index of its smallest number
+const lowestAt = (values: (number | null)[]) => {
+    let at = -1
+    values.forEach((v, i) => {
+        if (v !== null && (at < 0 || v < values[at]!)) at = i
+    })
+    return at
+}
+// the line of a series: its numbers joined in the order of the clock, lifted where the series did not read
+function curve(values: (number | null)[], x: number[], y: (v: number) => number | null) {
+    let d = ''
+    let pen = false
+    values.forEach((v, i) => {
+        const py = v === null ? null : y(v)
+        if (py === null) return void (pen = false)
+        d += `${pen ? 'L' : 'M'}${x[i]!.toFixed(1)} ${py.toFixed(1)}`
+        pen = true
+    })
+    return d
+}
+const caption = (x: number, y: number, label: string, cls: string, anchor: 'start' | 'middle' | 'end' = 'start') =>
+    `<text class="${cls}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}">${esc(label)}</text>`
+
+// The cycle drawn: the chamber temperature and the shelves on a scale of °C at the left, the pressure on a scale of Pa
+// at the right in powers of ten, both over the hours since the cycle began, with three or four marks per scale, and the
+// two minima the record declares, each set on its curve where the curve is lowest. The markup is the page's own words
+// and numbers: nothing written in the file, or in the record, reaches it. Empty when the file has nothing to draw.
+export function drawCycle(preview: Preview, record: Record): string {
+    const { w, h, x0, x1, y0, y1 } = CHART
+    const clock = preview.t.map(s => s / 3600)
+    const h0 = clock[0]!, h1 = clock[clock.length - 1]!
+    const sx = (hr: number) => x0 + ((hr - h0) / (h1 - h0)) * (x1 - x0)
+    const x = clock.map(sx)
+    const chamber = preview.series.get(CHAMBER) ?? null
+    const shelves = SHELVES.map(name => preview.series.get(name)).filter((v): v is (number | null)[] => v !== undefined)
+    const pressure = preview.series.get(PRESSURE) ?? null
+    const pascals = pressure ? numbers(pressure).filter(p => p > 0) : []
+    // the minima the record declares, when they are numbers and there is a curve to set them on
+    const coldest = chamber && numbers(chamber).length && given(record.min_temperature_c) ? record.min_temperature_c : null
+    const lowestPa = pascals.length && given(record.min_pressure_pa) && record.min_pressure_pa > 0 ? record.min_pressure_pa : null
+    // the scale of °C: what the chamber and the shelves read, and the coldest, rounded out to a step of the scale
+    const degrees = [...(chamber ? numbers(chamber) : []), ...shelves.flatMap(numbers), ...(coldest === null ? [] : [coldest])]
+    let left: { lo: number; hi: number; ticks: number[] } | null = null
+    if (degrees.length) {
+        const min = minOf(degrees), max = maxOf(degrees)
+        const step = stepOf(max - min, 3, DEGREE_STEPS)
+        const lo = Math.floor(min / step) * step
+        const hi = Math.max(Math.ceil(max / step) * step, lo + step)
+        const count = Math.round((hi - lo) / step)
+        if (hi > lo && count <= 12) left = { lo, hi, ticks: Array.from({ length: count + 1 }, (_, i) => lo + i * step) }
+    }
+    // the scale of Pa, in powers of ten: from a little under the lowest reading, or the lowest declared, to a little over the highest
+    let right: { lo: number; hi: number; ticks: number[] } | null = null
+    if (pascals.length) {
+        const min = Math.log10(minOf([...pascals, ...(lowestPa === null ? [] : [lowestPa])])), max = Math.log10(maxOf(pascals))
+        const pad = Math.max((max - min) * 0.05, 0.05)
+        const lo = min - pad, hi = max + pad
+        // the marks, in powers of ten: the decades inside the scale or, when it holds fewer than three, the 1, 2 and 5 of each
+        const inside = (marks: number[]) => marks.filter(mark => mark >= lo && mark <= hi)
+        const decades = range(Math.floor(lo), Math.ceil(hi))
+        let ticks = inside(decades)
+        if (ticks.length < 3) ticks = inside(decades.flatMap(k => [k, k + Math.log10(2), k + Math.log10(5)]))
+        const every = Math.max(1, Math.ceil(ticks.length / 4))
+        right = { lo, hi, ticks: ticks.filter((_, i) => i % every === 0) }
+    }
+    if (!left && !right) return ''
+    const scale = (lo: number, hi: number) => (v: number) => y1 - ((v - lo) / (hi - lo)) * (y1 - y0)
+    const yT = left ? scale(left.lo, left.hi) : null
+    const yP = right ? scale(right.lo, right.hi) : null
+    // the marks: the hours along the bottom, the degrees at the left with a faint line across, the powers of ten at the right
+    const axis = [`M${x0} ${y1}H${x1}`], grid: string[] = [], marks: string[] = []
+    const hourStep = stepOf(h1 - h0, 4, HOUR_STEPS)
+    const firstHour = Math.ceil(h0 / hourStep) * hourStep
+    for (let i = 0; i < 12; i++) {
+        const hr = firstHour + i * hourStep
+        if (hr > h1 + 1e-9) break
+        axis.push(`M${sx(hr).toFixed(1)} ${y1}v3`)
+        marks.push(caption(sx(hr), h - 4, hr + hourStep > h1 ? `${num(hr)} h` : num(hr), 'hour', 'middle'))
+    }
+    if (left && yT) {
+        marks.push(caption(x0 - 4, y0 - 7, '°C', 'unit', 'end'))
+        for (const v of left.ticks) {
+            grid.push(`M${x0} ${yT(v).toFixed(1)}H${x1}`)
+            marks.push(caption(x0 - 4, yT(v) + 3, num(v), 'degree', 'end'))
+        }
+    }
+    if (right && yP) {
+        marks.push(caption(x1 + 4, y0 - 7, 'Pa', 'unit'))
+        for (const k of right.ticks) {
+            axis.push(`M${x1} ${yP(k).toFixed(1)}h3`)
+            marks.push(caption(x1 + 5, yP(k) + 3, pascal(10 ** k), 'pascal'))
+        }
+    }
+    // the lines, the shelves behind, then the pressure, then the chamber in front; and the minima set on them
+    const lines: string[] = [], minima: string[] = []
+    if (yT) for (const shelf of shelves) lines.push(`<path class="line shelf" d="${curve(shelf, x, yT)}"/>`)
+    if (yP && pressure) lines.push(`<path class="line press" d="${curve(pressure, x, p => (p > 0 ? yP(Math.log10(p)) : null))}"/>`)
+    if (yT && chamber) lines.push(`<path class="line temp" pathLength="1" d="${curve(chamber, x, yT)}"/>`)
+    const diamond = (cx: number, cy: number, cls: string) => `<path class="min ${cls}" d="M${cx.toFixed(1)} ${(cy - 3.6).toFixed(1)}l3.6 3.6-3.6 3.6-3.6-3.6z"/>`
+    const beside = (cx: number, cy: number, label: string) => (cx < (x0 + x1) / 2 ? caption(cx + 6, cy + 3.2, label, 'min') : caption(cx - 6, cy + 3.2, label, 'min', 'end'))
+    if (coldest !== null && chamber && yT) {
+        const at = lowestAt(chamber)
+        minima.push(diamond(x[at]!, yT(coldest), 'dot'), beside(x[at]!, yT(coldest), `${num(coldest)} °C`))
+    }
+    if (lowestPa !== null && pressure && yP) {
+        const at = lowestAt(pressure.map(p => (p !== null && p > 0 ? p : null)))
+        minima.push(diamond(x[at]!, yP(Math.log10(lowestPa)), 'ring'), beside(x[at]!, yP(Math.log10(lowestPa)), `${num(lowestPa)} Pa`))
+    }
+    // the key under the chart names what is drawn, and so does the chart to whoever cannot see it
+    const drawn: [boolean, string, string, string][] = [
+        [!!chamber && !!yT && numbers(chamber).length > 0, 'temp', 'Chamber', 'the chamber temperature'],
+        [!!yT && shelves.some(shelf => numbers(shelf).length > 0), 'shelf', 'Shelves', 'the shelves'],
+        [!!pressure && !!yP, 'press', 'Pressure', 'the pressure']
+    ]
+    const there = drawn.filter(([is]) => is)
+    return `<figure class="curves">
+        <svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="The cycle over ${num(Number((h1 - h0).toFixed(1)))} hours: ${there.map(([, , , said]) => said).join(', ')}">
+            ${grid.length ? `<path class="axis grid" d="${grid.join('')}"/>` : ''}
+            <path class="axis" d="${axis.join('')}"/>
+            ${marks.join('')}
+            ${lines.join('')}
+            ${minima.join('')}
+        </svg>
+        <figcaption class="key">${there.map(([, cls, name]) => `<span><i class="sw ${cls}"></i>${name}</span>`).join('')}</figcaption>
+    </figure>`
+}
+
+// The curves of a cycle, drawn in its card once their file has come: asked for after the check, with the description of
+// the product, and set between the rows and the check line of the card, which is already on screen. Nothing is drawn of
+// a file that does not come, that is not what its reference names or that is not a preview the page can read, and
+// nothing of one that comes once another bag is being read.
+async function drawCurves(mine: Product, event: Event, li: HTMLElement) {
+    const data = event.data
+    const ref = refOf(data?.telemetry_preview)
+    if (!ref || !data) return
+    const bytes = await fileOf(mine.gateways, ref)
+    const preview = bytes && readPreview(bytes)
+    if (!preview || product !== mine) return
+    const drawn = drawCycle(preview, data)
+    if (!drawn) return
+    li.querySelector('.card .check')?.insertAdjacentHTML('beforebegin', drawn)
+    requestAnimationFrame(() => requestAnimationFrame(() => li.querySelector('.curves')?.classList.add('drawn')))
 }
 
 // ---------- the fruit (block 2) ----------
@@ -1292,6 +1521,9 @@ async function check(config: Page) {
             // the description fills the label when it has come, now or later; the location of the plant, the Received card
             void mine.description.then(described => product === mine && revealFruit(events, described))
             void placePlant(mine, events, cards)
+            // the curves of a cycle hang from its record, as the files of the product from the packing: the light file each
+            // cycle names is asked for now, and drawn in its card when it has come
+            for (const event of events) if (event.data?.phase === 'cycle') void drawCurves(mine, event, cards.get(event.ref)!)
         }, 120)
         const lastCard = openPath(path, 1100)
         later(() => renderCo2(config, events), lastCard + UNFOLD_GAP + 120)

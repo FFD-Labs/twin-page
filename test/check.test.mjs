@@ -1249,3 +1249,178 @@ test('another bag while the stamp’s chain is still to answer for the first: it
     await scanning
     assert.deepEqual(line(), written)
 })
+
+// ---------- the curves of a cycle: the light file its record names ----------
+// A cycle record names its curves twice: the readings of the machine as SenML, which the page links and never downloads,
+// and a preview in columns the Notary publishes for the page, which the page reads like a file of the product: hashed
+// against its reference, found out once, and drawn in the card of the cycle. Nothing written in the file reaches the page.
+const raw = (text) => new TextEncoder().encode(text)
+// a file on Swarm under its reference, as a record names it: 64 hex digits, no 0x
+function blob(content) {
+    const ref = swarmHash(content)
+    net.files.set(ref, content)
+    return ref.slice(2)
+}
+const senml = () => blob(bytes({ schema: 'ffd/telemetry/1.0', cycle: '5201', senml: [{ n: 'chamber_temperature', u: 'Cel', t: 0, v: 21.4 }] }))
+// the preview of a cycle of four hours, read every hour: the chamber, its pressure, one shelf that did not read once, and the power, which the page does not draw
+const curves = (fields = {}) => ({
+    schema: 'ffd/telemetry-preview/1.0',
+    cycle: '5201',
+    site: 'urn:bdf:site:india-1',
+    bn: 'urn:bdf:device:india-1:IND-L-1:',
+    bt: 1790911800,
+    every: 5,
+    t: [0, 3600, 7200, 10800, 14400],
+    series: [
+        { n: 'chamber_temperature', u: 'Cel', v: [21.4, -10.5, -38.2, -30.1, -20] },
+        { n: 'chamber_pressure', u: 'Pa', v: [101325, 5000, 21.3, 40.2, 60] },
+        { n: 'shelf_1_temperature', u: 'Cel', v: [20, 0, -20, null, 10] },
+        { n: 'power', u: 'W', v: [400, 3100, 1000, 900, 800] }
+    ],
+    ...fields
+})
+// a bag of mango whose cycle names its curves, the SenML and the preview, unless the test says what it names instead
+function dried(cycleFields = {}) {
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' })
+    const cycle = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', start: '2026-09-28T10:00:00Z', end: '2026-09-29T08:00:00Z', min_temperature_c: -38.2, min_pressure_pa: 21.3, loads: [{ trays: 10, kg: 20 }], kg_out: 2, telemetry: senml(), telemetry_preview: blob(bytes(curves())), inputs: [intake], ...cycleFields })
+    net.head = put(packed({ inputs: [cycle] }))
+    return cycle
+}
+const cycleCard = () => cards().find((li) => li.querySelector('h2').textContent === 'Freeze-dried')
+const askedRef = (ref) => net.asked.filter((url) => url.endsWith(`/bytes/${ref}`)).length
+const strokes = (path) => path.getAttribute('d').match(/[ML]/g).length
+
+test('a cycle that names its curves: the preview is read against its reference and drawn in the card, the SenML is linked and never asked for', async () => {
+    const preview = blob(bytes(curves()))
+    const full = senml()
+    dried({ telemetry: full, telemetry_preview: preview })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = cycleCard()
+    const chart = card.querySelector('.curves')
+    assert.ok(chart)
+    // the chart sits between the rows and the check line
+    assert.ok(chart.previousElementSibling.classList.contains('row'))
+    assert.ok(chart.nextElementSibling.classList.contains('check'))
+    // the chamber and the pressure have one point per tick of the clock; the shelf did not read once, and its line lifts there
+    assert.equal(strokes(chart.querySelector('path.temp')), 5)
+    assert.equal(strokes(chart.querySelector('path.press')), 5)
+    assert.equal(chart.querySelector('path.shelf').getAttribute('d').match(/M/g).length, 2)
+    // the power, which the page does not know, is not drawn: three lines
+    assert.equal(chart.querySelectorAll('path.line').length, 3)
+    // the marks of the three scales, and the two minima the record declares
+    assert.match(chart.textContent, /°C/)
+    assert.match(chart.textContent, /100k/)
+    assert.match(chart.textContent, /4 h/)
+    assert.deepEqual([...chart.querySelectorAll('text.min')].map((t) => t.textContent), ['-38.2 °C', '21.3 Pa'])
+    assert.equal(chart.querySelector('.key').textContent, 'ChamberShelvesPressure')
+    // the link to the full curves, from the gateway that served the record; the SenML itself is never asked for
+    const link = [...card.querySelectorAll('.links a')].find((a) => a.textContent === 'Full curves on Swarm ↗')
+    assert.equal(link.href, `${first}/bytes/${full}`)
+    assert.equal(link.rel, 'noopener')
+    assert.deepEqual([askedRef(preview), askedRef(full)], [1, 0])
+    clean(document)
+})
+
+for (const [what, file] of [
+    ['is of a kind the page does not know', bytes(curves({ schema: 'ffd/telemetry-preview/2.0' }))],
+    ['has a clock that goes back', bytes(curves({ t: [0, 7200, 3600, 10800, 14400] }))],
+    ['has a clock that does not advance', bytes(curves({ t: [0, 0, 0, 0, 0] }))],
+    ['has a clock of text', bytes(curves({ t: ['0', '3600', '7200', '10800', '14400'] }))],
+    ['has a series out of step with its clock', bytes(curves({ series: [{ n: 'chamber_temperature', u: 'Cel', v: [21.4, -10.5] }] }))],
+    ['has a reading that is not a number', raw(JSON.stringify(curves()).replace('21.4', 'NaN'))],
+    ['has a reading that is text', bytes(curves({ series: [{ n: 'chamber_temperature', u: 'Cel', v: ['21.4', -10.5, -38.2, -30.1, -20] }] }))],
+    ['has more points than the page draws', bytes(curves({ t: Array.from({ length: 2001 }, (_, i) => i * 60), series: [{ n: 'chamber_temperature', u: 'Cel', v: Array.from({ length: 2001 }, () => -20) }] }))],
+    ['names its series with HTML', bytes(curves({ series: [{ n: hostile('n'), u: hostile('u'), v: [21.4, -10.5, -38.2, -30.1, -20] }] }))],
+    ['has series that are not a list', bytes(curves({ series: 'chamber_temperature' }))],
+    ['names no series the page knows', bytes(curves({ series: [{ n: 'power', u: 'W', v: [1, 2, 3, 4, 5] }] }))],
+    ['is not JSON', raw('{"schema": ')]
+])
+    test(`a preview that ${what}: it is not drawn, and the card is as it would be without it`, async () => {
+        const preview = blob(file)
+        dried({ telemetry_preview: preview })
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        const card = cycleCard()
+        assert.equal(card.querySelector('.curves'), null)
+        assert.equal(card.querySelector('svg'), null)
+        assert.equal(card.querySelectorAll('.row').length, 5)
+        assert.equal(card.querySelectorAll('.links a').length, 3)
+        assert.equal(askedRef(preview), 1)
+        assert.equal(document.documentElement.outerHTML.includes('ffd-probe'), false)
+        clean(document)
+    })
+
+test('a preview no gateway serves as its reference names it: it is not drawn, and both were asked', async () => {
+    const preview = blob(bytes(curves()))
+    dried({ telemetry_preview: preview })
+    for (const gateway of [first, second]) net.instead.set(gateway, but({ ref: preview }, () => answer(bytes(curves({ cycle: 'SERVED-BY-THE-GATEWAY' })), 'application/octet-stream')))
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(cycleCard().querySelector('.curves'), null)
+    assert.equal(askedRef(preview), 2)
+    assert.equal(document.documentElement.outerHTML.includes('SERVED-BY-THE-GATEWAY'), false)
+})
+
+test('a cycle that names no curves: nothing is drawn, no one is asked, and there is no link', async () => {
+    dried({ telemetry: null, telemetry_preview: null })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = cycleCard()
+    assert.equal(card.querySelector('.curves'), null)
+    assert.equal([...card.querySelectorAll('.links a')].some((a) => a.textContent.includes('curves')), false)
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 3) // the three records, and no file
+})
+
+test('a cycle whose curves are named by something that is not a reference: no one is asked for them, and nothing is linked', async () => {
+    dried({ telemetry: hostile('telemetry'), telemetry_preview: hostile('telemetry_preview') })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = cycleCard()
+    assert.equal(card.querySelector('.curves'), null)
+    assert.equal(card.querySelectorAll('.links a').length, 2)
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 3)
+    clean(document)
+})
+
+test('the curves of a cycle that did not pass the check are not asked for', async () => {
+    const preview = blob(bytes(curves()))
+    const cycle = dried({ telemetry_preview: preview })
+    net.anchors.delete(cycle)
+    await scan()
+    // the cycle was not read, so the intake it names was not followed either: two records, one of them matched
+    assert.equal($('step-3').querySelector('.v').textContent, '1 of 2 matches')
+    assert.equal(cycleCard(), undefined)
+    assert.equal(askedRef(preview), 0)
+})
+
+test('a bag from two cycles: each card draws what its own record names', async () => {
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20 })
+    const one = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', plant_id: '5203', telemetry: senml(), telemetry_preview: blob(bytes(curves({ cycle: '5203' }))), inputs: [intake] })
+    const two = put({ phase: 'cycle', at: '2026-09-29T09:00:00Z', plant_id: '5204', telemetry: null, telemetry_preview: null, inputs: [intake] })
+    net.head = put(packed({ inputs: [one, two] }))
+    await scan()
+    const dryings = cards().filter((li) => li.querySelector('h2').textContent === 'Freeze-dried')
+    assert.equal(dryings.length, 2)
+    assert.deepEqual(dryings.map((li) => !!li.querySelector('.curves')), [true, false])
+    clean(document)
+})
+
+test('another bag while the curves of the first are still on their way: nothing of them reaches the page', async () => {
+    const preview = blob(bytes(curves()))
+    dried({ telemetry_preview: preview })
+    const open = slow({ ref: preview })
+    location.hash = `#11155111:${contract}/1`
+    const scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(cycleCard().querySelector('.curves'), null)
+    net.instead.clear()
+    dried({ telemetry: null, telemetry_preview: null })
+    await scan()
+    open()
+    await turns()
+    await scanning
+    assert.ok(cycleCard())
+    assert.equal(document.querySelector('.curves'), null)
+})

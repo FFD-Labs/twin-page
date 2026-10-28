@@ -320,3 +320,99 @@ test('the document of a record is the first under its name and its type whose re
     for (const not of [undefined, null, 'site-location.geojson', { name: 'site-location.geojson' }, 7, []]) assert.equal(documentOf({ ...record, documents: not }, 'site-location.geojson', 'application/geo+json'), null)
     for (const none of [null, undefined]) assert.equal(documentOf(none, 'site-location.geojson', 'application/geo+json'), null)
 })
+
+// ---------- the preview of a cycle's curves, and the cycle drawn from it ----------
+const { readPreview, drawCycle } = page
+const preview = (fields = {}) => ({
+    schema: 'ffd/telemetry-preview/1.0',
+    cycle: '5201',
+    bt: 1790911800,
+    every: 5,
+    t: [0, 3600, 7200],
+    series: [
+        { n: 'chamber_temperature', u: 'Cel', v: [21.4, -38.2, -30] },
+        { n: 'chamber_pressure', u: 'Pa', v: [101325, 21.3, 40] },
+        { n: 'shelf_3_temperature', u: 'Cel', v: [20, null, -10] },
+        { n: 'power', u: 'W', v: [400, 3100, 900] }
+    ],
+    ...fields
+})
+const dryer = (fields = {}) => ({ phase: 'cycle', at: '2026-09-29T08:00:00Z', ...fields })
+
+test('a preview gives its clock and the series the page knows, each in its unit, and nothing else', () => {
+    const read = readPreview(bytes(preview()))
+    assert.deepEqual(read.t, [0, 3600, 7200])
+    assert.deepEqual([...read.series.keys()], ['chamber_temperature', 'chamber_pressure', 'shelf_3_temperature'])
+    assert.deepEqual(read.series.get('shelf_3_temperature'), [20, null, -10])
+    // the first of two series of one name is the one read; a series in another unit is not the series the page knows; one with no unit is
+    const twice = readPreview(bytes(preview({ series: [{ n: 'chamber_temperature', u: 'Cel', v: [1, 2, 3] }, { n: 'chamber_temperature', u: 'Cel', v: [4, 5, 6] }, { n: 'chamber_pressure', u: 'kPa', v: [1, 2, 3] }, { n: 'shelf_8_temperature', v: [7, 8, 9] }] })))
+    assert.deepEqual([...twice.series], [['chamber_temperature', [1, 2, 3]], ['shelf_8_temperature', [7, 8, 9]]])
+    // a clock of 2000 points is drawn, one of 2001 is not
+    const long = (n) => preview({ t: Array.from({ length: n }, (_, i) => i), series: [{ n: 'chamber_temperature', v: Array.from({ length: n }, () => 0) }] })
+    assert.equal(readPreview(bytes(long(2000))).t.length, 2000)
+    assert.equal(readPreview(bytes(long(2001))), null)
+})
+
+for (const [what, file] of [
+    ['is not JSON', '{"schema": '],
+    ['is not text', new Uint8Array([0x7b, 0x22, 0xe9, 0x22, 0x7d])],
+    ['is a list', [preview()]],
+    ['is nothing', 'null'],
+    ['is of another kind', preview({ schema: 'ffd/telemetry/1.0' })],
+    ['has no clock', preview({ t: undefined })],
+    ['has a clock of one point', preview({ t: [0], series: [{ n: 'chamber_temperature', v: [1] }] })],
+    ['has a clock that goes back', preview({ t: [0, 7200, 3600] })],
+    ['has a clock that does not advance', preview({ t: [5, 5, 5] })],
+    ['has a clock that is not finite', JSON.stringify(preview()).replace('7200', '1e999')],
+    ['has a clock of text', preview({ t: ['0', '3600', '7200'] })],
+    ['has a series out of step with its clock', preview({ series: [{ n: 'chamber_temperature', v: [1, 2] }] })],
+    ['has a reading that is text', preview({ series: [{ n: 'chamber_pressure', v: [1, '2', 3] }] })],
+    ['has a reading that is not finite', JSON.stringify(preview()).replace('21.4', '1e999')],
+    ['has a reading that is not a number', JSON.stringify(preview()).replace('21.4', 'NaN')],
+    ['names its series with HTML', preview({ series: [{ n: hostile('n'), u: hostile('u'), v: [1, 2, 3] }] })],
+    ['has series that are not a list', preview({ series: { n: 'chamber_temperature', v: [1, 2, 3] } })],
+    ['names no series the page knows', preview({ series: [{ n: 'power', v: [1, 2, 3] }, { n: '__proto__', v: [1, 2, 3] }, { n: 'constructor', v: [1, 2, 3] }, 'chamber_temperature', null] })]
+])
+    test(`a preview that ${what} says nothing`, () => {
+        assert.equal(readPreview(file instanceof Uint8Array ? file : bytes(file)), null)
+    })
+
+test('the cycle is drawn from numbers alone: HTML where the record declares its minima creates nothing, and numbers are marked on their curves', () => {
+    const read = readPreview(bytes(preview()))
+    const card = document.createElement('div')
+    card.className = 'card'
+    document.getElementById('path').append(card)
+    card.innerHTML = drawCycle(read, dryer({ min_temperature_c: hostile('min_temperature_c'), min_pressure_pa: hostile('min_pressure_pa') }))
+    clean(document)
+    assert.equal(card.querySelectorAll('.min').length, 0)
+    assert.equal(card.querySelectorAll('path.line').length, 3)
+    assert.equal(card.querySelector('.key').textContent, 'ChamberShelvesPressure')
+    card.innerHTML = drawCycle(read, dryer({ min_temperature_c: -38.2, min_pressure_pa: 21.3 }))
+    assert.deepEqual([...card.querySelectorAll('text.min')].map((t) => t.textContent), ['-38.2 °C', '21.3 Pa'])
+    // a pressure that is not above zero has no place on a scale of powers of ten, and is not marked
+    card.innerHTML = drawCycle(read, dryer({ min_temperature_c: null, min_pressure_pa: 0 }))
+    assert.equal(card.querySelectorAll('.min').length, 0)
+    clean(document)
+})
+
+test('a preview of pressure alone has one scale, and one that read nothing draws nothing', () => {
+    const alone = drawCycle(readPreview(bytes(preview({ series: [{ n: 'chamber_pressure', u: 'Pa', v: [100, 10, 1] }] }))), dryer())
+    assert.ok(alone.includes('Pa'))
+    assert.equal(alone.includes('°C'), false)
+    assert.equal(alone.includes('class="line temp"'), false)
+    assert.equal(drawCycle(readPreview(bytes(preview({ series: [{ n: 'chamber_temperature', v: [null, null, null] }] }))), dryer()), '')
+    assert.equal(drawCycle(readPreview(bytes(preview({ series: [{ n: 'chamber_pressure', v: [0, -5, null] }] }))), dryer()), '')
+})
+
+test('the link to the full curves is there when the cycle names a reference, and not when it names something else', () => {
+    const path = document.getElementById('path')
+    const ref = 'ab'.repeat(32)
+    const named = event(2, { phase: 'cycle', at: '2026-09-29T08:00:00Z', telemetry: ref, telemetry_preview: 'cd'.repeat(32) })
+    const odd = event(4, { phase: 'cycle', at: '2026-09-29T09:00:00Z', telemetry: hostile('telemetry'), telemetry_preview: null })
+    placeCard(path, [named, odd], named, 'https://explorer.example')
+    placeCard(path, [named, odd], odd, 'https://explorer.example')
+    const link = [...cardOf(named).querySelectorAll('.links a')].find((a) => a.textContent === 'Full curves on Swarm ↗')
+    assert.equal(link.href, `https://gateway.example/bytes/${ref}`)
+    assert.equal([...cardOf(odd).querySelectorAll('.links a')].some((a) => a.textContent.includes('curves')), false)
+    clean(document)
+})
