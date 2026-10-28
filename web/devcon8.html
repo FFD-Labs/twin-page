@@ -217,7 +217,10 @@
                 font: 400 .94rem/1 var(--text); white-space: nowrap;
                 transition: background-color var(--t-hover) var(--ease-out), color var(--t-hover) var(--ease-out), transform var(--t-press) var(--ease-out); }
             .btn:active { transform: scale(.98); }
-            details { margin-top: .9rem; font-size: .92rem; color: var(--panel-ink-2); }
+            /* the small print of a card: the raw record, and a line for what else the record names, set the same and in the same voice */
+            details, .quiet { margin-top: .9rem; font-size: .92rem; color: var(--panel-ink-2); }
+            .quiet + details { margin-top: .3rem; }
+            .quiet a { display: inline-block; padding: .3rem 0; text-decoration: underline; text-decoration-color: var(--panel-rule); text-underline-offset: .2em; }
             summary { cursor: pointer; padding: .3rem 0; text-decoration: underline; text-decoration-color: var(--panel-rule); text-underline-offset: .2em; }
             summary::marker { font-size: .7em; }
             @supports (interpolate-size: allow-keywords) {

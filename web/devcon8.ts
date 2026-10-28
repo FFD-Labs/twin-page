@@ -414,18 +414,16 @@ function card(event: Event, explorer: string | undefined) {
         <details><summary>Raw record</summary><pre>${esc(raw.length > RAW_SHOWN ? `${raw.slice(0, RAW_SHOWN)}…` : raw)}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
     }
     const { title, twin, rows: list } = steps[data.phase](data)
-    // A cycle names the SenML of its curves, which the page links and never downloads: the link is there when the record
-    // names a reference, from the gateway that served the record, and nowhere otherwise. The curves themselves come later,
-    // drawn from the light file the record also names (drawCurves).
+    // A cycle names the SenML of its curves, which the page links and never downloads: a line in the small print of the
+    // card, beside the raw record, there when the record names a reference, from the gateway that served the record, and
+    // nowhere otherwise. The curves themselves come later, drawn from the light file the record also names (drawCurves).
     const telemetry = data.phase === 'cycle' ? refOf(data.telemetry) : null
-    const curves = telemetry
-        ? `
-            <a class="btn" href="${esc(`${event.gateway}/bytes/${telemetry.slice(2)}`)}" target="_blank" rel="noopener">Full curves on Swarm ↗</a>`
-        : ''
+    const curves = telemetry ? `<p class="quiet"><a href="${esc(`${event.gateway}/bytes/${telemetry.slice(2)}`)}" target="_blank" rel="noopener">Full curve data ↗</a></p>` : ''
     return `
         <h2>${glyph(data.phase)}${esc(title)}</h2>
         ${twin ? '<p class="twin-born">This bag’s twin starts here.</p>' : ''}
-        ${rows(list)}${links(curves)}
+        ${rows(list)}${links()}
+        ${curves}
         <details><summary>Raw record</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
 

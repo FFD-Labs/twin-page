@@ -424,8 +424,10 @@ test('the link to the full curves is there when the cycle names a reference, and
     const odd = event(4, { phase: 'cycle', at: '2026-09-29T09:00:00Z', telemetry: hostile('telemetry'), telemetry_preview: null })
     placeCard(path, [named, odd], named, 'https://explorer.example')
     placeCard(path, [named, odd], odd, 'https://explorer.example')
-    const link = [...cardOf(named).querySelectorAll('.links a')].find((a) => a.textContent === 'Full curves on Swarm ↗')
+    const link = cardOf(named).querySelector('.quiet a')
+    assert.equal(link.textContent, 'Full curve data ↗')
+    assert.equal(cardOf(named).querySelectorAll('.links a').length, 2) // the two buttons of every card, and no third
     assert.equal(link.href, `https://gateway.example/bytes/${ref}`)
-    assert.equal([...cardOf(odd).querySelectorAll('.links a')].some((a) => a.textContent.includes('curves')), false)
+    assert.equal(cardOf(odd).querySelector('.quiet'), null)
     clean(document)
 })

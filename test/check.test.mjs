@@ -1318,7 +1318,9 @@ test('a cycle that names its curves: the preview is read against its reference a
     assert.equal([...card.querySelectorAll('.row .k')].some((k) => k.textContent === 'Coldest' || k.textContent === 'Lowest pressure'), false)
     assert.equal(chart.querySelector('.key').textContent, 'ChamberShelvesPressure')
     // the link to the full curves, from the gateway that served the record; the SenML itself is never asked for
-    const link = [...card.querySelectorAll('.links a')].find((a) => a.textContent === 'Full curves on Swarm ↗')
+    const link = card.querySelector('.quiet a')
+    assert.equal(link.textContent, 'Full curve data ↗')
+    assert.equal(card.querySelectorAll('.links a').length, 2)
     assert.equal(link.href, `${first}/bytes/${full}`)
     assert.equal(link.rel, 'noopener')
     assert.deepEqual([askedRef(preview), askedRef(full)], [1, 0])
@@ -1348,7 +1350,8 @@ for (const [what, file] of [
         assert.equal(card.querySelector('.curves'), null)
         assert.equal(card.querySelector('svg:not(.glyph)'), null) // the glyph at the head of the card is the page's own
         assert.equal(card.querySelectorAll('.row').length, 5)
-        assert.equal(card.querySelectorAll('.links a').length, 3)
+        assert.equal(card.querySelectorAll('.links a').length, 2)
+        assert.ok(card.querySelector('.quiet a'))
         assert.equal(askedRef(preview), 1)
         assert.equal(document.documentElement.outerHTML.includes('ffd-probe'), false)
         clean(document)
@@ -1371,7 +1374,7 @@ test('a cycle that names no curves: nothing is drawn, no one is asked, and there
     assert.ok($('hero').classList.contains('verified'))
     const card = cycleCard()
     assert.equal(card.querySelector('.curves'), null)
-    assert.equal([...card.querySelectorAll('.links a')].some((a) => a.textContent.includes('curves')), false)
+    assert.equal(card.querySelector('.quiet'), null)
     assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 3) // the three records, and no file
 })
 
