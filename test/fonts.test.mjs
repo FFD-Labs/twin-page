@@ -252,3 +252,16 @@ test('Spline Sans Mono is its master at 400, with every character, and every rul
     assert.ok(mono.length)
     for (const rule of mono) assert.equal(rule.weight, 400, rule.selector)
 })
+
+test('the page with no bag, every notice and the footer write in the cuts: their titles in Montserrat 500, the rest in Fira', () => {
+    const text = (selector) => [...document.querySelectorAll(selector)].map((el) => el.textContent).join('')
+    // the title of every notice the script can write, set like the one in the markup, in capitals
+    const titles = [...readFileSync(resolve(root, 'web/devcon8.ts'), 'utf8').matchAll(/notice\(\s*'([^']*)'/g)].map(([, title]) => title)
+    assert.ok(titles.includes('This link is incomplete.'), 'the notice of a link cut short')
+    const capitals = [...titles, text('#notice strong'), text('#about h2'), text('.nets dt'), text('.colophon dt')].join('').toUpperCase()
+    assert.match(capitals, /HOW THIS PAGE WORKS/)
+    assert.deepEqual(has(face('Montserrat', 500), capitals), [])
+    const prose = text('#about p') + text('.nets dd') + text('.asks') + text('.colophon dd')
+    assert.match(prose, /two public networks/)
+    assert.deepEqual(has(face('Fira Sans Condensed', 400), prose), [])
+})
