@@ -13,11 +13,11 @@
     "release": "node scripts/release.mjs"
   },
   "dependencies": {
-    "viem": "^2.56.8"
+    "viem": "2.57.3"
   },
   "devDependencies": {
     "jsdom": "30.1.2",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.0"
+    "typescript": "7.0.2",
+    "vite": "8.3.3"
   }
 }
