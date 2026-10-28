@@ -149,6 +149,35 @@ const flagged = (code: unknown, words: string | null) => {
     const banner = words ? flag(code) : null
     return banner ? `${banner} ${words}` : words
 }
+// The code of a country by its name, India → IN, for a place whose words end with one. Built once from every pair of
+// letters, keeping those that name a region and are its code today (ICU knows DD as Germany too, and gives it DE), so
+// that the page carries no list of its own. Names are compared without case; one that two codes share gives nothing.
+const current = (code: string) => {
+    try {
+        return new Intl.Locale(`und-${code}`).region === code
+    } catch {
+        return false
+    }
+}
+let codes: Map<string, string | null> | null = null
+const codeOf = (name: string) => {
+    if (!codes) {
+        codes = new Map()
+        for (let a = 65; a <= 90; a++)
+            for (let b = 65; b <= 90; b++) {
+                const code = String.fromCharCode(a, b)
+                const known = regionName(code)?.toLowerCase()
+                if (known && current(code)) codes.set(known, codes.has(known) ? null : code)
+            }
+    }
+    return codes.get(name.trim().toLowerCase()) ?? null
+}
+// The country a place is in, by the words after its last comma, as the addresses of the files end: Dhodapalli, Odisha
+// 752077, India. None when they are not the name of one.
+const countryOf = (place: string | null) => {
+    const words = place?.split(',').pop()
+    return words ? codeOf(words) : null
+}
 const farm = (f: Farm) =>
     flagged(
         f.country,
@@ -642,8 +671,9 @@ function landRows(before: Element, list: (string | null | undefined)[][]) {
 
 // Where the plant is. The intake record names the file among its documents; it is asked for once the records are checked,
 // with the description, and read like it: hashed against its reference, then found out once. When it has come, the
-// Received card, already on screen, gains two rows before its check: the place, behind the flag of its country when the
-// file gives the code, and the coordinates, linked to OpenStreetMap, which is asked for nothing unless the link is tapped.
+// Received card, already on screen, gains two rows before its check: the place, behind the flag of its country, by the
+// code the file gives or else the name its words end with, and the coordinates, linked to OpenStreetMap, which is asked
+// for nothing unless the link is tapped.
 async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
     const intake = events.find(e => e.data?.phase === 'intake')
     const ref = documentOf(intake?.data, SITE_LOCATION, GEOJSON)
@@ -653,7 +683,7 @@ async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLEl
     if (!point || product !== mine) return // it did not come, or another bag is being read
     places.plant = point
     const check = cards.get(intake.ref)?.querySelector('.check')
-    if (check) landRows(check, [['Site', flagged(point.country, point.place)], geoRow('GPS', point)])
+    if (check) landRows(check, [['Site', flagged(point.country ?? countryOf(point.place), point.place)], geoRow('GPS', point)])
 }
 
 // ---------- the curves of a cycle: the light file its record names ----------
