@@ -888,7 +888,7 @@ test('a table with more rows than a label has room for: the page takes the first
 // ---------- the plant: the file the intake record names ----------
 // Where the plant is comes from a file, as what the bag holds does: the intake record names `site-location.geojson` among
 // its documents, and the page reads it against its reference once the records are checked. The Received card then says
-// the place, behind the flag of its country, from the code the file gives or the name the place ends with, and the
+// the place, with the flag of its country after it, from the code the file gives or the name the place ends with, and the
 // coordinates, which are a link to OpenStreetMap, named after them and asked for nothing.
 const india = { type: 'Feature', geometry: { type: 'Point', coordinates: [85.109112, 20.235281] }, properties: { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India' } }
 const site = (value = india, name = 'site-location.geojson', type = 'application/geo+json') => file(name, type, bytes(value))
@@ -910,7 +910,7 @@ test('the plant: the Received card says where it is, from the file the intake re
     await scan()
     assert.ok($('hero').classList.contains('verified'))
     const card = receivedCard()
-    assert.deepEqual(rowsOf(card), [['Fruit', 'Banana'], ['Weight', '20 kg'], ['Sourcing', 'Rescued surplus'], ['Site', '🇮🇳 Dhodapalli, Odisha 752077, India'], ['GPS', '20.2353° N, 85.1091° E OpenStreetMap ↗']])
+    assert.deepEqual(rowsOf(card), [['Fruit', 'Banana'], ['Weight', '20 kg'], ['Sourcing', 'Rescued surplus'], ['Site', 'Dhodapalli, Odisha 752077, India 🇮🇳'], ['GPS', '20.2353° N, 85.1091° E OpenStreetMap ↗']])
     // the link holds numbers the page wrote and nothing else, and opens beside the page
     const links = card.querySelectorAll('.row a')
     assert.equal(links.length, 1)
@@ -933,15 +933,15 @@ test('a location file whose words are HTML: they are written as text', async () 
     assert.equal(page.places.plant.site, hostile('site'))
 })
 
-test('the flag of a country: before the farm the record names by its code, and before the plant when its file gives one', async () => {
+test('the flag of a country: after the country of the farm the record names by its code, and after the plant when its file gives one', async () => {
     const farms = [{ zone: 'Odisha', country: 'IN', kg: 20 }, { zone: 'Kerala', country: 'in', kg: 2 }, { zone: 'Elsewhere', country: 'XX', kg: 1 }, { country: 'IN', kg: 1 }]
     const intake = put({ phase: 'intake', at: '2026-09-25T08:00:00Z', fruit: 'banana', kg: 24, farms, documents: [site({ ...india, properties: { ...india.properties, country: 'IN' } })] })
     net.head = put(packed({ product: 'dried banana', inputs: [intake] }))
     await scan()
     const card = receivedCard()
     // a code of two capital letters that names a country has its flag, drawn by the emoji font; another is printed as it is
-    assert.deepEqual(rowsOf(card).filter(([key]) => key === 'Origin').map(([, value]) => value), ['🇮🇳 Odisha, India · 20 kg', 'Kerala, in · 2 kg', 'Elsewhere, XX · 1 kg', '🇮🇳 India · 1 kg'])
-    assert.deepEqual(rowsOf(card).slice(-2), [['Site', '🇮🇳 Dhodapalli, Odisha 752077, India'], ['GPS', '20.2353° N, 85.1091° E OpenStreetMap ↗']])
+    assert.deepEqual(rowsOf(card).filter(([key]) => key === 'Origin').map(([, value]) => value), ['Odisha, India 🇮🇳 · 20 kg', 'Kerala, in · 2 kg', 'Elsewhere, XX · 1 kg', 'India 🇮🇳 · 1 kg'])
+    assert.deepEqual(rowsOf(card).slice(-2), [['Site', 'Dhodapalli, Odisha 752077, India 🇮🇳'], ['GPS', '20.2353° N, 85.1091° E OpenStreetMap ↗']])
     assert.equal(page.places.plant.country, 'IN')
     // the small print under the coordinates names where they open, inside the link
     assert.equal(card.querySelector('.row a small').textContent, 'OpenStreetMap ↗')
@@ -955,17 +955,17 @@ test('the flag of the plant whose file gives no code: the country its place ends
         return rowsOf(receivedCard()).find(([key]) => key === 'Site')[1]
     }
     // the words after the last comma, compared without case, against the names ICU gives the codes of today
-    assert.equal(await siteOf({ place: 'Dhodapalli, Odisha 752077, India' }), '🇮🇳 Dhodapalli, Odisha 752077, India')
-    assert.equal(await siteOf({ place: 'Mumbai, india' }), '🇮🇳 Mumbai, india')
-    assert.equal(await siteOf({ place: 'India' }), '🇮🇳 India')
-    assert.equal(await siteOf({ place: 'London, United Kingdom' }), '🇬🇧 London, United Kingdom')
-    assert.equal(await siteOf({ place: 'Berlin, Germany' }), '🇩🇪 Berlin, Germany')
-    assert.equal(await siteOf({ place: 'Hanoi, Vietnam' }), '🇻🇳 Hanoi, Vietnam')
+    assert.equal(await siteOf({ place: 'Dhodapalli, Odisha 752077, India' }), 'Dhodapalli, Odisha 752077, India 🇮🇳')
+    assert.equal(await siteOf({ place: 'Mumbai, india' }), 'Mumbai, india 🇮🇳')
+    assert.equal(await siteOf({ place: 'India' }), 'India 🇮🇳')
+    assert.equal(await siteOf({ place: 'London, United Kingdom' }), 'London, United Kingdom 🇬🇧')
+    assert.equal(await siteOf({ place: 'Berlin, Germany' }), 'Berlin, Germany 🇩🇪')
+    assert.equal(await siteOf({ place: 'Hanoi, Vietnam' }), 'Hanoi, Vietnam 🇻🇳')
     // words that are not exactly such a name give no flag
     for (const place of ['Somewhere, Narnia', 'Mumbai, Maharashtra', 'Jio World Centre', 'Delhi, India.', 'USA', 'Atlanta, Georgia, USA']) assert.equal(await siteOf({ place }), place)
     // the code of the file, when it gives one, says it all
     assert.equal(await siteOf({ place: 'Dhodapalli, Odisha 752077, India', country: 'XX' }), 'Dhodapalli, Odisha 752077, India')
-    assert.equal(await siteOf({ place: 'Dhodapalli, Odisha 752077, India', country: 'ES' }), '🇪🇸 Dhodapalli, Odisha 752077, India')
+    assert.equal(await siteOf({ place: 'Dhodapalli, Odisha 752077, India', country: 'ES' }), 'Dhodapalli, Odisha 752077, India 🇪🇸')
     assert.equal(page.places.plant.country, 'ES')
 })
 

@@ -143,11 +143,12 @@ const regionName = (code: string) => {
 }
 const country = (code: string) => regionName(code) ?? code
 // The flag of a country whose code is two capital letters that name a region: the letters as the regional indicators an
-// emoji font draws as the flag, 🇮🇳 for IN, set before the words of a place. A code of another shape has no flag.
+// emoji font draws as the flag, 🇮🇳 for IN, set after the name of the country, or after the words of a place that ends
+// with it. A code of another shape has no flag.
 const flag = (code: unknown) => (typeof code === 'string' && /^[A-Z]{2}$/.test(code) && regionName(code) !== null ? String.fromCodePoint(...[...code].map(c => 0x1f1e6 + c.charCodeAt(0) - 65)) : null)
 const flagged = (code: unknown, words: string | null) => {
     const banner = words ? flag(code) : null
-    return banner ? `${banner} ${words}` : words
+    return banner ? `${words} ${banner}` : words
 }
 // The code of a country by its name, India → IN, for a place whose words end with one. Built once from every pair of
 // letters, keeping those that name a region and are its code today (ICU knows DD as Germany too, and gives it DE), so
@@ -179,12 +180,9 @@ const countryOf = (place: string | null) => {
     return words ? codeOf(words) : null
 }
 const farm = (f: Farm) =>
-    flagged(
-        f.country,
-        [[f.zone, f.country && country(f.country)].filter(Boolean).join(', '), f.variety, f.harvested && `harvested ${day(f.harvested)}`, f.kg != null && `${f.kg} kg`]
-            .filter(Boolean)
-            .join(' · ') || null
-    )
+    [[f.zone, f.country && flagged(f.country, country(f.country))].filter(Boolean).join(', '), f.variety, f.harvested && `harvested ${day(f.harvested)}`, f.kg != null && `${f.kg} kg`]
+        .filter(Boolean)
+        .join(' · ') || null
 // A value that is a link: to an address of the page's own making, opened beside the page; nothing a record or a file says
 // is ever one. Where it opens, when named, is small print under the value.
 const linked = (value: unknown, href: string, via?: string | null) =>
@@ -671,9 +669,9 @@ function landRows(before: Element, list: (string | null | undefined)[][]) {
 
 // Where the plant is. The intake record names the file among its documents; it is asked for once the records are checked,
 // with the description, and read like it: hashed against its reference, then found out once. When it has come, the
-// Received card, already on screen, gains two rows before its check: the place, behind the flag of its country, by the
-// code the file gives or else the name its words end with, and the coordinates, linked to OpenStreetMap, which is asked
-// for nothing unless the link is tapped.
+// Received card, already on screen, gains two rows before its check: the place, with the flag of its country after it,
+// by the code the file gives or else the name its words end with, and the coordinates, linked to OpenStreetMap, which
+// is asked for nothing unless the link is tapped.
 async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
     const intake = events.find(e => e.data?.phase === 'intake')
     const ref = documentOf(intake?.data, SITE_LOCATION, GEOJSON)
