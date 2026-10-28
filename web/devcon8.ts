@@ -8,7 +8,7 @@
 
 import { NotOfficial, abi, download, hex, parseSticker, swarmHash, type Config } from '../src/lib.ts'
 import './life-grid.ts'
-import { BaseError, ContractFunctionRevertedError, createClient, custom, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, readContract, sepolia, zeroHash, type Address, type Hex, type Transport } from '../src/rails.ts'
+import { BaseError, ContractFunctionRevertedError, createClient, custom, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, parseAbi, readContract, sepolia, zeroHash, type Address, type Hex, type Transport } from '../src/rails.ts'
 
 type Farm = { zone: string | null; country: string | null; variety: string | null; harvested: string | null; kg: number | null }
 
@@ -45,6 +45,8 @@ type Record = {
     tracking?: string | null
     // the files behind the record, as it names them: read by documentOf, never taken as they come
     documents?: unknown
+    // the postage batch the record was stored with, as it names it: read by stampOf, never taken as it comes
+    stamp?: unknown
     inputs?: Hex[]
 }
 
@@ -82,8 +84,11 @@ type Co2 = {
     closing?: string | null
 }
 
-// The records' storage on Swarm: the postage batch they live on and the day it is paid up to.
-type Storage = { batch?: Hex; until?: string }
+// The records' storage on Swarm. The stamp (postage batch) they live on is not here: the bag's record names it. Here is
+// where it is read from, the chain and the PostageStamp contract, with the seconds of one of that chain's blocks; the day
+// written by hand, which stands until the stamp says better; and the page where a stamp is looked up by its id, with
+// {stamp} where the id goes.
+type Storage = { until?: string; chain?: number; contract?: Address; block_s?: number; stamp_page?: string }
 
 type Page = Config & {
     gateways?: string[]
@@ -998,13 +1003,68 @@ function undress() {
     for (const url of [...held]) release(url)
 }
 
-// ---------- stored until: the date the records' storage is paid up to ----------
+// ---------- stored until: the day the records' storage is paid up to, read from the stamp that pays for it ----------
 
-// The date comes with the configuration (storage.until), kept by whoever keeps the postage batch paid; the page reads it from nowhere else.
-function showStoredUntil(config: Page) {
-    if (!config.storage?.until) return
-    $('alive-until').textContent = day(config.storage.until)
-    $('alive').hidden = false
+// A postage batch id: 64 hex digits in lowercase, with no 0x, as a record names it.
+const STAMP = /^[0-9a-f]{64}$/
+// The stamp the bag's record names, `stamp`: the postage batch its records were stored with, which anyone can look up,
+// and pay for, by its id. Only the head record's, and only in the form a stamp has; anything else names no stamp.
+const stampOf = (head: Record | null | undefined) => (typeof head?.stamp === 'string' && STAMP.test(head.stamp) ? head.stamp : null)
+
+// What the page asks the PostageStamp contract: what is left on the batch, per chunk, and the price of a chunk per block.
+const stampAbi = parseAbi(['function remainingBalance(bytes32 batchId) view returns (uint256)', 'function lastPrice() view returns (uint64)'])
+
+// The day the stamp is paid up to, read from the chain it lives on (storage.chain: Gnosis) through the RPCs the
+// configuration lists for that chain, in order, and never through a wallet: a wallet is on the network of the bag, and
+// the page does not ask it to change. What is left divided by the price is blocks, and a block is storage.block_s
+// seconds, counted from now. Null when the batch has run out (the contract says 0, or reverts), when no RPC answers, or
+// when the one that answers is on another network: the day written in the configuration then stands.
+async function stampUntil(config: Page, stamp: string): Promise<Date | null> {
+    const storage: Storage = config.storage ?? {}
+    const rpcs = storage.chain != null ? (config.rpcs?.[storage.chain] ?? []) : []
+    if (!storage.contract || !isAddress(storage.contract) || !storage.block_s) return null
+    for (const url of rpcs) {
+        try {
+            const client = createClient({ transport: http(url, { retryCount: 1, timeout: 8_000 }), ...ownRpc })
+            if ((await getChainId(client)) !== storage.chain) continue
+            const contract = { address: storage.contract, abi: stampAbi } as const
+            const [remaining, price] = await Promise.all([
+                readContract(client, { ...contract, functionName: 'remainingBalance', args: [`0x${stamp}`] }),
+                readContract(client, { ...contract, functionName: 'lastPrice' })
+            ])
+            if (!remaining || !price) return null
+            const until = new Date(Date.now() + Number(remaining / price) * storage.block_s * 1000)
+            return Number.isNaN(until.getTime()) ? null : until
+        } catch (error) {
+            console.error(error)
+        }
+    }
+    return null
+}
+
+// The line under the seal: "Stored until" and a day. The day written in the configuration (storage.until) goes up at
+// once and stands when nothing better comes; the stamp's takes its place when it comes, most often before the line is
+// in sight. With a stamp, and a page to look one up on (storage.stamp_page, an https address with {stamp} where the id
+// goes), the line is a link to that page for that stamp; without either it is a line and no link.
+function showStoredUntil(config: Page, stamp: string | null, until: Promise<Date | null> | null) {
+    const line = $<HTMLAnchorElement>('alive')
+    const page = config.storage?.stamp_page
+    line.removeAttribute('href')
+    line.removeAttribute('title')
+    if (stamp && page?.startsWith('https://') && page.includes('{stamp}')) {
+        line.href = page.replace('{stamp}', stamp)
+        line.title = `Swarm stamp ${stamp}`
+    }
+    const show = (when: string) => {
+        if (line.hidden) $('alive-until').textContent = when
+        else swap($('alive-until'), when)
+        line.hidden = false
+    }
+    if (config.storage?.until) show(day(config.storage.until))
+    const mine = product
+    void until?.then(when => {
+        if (when && product === mine) show(day(when.toISOString()))
+    })
 }
 
 // ---------- the report ----------
@@ -1216,11 +1276,15 @@ async function check(config: Page) {
         const good = events.filter(e => e.verified).length
         const allGood = good === events.length
         row(3, `${good} of ${events.length} ${events.length === 1 ? 'match' : 'matches'}`, allGood ? 'lit' : 'bad')
+        // the stamp that pays for the records' storage hangs from the head record: once every record has matched, the
+        // chain it lives on is asked how long it is paid for, now, so that the day is there when the seal opens
+        const stamp = allGood ? stampOf(events.find(event => event.ref === run)?.data) : null
+        const until = stamp ? stampUntil(config, stamp) : null
         await edgesSettled()
         status(allGood ? 'verified' : 'mismatch')
         if (allGood) {
             $('proof-fold').classList.add('open')
-            showStoredUntil(config)
+            showStoredUntil(config, stamp, until)
         }
         const mine = product
         later(() => {

@@ -1,9 +1,13 @@
 {
-    "_about": "What the page reads, and nothing else: the Ethereum RPCs it asks, by network and in order (the first that answers is read, and the next is asked whether it says the same; the key in an address is public, and is good only for these contracts), the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the day the records' storage is paid up to, the links of the footer, the repository that publishes the file, and the arithmetic of the CO2. What the page says of the fruit is not here: its name, what the bag holds, its photograph and the art of its pouch are files the bag's packing record names, read from Swarm against their references. A block whose keys are missing is not painted.",
+    "_about": "What the page reads, and nothing else: the Ethereum RPCs it asks, by network and in order (the first that answers is read, and the next is asked whether it says the same; the key in an address is public, and is good only for these contracts), the contract it trusts, the custody address that holds the twins until they move, the Swarm gateways tried in order, the records' storage on Swarm (the chain and the contract the stamp a record names is read from, with the seconds of one of that chain's blocks; the day written here, which stands until the stamp says better; and the page where a stamp is looked up by its id), the links of the footer, the repository that publishes the file, and the arithmetic of the CO2. What the page says of the fruit is not here: its name, what the bag holds, its photograph and the art of its pouch are files the bag's packing record names, read from Swarm against their references. A block whose keys are missing is not painted.",
     "rpcs": {
         "11155111": [
             "https://eth-sepolia.g.alchemy.com/v2/alch_X-XdU1rCBjrCGNKmGPtj9",
             "https://ethereum-sepolia-rpc.publicnode.com"
+        ],
+        "100": [
+            "https://rpc.gnosis.gateway.fm",
+            "https://rpc.gnosischain.com"
         ]
     },
     "contract": "0x240dfbca7064d091149169eff95f764d1e21cea7",
@@ -13,7 +17,11 @@
         "https://api.gateway.ethswarm.org"
     ],
     "storage": {
-        "until": "2027-01-27"
+        "until": "2027-01-27",
+        "chain": 100,
+        "contract": "0x45a1502382541Cd610CC9068e88727426b696293",
+        "block_s": 5,
+        "stamp_page": "https://stamptime.eth.limo/?id={stamp}"
     },
     "links": {
         "ethereum": "https://ethereum.org",
