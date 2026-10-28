@@ -991,6 +991,105 @@ test('another bag while the photograph of the first is on its way: the art of th
     assert.equal(made.length, 0)
 })
 
+test('a description that is slow to come, or a photograph slow to decode: the art waits for neither', async () => {
+    // the description held back: the photograph waits for it, and the art is asked for once the photograph is in
+    let files = [description(), photo(), cover(), background()]
+    bag(files)
+    const open = slow(files[0])
+    let scanning = until(files[1])
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [1, 1])
+    assert.equal(root().dataset.art, 'front back')
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    open()
+    await turns()
+    await scanning
+    assert.match($('fruit-photo').src, /^blob:/)
+    // the pixels of the photograph slow to decode: the art does not wait for them
+    const { prototype } = window.HTMLImageElement
+    let decoded
+    prototype.decode = () => new Promise((resolve) => (decoded = resolve))
+    try {
+        net.instead.clear()
+        net.asked.length = 0
+        files = [description(), photo(webp(10)), cover(webp(11)), background(webp(12))]
+        bag(files)
+        scanning = until(files[1])
+        await still()
+        assert.ok(decoded)
+        assert.equal($('fruit-photo').classList.contains('in'), false)
+        assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [1, 1])
+        assert.equal(root().dataset.art, 'front back')
+        decoded()
+        await turns()
+        await scanning
+    } finally {
+        delete prototype.decode
+    }
+})
+
+test('another bag while the cover, or the pixels of the photograph, of the first are on their way: nothing more of the first is asked for or shown', async () => {
+    // the cover held back: the background of the first is never asked for
+    let files = [description(), photo(), cover(), background()]
+    bag(files)
+    const open = slow(files[2])
+    let scanning = until(files[2])
+    await still()
+    net.instead.clear()
+    net.head = put(packed())
+    await scan()
+    open()
+    await turns()
+    await scanning
+    assert.equal(askedFor(files[3]), 0)
+    assert.equal(root().dataset.art, undefined)
+    // the photograph was held, and let go; the cover came once the bag had changed, and was not held at all
+    assert.equal(made.length, 1)
+    for (const { url } of made) assert.ok(letGo.has(url))
+    // the pixels of the photograph still to decode: it does not fade in on the bag after
+    const { prototype } = window.HTMLImageElement
+    let decoded
+    prototype.decode = () => new Promise((resolve) => (decoded = resolve))
+    try {
+        net.asked.length = 0
+        files = [description(), photo(webp(13))]
+        bag(files)
+        scanning = until(files[1])
+        await still()
+        assert.ok(decoded)
+        net.head = put(packed())
+        await scan()
+        decoded()
+        await turns()
+        await scanning
+        assert.equal($('fruit-photo').hasAttribute('src'), false)
+        assert.equal($('fruit-photo').classList.contains('in'), false)
+    } finally {
+        delete prototype.decode
+    }
+})
+
+test('a photograph whose bytes are in and that is slow to be drawn: the cover waits for it, four seconds at most', async () => {
+    const files = [description(), photo(webp(9)), cover(), background()]
+    undrawn.add(9)
+    bag(files)
+    const scanning = until(files[1])
+    await still()
+    mock.timers.tick(3999)
+    await still()
+    assert.equal(askedFor(files[2]), 0)
+    mock.timers.tick(1)
+    await still()
+    assert.equal(askedFor(files[2]), 1)
+    await turns()
+    await scanning
+    // the browser never drew it: its place is given back, and its address let go
+    assert.equal($('stage').hidden, true)
+    assert.equal(root().dataset.art, 'front back')
+    assert.equal(made.length, 3)
+    assert.ok(letGo.has(made[0].url))
+})
+
 test('a photograph no gateway has: its place is given back, and the art is asked for after it, in turn, and comes', async () => {
     const files = [description(), photo(), cover(), background()]
     bag(files)
