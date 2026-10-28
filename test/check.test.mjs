@@ -485,15 +485,25 @@ test('a twin in custody: ENS is not asked for a name; a twin that has moved: it 
 // ---------- where Ethereum is read from ----------
 // What is anchored is the word of a source, and a source that lied could seal anything. So the page reads with the first
 // that answers and asks the next whether it says the same. The plate closes on the first; what the second said is kept on
-// the plate (`data-sources`) and is not in sight yet.
+// the plate (`data-sources`), and when it differs the plate opens again and says so.
 const [rpc1, rpc2] = rpcs
 const plate = () => ({ sealed: $('hero').classList.contains('verified'), open: $('proof-fold').classList.contains('open'), sources: $('hero').dataset.sources })
+// what the plate says of the sources: the Ethereum read, the edge of the anchor, the line under the seal and the notice
+const doubt = () => ({
+    read: $('step-1').querySelector('.v').textContent,
+    bad: $('step-1').classList.contains('bad'),
+    edge: $('tri').classList.contains('bad'),
+    line: !$('alive').hidden,
+    notice: $('notice').hidden ? null : $('notice').querySelector('strong').textContent
+})
+const sure = { read: 'record and holder', bad: false, edge: false, line: true, notice: null }
 const callsTo = (url) => net.calls.filter((call) => call.startsWith(`${new URL(url).host} `)).map((call) => call.split(' ')[1])
 
 test('two sources that say the same: the plate closes, and keeps that they agree', async () => {
     net.head = put(packed())
     await scan()
     assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' })
+    assert.deepEqual(doubt(), sure)
     assert.deepEqual(callsTo(rpc1).slice(0, 3), ['eth_chainId', 'eth_call', 'eth_call'])
     // the second is asked which record the bag has and whether each record has its anchor, and nothing else
     assert.deepEqual(callsTo(rpc2), ['eth_chainId', 'eth_call', 'eth_call'])
@@ -517,19 +527,34 @@ test('a first source that does not answer: the page reads with the second, which
     assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
 })
 
-for (const [what, lie] of [
+const lies = [
     ['names another record for the bag', (method, params) => (method === 'eth_call' && params[0].data.startsWith('0x55d742e4') ? `0x${'ab'.repeat(32)}` : rpc(method, params))],
     ['says a record has no anchor', (method, params) => (method === 'eth_call' && !params[0].data.startsWith('0x55d742e4') ? encodeFunctionResult({ abi, functionName: 'anchoredAt', result: [0n, 0n] }) : rpc(method, params))],
     ['gives a record another anchor', (method, params) => (method === 'eth_call' && !params[0].data.startsWith('0x55d742e4') ? encodeFunctionResult({ abi, functionName: 'anchoredAt', result: [1759400001n, 7n] }) : rpc(method, params))]
-])
-    test(`a second source that ${what}: nothing in sight changes yet, and the plate keeps that they differ`, async () => {
+]
+for (const [what, lie] of lies)
+    test(`a second source that ${what}: the plate opens again and says the sources disagree, and the cards stay as read`, async () => {
         net.head = put(packed())
         net.says.set(rpc2, lie)
         await scan()
-        assert.deepEqual(plate(), { sealed: true, open: true, sources: 'differ' })
-        assert.equal($('notice').hidden, true)
+        assert.deepEqual(plate(), { sealed: false, open: false, sources: 'differ' })
+        assert.deepEqual(doubt(), { read: 'sources disagree', bad: true, edge: true, line: false, notice: 'Two sources disagree about this bag.' })
+        assert.match($('notice').textContent, /cannot say which one is right/)
+        assert.ok(document.getElementById('retry'))
         assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
     })
+
+test('sources that disagree, and then say the same: Try again closes the plate as for any bag', async () => {
+    net.head = put(packed())
+    net.says.set(rpc2, lies[0][1])
+    await scan()
+    assert.equal(plate().sources, 'differ')
+    net.says.delete(rpc2)
+    document.getElementById('retry').click()
+    await turns(200)
+    assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' })
+    assert.deepEqual(doubt(), sure)
+})
 
 // A wallet in the browser is the visitor's own way to the chain. It is asked to read, and nothing else.
 function wallet(chain = '0xaa36a7') {
@@ -1648,6 +1673,20 @@ test('the stamp of the bag’s record: the day it is paid up to, read from its c
     clean(document)
 })
 
+test('the stamp’s day, when it comes after two sources have disagreed: it does not come back under the plate that opened', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    net.head = put(packed({ stamp }))
+    net.says.set(rpc2, lies[0][1])
+    const open = hold()
+    await scan()
+    assert.equal(plate().sources, 'differ')
+    assert.equal(line().shown, false)
+    open()
+    await turns()
+    assert.equal(line().shown, false)
+    assert.deepEqual(net.stamp.asked, [`0x${stamp}`])
+})
+
 test('a record that names no stamp, or one only on a record before the head: the day of the configuration, no link, and the chain is not asked', async () => {
     const before = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, stamp })
     for (const head of [put(packed()), put(packed({ inputs: [before] }))]) {
@@ -2296,3 +2335,4 @@ test('another bag while the files of the route are still on their way: nothing o
     assert.equal(document.querySelector('.route'), null)
     assert.equal(document.documentElement.outerHTML.includes('Jio'), false)
 })
+

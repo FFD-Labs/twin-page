@@ -331,6 +331,18 @@ async function secondOpinion(others: Source[], chainId: number, contract: Addres
     return null
 }
 
+// Two sources that do not say the same: one of them is not telling what is anchored, and the page cannot tell which. So the
+// plate opens again, as for a record that does not match: the Ethereum read says so, the edge of the anchor breaks, the
+// line under the seal and the day of the stamp go, and a notice says it, with Try again. What was read stays below, as read.
+function disagree() {
+    $('hero').classList.remove('verified')
+    $('proof-fold').classList.remove('open')
+    $('alive').hidden = true
+    $('tri').classList.add('bad')
+    row(1, 'sources disagree', 'bad')
+    notice('Two sources disagree about this bag.', 'Two sources of Ethereum gave different answers about its records, so the page cannot say which one is right. Try again in a moment.', true)
+}
+
 // ---------- the record cards (block 4) ----------
 
 // The two minima of a cycle, as its card names them: rows at first, and the figures above the chart once the curves are drawn.
@@ -1569,8 +1581,9 @@ function showStoredUntil(config: Page, stamp: string | null, until: Promise<Date
     }
     if (config.storage?.until) show(day(config.storage.until))
     const mine = product
+    // the day is the seal's: on a plate that opened again, because its sources disagree, it does not come back
     void until?.then(when => {
-        if (when && product === mine) show(day(when.toISOString()))
+        if (when && product === mine && $('hero').classList.contains('verified')) show(day(when.toISOString()))
     })
 }
 
@@ -1849,11 +1862,13 @@ async function check(config: Page) {
         )
 
         // The plate closes on what the first source says. A second one is then asked whether it says the same, and the answer
-        // is kept on the plate (`data-sources`: agree, differ, or single when there was no second one) and nowhere in sight:
-        // the page has no words for it yet, and until it has, nothing the visitor sees depends on it.
+        // is kept on the plate (`data-sources`: agree, differ, or single when there was no second one). When it differs, one
+        // of the two is not telling what is anchored, and the page cannot tell which: the plate opens again and says so.
         if (allGood) {
             const second = await secondOpinion(others, chainId, address, parsed.id, run, events)
+            if (product !== mine) return // another bag is being read
             $('hero').dataset.sources = !second ? 'single' : second.same ? 'agree' : 'differ'
+            if (second && !second.same) disagree()
         }
     } catch (error) {
         console.error(error)
