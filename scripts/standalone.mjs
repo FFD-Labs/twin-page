@@ -4,7 +4,9 @@
 // every comment and line), and in the head the policy that lets those two scripts run, with the two lines the page writes
 // in its head to set the first paint, and no other. `node
 // scripts/standalone.mjs` writes dist/devcon8.html. With `--release <folder>` (what scripts/release.mjs passes: the
-// number of the release) the fingerprint line links to the SHA256SUMS of that folder of releases/ on GitHub.
+// number of the release) the fingerprint line links to the SHA256SUMS of that folder of releases/ on GitHub. With `--out
+// <dir>` the file is written there instead, and its pieces are built beside it: what the tests ask for, so that dist/
+// stays as it was.
 //
 // The file carries no image, and of the fruit only the colours of each pouch: the art of the pouches, the photographs and
 // the description of each product are files the packing record of a bag names, and the page reads them from Swarm. What is
@@ -18,8 +20,10 @@ import { build } from 'vite'
 import { inspect } from './inspect.mjs'
 
 const root = resolve(import.meta.dirname, '..')
-const release = process.argv.includes('--release') ? process.argv[process.argv.indexOf('--release') + 1] : null
-const out = resolve(root, 'dist-standalone')
+const option = (name) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null)
+const release = option('--release')
+const into = option('--out') ? resolve(option('--out')) : resolve(root, 'dist')
+const out = option('--out') ? resolve(into, 'pieces') : resolve(root, 'dist-standalone')
 const read = (file) => readFileSync(resolve(root, file))
 const text = (file) => read(file).toString()
 
@@ -30,7 +34,7 @@ await build({
     root,
     build: { lib: { entry: resolve(root, 'src/rails.ts'), name: 'rails', formats: ['iife'], fileName: () => 'rails.js' }, outDir: out, emptyOutDir: true, minify: true }
 })
-const libraries = text('dist-standalone/rails.js').replace(/<\/script/g, '<\\/script')
+const libraries = readFileSync(resolve(out, 'rails.js')).toString().replace(/<\/script/g, '<\\/script')
 const lock = JSON.parse(text('package-lock.json')).packages
 const versions = ['viem'].map(name => `${name} ${lock[`node_modules/${name}`].version}`).join(', ')
 
@@ -90,6 +94,20 @@ const legend = Object.keys(config.rpcs ?? {})
     .sort((a, b) => place(a) - place(b))
     .map(id => (place(id) === 2 ? `${id}, the chain Swarm's stamps are paid on, read for the stamp alone` : [networks[id] ? `${id} ${networks[id]}` : `${id}`, place(id) === 0 && 'the network of the bag'].filter(Boolean).join(', ')))
     .join('; ')
+// The footer's links to the source, as the script writes them from the config: the code at the root of the repository,
+// and the fingerprint at the source the config names, said without its scheme, /blob/main and /SHA256SUMS. Written into
+// the markup too, so that the footer is from its first paint what it will be: a release's longer link would otherwise
+// add a line to the fingerprint's row once the script has run.
+if (config.source) {
+    const attr = (value) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+    const code = config.source.replace(/\/blob\/.*$/, '')
+    const links = { 'code-link': [code, code.replace(/^https?:\/\//, '')], 'fp-source': [config.source, config.source.replace(/^https?:\/\//, '').replace('/blob/main', '').replace(/\/SHA256SUMS$/, '')] }
+    for (const [id, [href, words]] of Object.entries(links)) {
+        const at = new RegExp(`<a id="${id}" href="[^"]*"([^>]*)>[^<]*</a>`)
+        if (!at.test(html)) throw Error(`the link ${id} is not where the page writes it`)
+        html = html.replace(at, (_, rest) => `<a id="${id}" href="${attr(href)}"${rest}>${attr(words)}</a>`)
+    }
+}
 // The config says nothing of the fruit: what the page shows of it comes from Swarm, by the references of the bag's packing
 // record. A key that did would be a leftover the page no longer reads, and the build stops rather than publish it.
 for (const key of ['art', 'fruits', 'nutrition']) if (key in config) throw Error(`the config says something about the fruit: ${key}`)
@@ -132,7 +150,7 @@ if (inspect(html, Object.keys(scripts).length).policy !== policy) throw Error('t
 // read in another encoding is another text: the page's script would not match its hash, and would not run.
 if (Buffer.from(html).indexOf('<meta charset="utf-8" />') + '<meta charset="utf-8" />'.length > 1024 || !html.includes('<meta charset="utf-8" />')) throw Error('the encoding is not declared in the first 1024 bytes')
 
-mkdirSync(resolve(root, 'dist'), { recursive: true })
+mkdirSync(into, { recursive: true })
 const name = 'devcon8.html'
-writeFileSync(resolve(root, 'dist', name), html)
-console.log(`dist/${name} · ${(html.length / 1024).toFixed(0)} kB`)
+writeFileSync(resolve(into, name), html)
+console.log(`${option('--out') ? resolve(into, name) : `dist/${name}`} · ${(html.length / 1024).toFixed(0)} kB`)

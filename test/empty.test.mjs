@@ -9,8 +9,9 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { JSDOM, VirtualConsole } from 'jsdom'
 import { inspect } from '../scripts/inspect.mjs'
@@ -154,9 +155,20 @@ test('the two lines of the head tell a bag from none as parseSticker does, and k
     tellsApart(script)
 })
 
-test('the built file: the two lines of its head, named by its policy, and the rules that show the page with no bag from the first paint', () => {
-    execFileSync(process.execPath, [resolve(root, 'scripts/standalone.mjs')], { cwd: root, stdio: 'pipe' })
-    const html = text('dist/devcon8.html')
+// the file as the build writes it, into a folder of the test's own so that dist/ stays as it was; a release's, given its folder
+function build(t, ...args) {
+    const out = mkdtempSync(join(tmpdir(), 'twin-'))
+    t.after(() => rmSync(out, { recursive: true, force: true }))
+    execFileSync(process.execPath, [resolve(root, 'scripts/standalone.mjs'), '--out', out, ...args], { cwd: root, stdio: 'pipe' })
+    return readFileSync(join(out, 'devcon8.html'), 'utf8')
+}
+const linkOf = (html, id) => {
+    const a = new JSDOM(html, { virtualConsole: new VirtualConsole() }).window.document.getElementById(id)
+    return [a.getAttribute('href'), a.textContent]
+}
+
+test('the built file: the two lines of its head, named by its policy, and the rules that show the page with no bag from the first paint', (t) => {
+    const html = build(t, '--release', '0.5')
     assert.equal(inspect(html, 3).scripts, 3)
     const script = headOf(html)
     assert.equal(script, headOf(text('web/devcon8.html')))
@@ -184,6 +196,17 @@ test('the built file: the two lines of its head, named by its policy, and the ru
     const stampRpcs = config.rpcs[config.storage.chain]
     const name = new URL(stampRpcs[0]).host.split('.')[1]
     assert.equal(stampRpcs.reduce((rest, url) => rest.replaceAll(url, ''), html).toLowerCase().includes(name), false)
+})
+
+test('the built file’s footer links to the source as the script will write them, a release’s and any other, so the rows keep their height', async (t) => {
+    const release = `${config.source}/blob/main/releases/0.5/SHA256SUMS`
+    for (const [html, source] of [[build(t, '--release', '0.5'), release], [build(t), config.source]]) {
+        // what the script writes into the same two links, from the same source
+        await again('', { ...config, source })
+        assert.deepEqual(linkOf(html, 'fp-source'), [$('fp-source').getAttribute('href'), $('fp-source').textContent], source)
+        assert.deepEqual(linkOf(html, 'code-link'), [$('code-link').getAttribute('href'), $('code-link').textContent], source)
+    }
+    assert.deepEqual(linkOf(build(t, '--release', '0.5'), 'fp-source'), [release, 'github.com/FFD-Labs/twin-page/releases/0.5'])
 })
 
 test('nothing after #, from disk: no request at all, and no row for the fingerprint', async () => {
