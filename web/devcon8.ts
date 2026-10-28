@@ -74,8 +74,9 @@ type Nutrition = {
 type Description = { fruit: string | null; name: string | null; nutrition: Nutrition | null; alt: string | null; credit: string | null; manufactured: string | null; expires: string | null }
 
 // A place of the path, from the file a record names: the key the records call it by (`urn:bdf:site:india-1`), the words
-// for it, and where it is. The intake record names the file of the plant, the transport record that of its destination.
-type Point = { site: string | null; place: string | null; lat: number; lon: number }
+// for it, the code of its country when the file gives one, and where it is. The intake record names the file of the
+// plant, the transport record that of its destination.
+type Point = { site: string | null; place: string | null; country: string | null; lat: number; lon: number }
 
 // The arithmetic of block 5.
 type Co2 = {
@@ -132,25 +133,39 @@ const loaded = (loads: { trays: number | null; kg: number }[] | null = []) =>
 const sourcings: { [key: string]: string } = { first_hand: 'Bought as usual', second_grade: 'Second grade', rescued: 'Rescued surplus', undeclared: 'Not stated' }
 const cap = (value?: string) => value && value.replace(/^./, c => c.toUpperCase())
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`
-const country = (code: string) => {
+// A country by its code, IN: its name, India, or the code as it is when no region is known by it
+const regionName = (code: string) => {
     try {
-        return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code
+        return new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' }).of(code) ?? null
     } catch {
-        return code
+        return null
     }
 }
+const country = (code: string) => regionName(code) ?? code
+// The flag of a country whose code is two capital letters that name a region: the letters as the regional indicators an
+// emoji font draws as the flag, 🇮🇳 for IN, set before the words of a place. A code of another shape has no flag.
+const flag = (code: unknown) => (typeof code === 'string' && /^[A-Z]{2}$/.test(code) && regionName(code) !== null ? String.fromCodePoint(...[...code].map(c => 0x1f1e6 + c.charCodeAt(0) - 65)) : null)
+const flagged = (code: unknown, words: string | null) => {
+    const banner = words ? flag(code) : null
+    return banner ? `${banner} ${words}` : words
+}
 const farm = (f: Farm) =>
-    [[f.zone, f.country && country(f.country)].filter(Boolean).join(', '), f.variety, f.harvested && `harvested ${day(f.harvested)}`, f.kg != null && `${f.kg} kg`]
-        .filter(Boolean)
-        .join(' · ') || null
+    flagged(
+        f.country,
+        [[f.zone, f.country && country(f.country)].filter(Boolean).join(', '), f.variety, f.harvested && `harvested ${day(f.harvested)}`, f.kg != null && `${f.kg} kg`]
+            .filter(Boolean)
+            .join(' · ') || null
+    )
 // A value that is a link: to an address of the page's own making, opened beside the page; nothing a record or a file says
-// is ever one.
-const linked = (value: unknown, href: string) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(value)} ↗</a>`
-// The rows of a card: a key and a value, written as text. A third element is an address, and the value is then a link to it.
+// is ever one. Where it opens, when named, is small print under the value.
+const linked = (value: unknown, href: string, via?: string | null) =>
+    `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(value)} ${via ? `<small>${esc(via)} ↗</small>` : '↗'}</a>`
+// The rows of a card: a key and a value, written as text. A third element is an address, and the value is then a link to
+// it; a fourth names where the address opens.
 const rows = (list: (string | null | undefined)[][]) =>
     list
         .filter(([, value]) => value != null && value !== '')
-        .map(([key, value, href]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${href ? linked(value, href) : esc(value)}</span></div>`)
+        .map(([key, value, href, via]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${href ? linked(value, href, via) : esc(value)}</span></div>`)
         .join('')
 
 const EDGE_GAP = 420
@@ -585,9 +600,10 @@ const GEOJSON = 'application/geo+json'
 const coordinate = (value: unknown, most: number): value is number => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= most
 
 // Where a location file says a place is, when the page can show it: a GeoJSON Feature whose geometry is a Point, with two
-// coordinates, the longitude and then the latitude, as GeoJSON writes them, that are on Earth; and the words for the place
-// and the key of the site, each when it is a line of text. Like a description it is found out here, once, before anything
-// is painted from it. A file of another shape, or that is not JSON, says nothing.
+// coordinates, the longitude and then the latitude, as GeoJSON writes them, that are on Earth; the words for the place
+// and the key of the site, each when it is a line of text; and the code of the country, when it is two capital letters.
+// Like a description it is found out here, once, before anything is painted from it. A file of another shape, or that
+// is not JSON, says nothing.
 export function readPoint(bytes: Uint8Array): Point | null {
     try {
         const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { [key: string]: unknown } | null
@@ -597,7 +613,8 @@ export function readPoint(bytes: Uint8Array): Point | null {
         const [lon, lat] = coordinates
         if (geometry.type !== 'Point' || coordinates.length !== 2 || !coordinate(lon, 180) || !coordinate(lat, 90)) return null
         const properties = (typeof value.properties === 'object' && value.properties !== null ? value.properties : {}) as { [key: string]: unknown }
-        return { site: line(properties.site), place: line(properties.place), lat, lon }
+        const code = typeof properties.country === 'string' && /^[A-Z]{2}$/.test(properties.country) ? properties.country : null
+        return { site: line(properties.site), place: line(properties.place), country: code, lat, lon }
     } catch {
         return null
     }
@@ -612,6 +629,8 @@ export const places: { plant: Point | null; destination: Point | null } = { plan
 // numbers of the page's own making, to six decimals, and nothing the file said.
 const geo = ({ lat, lon }: Point) => `${Math.abs(lat).toFixed(4)}° ${lat < 0 ? 'S' : 'N'}, ${Math.abs(lon).toFixed(4)}° ${lon < 0 ? 'W' : 'E'}`
 const osm = ({ lat, lon }: Point) => `https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lon.toFixed(6)}#map=15/${lat.toFixed(6)}/${lon.toFixed(6)}`
+// the coordinates of a place as a row: linked to OpenStreetMap, which the small print under them names
+const geoRow = (key: string, point: Point) => [key, geo(point), osm(point), 'OpenStreetMap']
 
 // The rows a file adds to a card already on screen, set before the element given: they land as the blocks do.
 function landRows(before: Element, list: (string | null | undefined)[][]) {
@@ -623,8 +642,8 @@ function landRows(before: Element, list: (string | null | undefined)[][]) {
 
 // Where the plant is. The intake record names the file among its documents; it is asked for once the records are checked,
 // with the description, and read like it: hashed against its reference, then found out once. When it has come, the
-// Received card, already on screen, gains two rows before its check: the place, and the coordinates, linked to
-// OpenStreetMap, which is asked for nothing unless the link is tapped.
+// Received card, already on screen, gains two rows before its check: the place, behind the flag of its country when the
+// file gives the code, and the coordinates, linked to OpenStreetMap, which is asked for nothing unless the link is tapped.
 async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
     const intake = events.find(e => e.data?.phase === 'intake')
     const ref = documentOf(intake?.data, SITE_LOCATION, GEOJSON)
@@ -634,7 +653,7 @@ async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLEl
     if (!point || product !== mine) return // it did not come, or another bag is being read
     places.plant = point
     const check = cards.get(intake.ref)?.querySelector('.check')
-    if (check) landRows(check, [['Site', point.place], ['GPS', geo(point), osm(point)]])
+    if (check) landRows(check, [['Site', flagged(point.country, point.place)], geoRow('GPS', point)])
 }
 
 // ---------- the curves of a cycle: the light file its record names ----------
@@ -909,8 +928,8 @@ async function placeDestination(mine: Product, events: Event[], cards: Map<Hex, 
     const check = li?.querySelector('.card .check')
     if (!li || !check) return
     const to = [...li.querySelectorAll<HTMLElement>('.card .row')].find(row => row.querySelector('.k')?.textContent === 'To')
-    if (to) to.querySelector('.v')?.insertAdjacentHTML('beforeend', `<span class="geo late">${linked(geo(point), osm(point))}</span>`)
-    else landRows(check, [['To', geo(point), osm(point)]])
+    if (to) to.querySelector('.v')?.insertAdjacentHTML('beforeend', `<span class="geo late">${linked(geo(point), osm(point), 'OpenStreetMap')}</span>`)
+    else landRows(check, [geoRow('To', point)])
 }
 
 // The distance between two places as the crow flies, in kilometres, on a round Earth

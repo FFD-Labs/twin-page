@@ -275,13 +275,17 @@ test('the dates go under the full table as the pouch prints them, and the line i
 // ---------- where a location file says the plant is, and the documents a record names ----------
 const india = { type: 'Feature', geometry: { type: 'Point', coordinates: [85.109112, 20.235281] }, properties: { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India' } }
 
-test('a location file gives its place, its site and its coordinates, the longitude first as GeoJSON writes it', () => {
-    assert.deepEqual(readPoint(bytes(india)), { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', lat: 20.235281, lon: 85.109112 })
+test('a location file gives its place, its site, its country and its coordinates, the longitude first as GeoJSON writes it', () => {
+    assert.deepEqual(readPoint(bytes(india)), { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', country: null, lat: 20.235281, lon: 85.109112 })
     // the words are read when they are lines of text, and the point is there without them
-    assert.deepEqual(readPoint(bytes({ ...india, properties: { site: 7, place: 'x'.repeat(301) } })), { site: null, place: null, lat: 20.235281, lon: 85.109112 })
-    assert.deepEqual(readPoint(bytes({ ...india, properties: undefined })), { site: null, place: null, lat: 20.235281, lon: 85.109112 })
+    assert.deepEqual(readPoint(bytes({ ...india, properties: { site: 7, place: 'x'.repeat(301) } })), { site: null, place: null, country: null, lat: 20.235281, lon: 85.109112 })
+    assert.deepEqual(readPoint(bytes({ ...india, properties: undefined })), { site: null, place: null, country: null, lat: 20.235281, lon: 85.109112 })
     // the ends of the Earth are on it
-    assert.deepEqual(readPoint(bytes({ type: 'Feature', geometry: { type: 'Point', coordinates: [-180, -90] } })), { site: null, place: null, lat: -90, lon: -180 })
+    assert.deepEqual(readPoint(bytes({ type: 'Feature', geometry: { type: 'Point', coordinates: [-180, -90] } })), { site: null, place: null, country: null, lat: -90, lon: -180 })
+    // the country is its code of two capital letters, as the file writes it; nothing else is one
+    const country = (value) => readPoint(bytes({ ...india, properties: { ...india.properties, country: value } })).country
+    assert.equal(country('IN'), 'IN')
+    for (const value of ['in', 'India', 'IND', 'I', 7, null, ['IN']]) assert.equal(country(value), null, String(value))
 })
 
 test('what a location file says that is HTML is read as text, for the page to write as text', () => {
