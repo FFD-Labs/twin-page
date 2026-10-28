@@ -143,14 +143,17 @@ With both files in, and the transport record naming the plant's site as its orig
 
 ```
 npm ci
-npm run check          # type check
-npm test               # the check and the paint functions against a gateway, an RPC and records that lie
-npm run dev            # http://localhost:5173/devcon8.html
-npm run standalone     # dist/devcon8.html, the one file
-npm run release -- <n> # builds the file and files it as release <n>, see Releases
+npm run check           # type check
+npm test                # the check and the paint functions against a gateway, an RPC and records that lie
+npm run dev             # http://localhost:5173/devcon8.html
+npm run standalone      # dist/devcon8.html, the one file
+npm run release -- <n>  # builds the file and files it as release <n>, see Releases
+uv run scripts/fonts.py # the faces of web/public/fonts/, cut again from their masters in fonts-src/
 ```
 
 Open the built file with the network, the contract and the bag number after a hash, as in The link.
+
+The faces are cut once, when a master changes or the page writes something new in one of them, and the cuts are committed: the build takes them as they are, and needs neither uv nor the masters.
 
 ## Files
 
@@ -162,13 +165,17 @@ Open the built file with the network, the contract and the bag number after a ha
 | `src/lib.ts` | The contract's read side, the link format, downloading a record, and the Swarm reference of a file computed the way Swarm computes it, written here so anyone can read how a record is checked |
 | `src/rails.ts` | Everything the page takes from viem, by name: the read side of Ethereum and ENS, keccak256 |
 | `web/public/config.json` | What the page reads: the RPCs it asks, by network and in order, the contract it trusts, the custody address, the gateways in order, the chain and the contract the stamp of a bag is read from and the page it is looked up on, the day the storage is paid up to when the stamp cannot be read, the links, this repository and the CO₂ assumptions. Nothing about the fruit |
+| `web/public/fonts/` | The five faces the page inlines, each holding what the page draws with it: Montserrat 300 the numbers, 400 the numbers and DEVCON, 500 the capitals and the a of the chart's Pa; Fira Sans Condensed 400 every character of its master, Latin-1 and Latin Extended-A; Spline Sans Mono at 400, the one weight it is drawn at. Each character a face keeps keeps its outline, its kerning and its tabular figures |
+| `fonts-src/` | The faces as they were published, the masters the cuts are made from. Neither the page nor the build reads them |
 | `test/paint.test.mjs` | The paint functions, given a record or a product description whose values are HTML: nothing of it may become an element of the page. What a description, the location of the plant or the preview of a cycle's curves says when it is not what it should be, which documents of a record are the files it names, and that the cycle and the route are drawn from numbers alone, the names of the places as text |
 | `test/check.test.mjs` | The whole check against gateways, RPCs and a wallet that lie, fail or do not answer: bytes that fail it are never read, a record of any shape leaves the page standing, and a source that fails is not taken for an answer. The same for the files of the product: one that does not match its reference, is too heavy or is not an image is not shown, and the page is the same without it. And for the location of the plant: the Received card says it when the file is what it should be, and is as it was when it is not. And for the curves of a cycle: a preview that is not what its reference names, or not one the page can draw, is not drawn, and the full curves are never asked for. And for the route: the Delivered card draws it when both files are what they should be and the plant is the transport's origin, and is as it was when they are not |
 | `test/products.test.mjs` | The files in `products/`: each description is one the page reads, and each image a WebP of a weight the page takes |
+| `test/fonts.test.mjs` | The faces of `web/public/fonts/`, read by their cmap, against their masters and the rules that use them: each holds what the page writes in it, only the known rules ask for Montserrat 300 and 400, and every face sets text on the lines, ascent, descent and gap, of its master |
 | `test/page.mjs` | The page for the tests: the markup and the script as written, in jsdom |
 | `scripts/standalone.mjs` | Folds the page into one file: the source HTML, the fonts inlined and the marks as text, the config, the library as one compact script, the page's code with its types removed, and the policy that names those two scripts by their hash. The file carries no image, and the build stops if the config says something about the fruit |
 | `products/<fruit>/` | The files of each product, as its packing records name them: `product-description.json`, `photo.webp`, `cover.webp` and `background.webp`. They are not part of the page: whoever declares a packing puts them among its documents, and they reach Swarm with its record. Each image has a note of where it comes from beside it |
 | `scripts/plates.py` | Makes the plates from the flat art of the pouch, which is kept with the packaging and not here: `uv run scripts/plates.py <folder of the flat art> pineapple jackfruit`. The front of a pouch becomes the `cover.webp` of its product and the back its `background.webp`. Every front is placed in one frame, so that the page draws one window for all of them |
+| `scripts/fonts.py` | Cuts the faces of `web/public/fonts/` from their masters in `fonts-src/`: `uv run scripts/fonts.py`. Montserrat keeps its kerning and its tabular figures, Fira every feature but `case`, which nothing asks for, and every face its master's names, with the copyright and the licence of its typeface, and its vertical metrics |
 | `scripts/inspect.mjs` | What a browser would run in the single file, parsed as a browser parses it: one policy in the head, the two scripts it names, nothing else that runs or loads from elsewhere. The build asks it of every file it writes |
 | `test/releases.test.mjs` | The releases: every folder still holds the file its `SHA256SUMS` and its row in the table name, and a file still in use passes `scripts/inspect.mjs` |
 | `scripts/release.mjs` | Builds the file and files it as the next release, with its hash and its row in the table. It never writes over a release |
