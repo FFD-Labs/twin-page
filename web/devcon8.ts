@@ -117,7 +117,9 @@ type Event = {
     tx: string | null
 }
 
-const explorers: { [chainId: number]: string } = { 1: 'https://etherscan.io', 11155111: 'https://sepolia.etherscan.io' }
+// The explorer the page's links to the chain open, by network. The page asks it for nothing: a link is followed only when
+// it is tapped.
+const explorers: { [chainId: number]: string } = { 1: 'https://eth.blockscout.com', 11155111: 'https://eth-sepolia.blockscout.com' }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 const esc = (value: unknown) => String(value).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
@@ -1291,7 +1293,7 @@ function renderTwin(id: bigint, owner: Address | null, config: Page, explorer: s
         <div class="card holder-line" id="holder">
             ${pic}
             <p class="who">${who}</p>
-            ${explorer && state !== 'none' ? `<a class="go" href="${explorer}/nft/${contract}/${id}" target="_blank" rel="noopener">Etherscan ↗</a>` : ''}
+            ${explorer && state !== 'none' ? `<a class="go" href="${explorer}/token/${contract}/instance/${id}" target="_blank" rel="noopener">Blockscout ↗</a>` : ''}
         </div>`
     $('twin').hidden = false
     return state

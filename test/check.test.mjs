@@ -335,6 +335,19 @@ test('a twin that has a holder: its address', async (t) => {
     assert.match($('twin').textContent, /Twin held by 0x1111…1111/)
 })
 
+test('a twin that exists opens on the explorer of its network, at its instance of the contract; one not created yet links nowhere', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    net.head = put(packed())
+    await scan()
+    assert.equal($('twin').querySelector('a.go'), null)
+    net.head = put(packed())
+    net.owner = holder
+    await scan()
+    const go = $('twin').querySelector('a.go')
+    assert.equal(go.getAttribute('href'), `https://eth-sepolia.blockscout.com/token/${contract}/instance/1`)
+    assert.equal(go.textContent, 'Blockscout ↗')
+})
+
 test('an RPC that fails when asked who holds the twin: the page does not say the twin was never created', async (t) => {
     t.mock.method(console, 'error', () => {})
     net.head = put(packed())
@@ -403,7 +416,7 @@ test('another bag in the link: the page is loaded again, not left under the seal
 // every state, and once the link's contract has proved one of Fair Food Data's, the one the bag is in, on the explorer of
 // the link's network. A network the page has no explorer for, or no network at all, has no row.
 const contractRow = () => ({ shown: !$('contract').hidden, href: $('contract-link').getAttribute('href'), text: $('contract-addr').textContent })
-const onSepolia = (address) => ({ shown: true, href: `https://sepolia.etherscan.io/address/${address}`, text: address })
+const onSepolia = (address) => ({ shown: true, href: `https://eth-sepolia.blockscout.com/address/${address}`, text: address })
 // a scan with another configuration
 async function configured(given, link) {
     const inline = $('config')
