@@ -2,17 +2,19 @@
 // verification report. The looks live in devcon8.html; this file reads, checks and paints.
 //
 // Reads ./config.json. The keys of the blocks are optional: a block whose data or assumptions are missing is not painted.
-// What the page says of the fruit is not in the config: the bag's packing record names the files of its product, and the
-// page reads them from Swarm against their references, as it reads the records.
+// What the page says of the fruit, and where the plant is, is not in the config: the bag's records name the files, the
+// packing record those of its product and the intake record the location of the plant, and the page reads them from Swarm
+// against their references, as it reads the records.
 
 import { NotOfficial, abi, download, hex, parseSticker, swarmHash, type Config } from '../src/lib.ts'
 import './life-grid.ts'
-import { BaseError, ContractFunctionRevertedError, createClient, custom, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, readContract, sepolia, zeroHash, type Address, type Hex, type Transport } from '../src/rails.ts'
+import { BaseError, ContractFunctionRevertedError, createClient, custom, getChainId, getContractEvents, getEnsAvatar, getEnsName, getEnsText, http, isAddress, isAddressEqual, mainnet, parseAbi, readContract, sepolia, zeroHash, type Address, type Hex, type Transport } from '../src/rails.ts'
 
 type Farm = { zone: string | null; country: string | null; variety: string | null; harvested: string | null; kg: number | null }
 
 type Record = {
     phase: 'intake' | 'cycle' | 'packing' | 'transport'
+    // the version of a record is written in its raw record, and nowhere else on its card
     version?: number
     at: string
     plant_id?: string | null
@@ -32,6 +34,9 @@ type Record = {
     loads?: { trays: number | null; kg: number }[]
     kg_out?: number | null
     moisture_pct?: number | null
+    // the curves of a cycle, as its record names them: the SenML the page links, and the light file it draws. Read by refOf, never taken as they come
+    telemetry?: unknown
+    telemetry_preview?: unknown
     bags?: number
     bag_g?: number
     stickers?: { from: number; to: number }
@@ -42,8 +47,10 @@ type Record = {
     arrival?: string
     carrier?: string | null
     tracking?: string | null
-    // the files behind the record, as it names them: read by productFiles, never taken as they come
+    // the files behind the record, as it names them: read by documentOf, never taken as they come
     documents?: unknown
+    // the postage batch the record was stored with, as it names it: read by stampOf, never taken as it comes
+    stamp?: unknown
     inputs?: Hex[]
 }
 
@@ -66,6 +73,10 @@ type Nutrition = {
 // a day (`2026-09-24`), and null when the description leaves one out or writes it another way.
 type Description = { fruit: string | null; name: string | null; nutrition: Nutrition | null; alt: string | null; credit: string | null; manufactured: string | null; expires: string | null }
 
+// A place of the path, from the file a record names: the key the records call it by (`urn:bdf:site:india-1`), the words
+// for it, and where it is. The intake record names the file of the plant.
+type Point = { site: string | null; place: string | null; lat: number; lon: number }
+
 // The arithmetic of block 5.
 type Co2 = {
     factor_kg_per_kg: number
@@ -77,8 +88,11 @@ type Co2 = {
     closing?: string | null
 }
 
-// The records' storage on Swarm: the postage batch they live on and the day it is paid up to.
-type Storage = { batch?: Hex; until?: string }
+// The records' storage on Swarm. The stamp (postage batch) they live on is not here: the bag's record names it. Here is
+// where it is read from, the chain and the PostageStamp contract, with the seconds of one of that chain's blocks; the day
+// written by hand, which stands until the stamp says better; and the page where a stamp is looked up by its id, with
+// {stamp} where the id goes.
+type Storage = { until?: string; chain?: number; contract?: Address; block_s?: number; stamp_page?: string }
 
 type Page = Config & {
     gateways?: string[]
@@ -129,10 +143,12 @@ const farm = (f: Farm) =>
     [[f.zone, f.country && country(f.country)].filter(Boolean).join(', '), f.variety, f.harvested && `harvested ${day(f.harvested)}`, f.kg != null && `${f.kg} kg`]
         .filter(Boolean)
         .join(' · ') || null
+// The rows of a card: a key and a value, written as text. A third element is an address of the page's own making, and the
+// value is then a link to it, opened beside the page; nothing a record or a file says is ever one.
 const rows = (list: (string | null | undefined)[][]) =>
     list
         .filter(([, value]) => value != null && value !== '')
-        .map(([key, value]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${esc(value)}</span></div>`)
+        .map(([key, value, href]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(value)} ↗</a>` : esc(value)}</span></div>`)
         .join('')
 
 const EDGE_GAP = 420
@@ -272,6 +288,10 @@ async function secondOpinion(others: Source[], chainId: number, contract: Addres
 
 // ---------- the record cards (block 4) ----------
 
+// The two minima of a cycle, as its card names them: rows at first, and the figures above the chart once the curves are drawn.
+const COLDEST = 'Coldest'
+const LOWEST = 'Lowest pressure'
+
 const steps = {
     intake: (r: Record) => ({
         title: 'Received',
@@ -294,8 +314,8 @@ const steps = {
             ['Duration', hours(r.start, r.end)],
             ['Loaded', loaded(r.loads)],
             ['Dried out', r.kg_out != null ? `${r.kg_out} kg` : null],
-            ['Coldest', r.min_temperature_c != null ? `${r.min_temperature_c} °C` : null],
-            ['Lowest pressure', r.min_pressure_pa != null ? `${r.min_pressure_pa} Pa` : null],
+            [COLDEST, r.min_temperature_c != null ? `${r.min_temperature_c} °C` : null],
+            [LOWEST, r.min_pressure_pa != null ? `${r.min_pressure_pa} Pa` : null],
             ['Moisture left', r.moisture_pct != null ? `${r.moisture_pct} %` : null],
             ['Energy', r.kwh != null ? `${r.kwh} kWh` : null],
             ['Cycle', r.plant_id]
@@ -351,6 +371,25 @@ export function read(text: string): { data: Record | null; inputs: Hex[] } {
 // The most of a record's text a card shows when the page could not read it as a record.
 const RAW_SHOWN = 4000
 
+// ---------- the glyphs of the path ----------
+
+// One per record, at the head of its card, drawn from the geometry of the pack: the hexagon of the crystal and the diamond
+// of its ornament. Received is the fruit in its crate; Freeze-dried, the crystal grown from the hexagon; Packed, the pouch
+// with its window; Delivered, the route out of the diamond to where the bag went. Filled in the three tints of the pouch's
+// crystal (ga, gb, gc) and outlined in the deep one (gs). They are the page's own markup: nothing of a record is in them.
+const HEXAGON_MID = 'M15.12 13.8L12 15.6L8.88 13.8L8.88 10.2L12 8.4L15.12 10.2Z'
+const HEXAGON_LOW = 'M15.12 16L12 17.8L8.88 16L8.88 12.4L12 10.6L15.12 12.4Z'
+const CRYSTAL =
+    'M12 8.6V2.6M12 5.4l-1.99-1.15M12 5.4l1.99-1.15M14.94 10.3l5.2-3M17.72 8.7V6.4M17.72 8.7l1.99 1.15M14.94 13.7l5.2 3M17.72 15.3l1.99-1.15M17.72 15.3v2.3M12 15.4v6M12 18.6l1.99 1.15M12 18.6l-1.99 1.15M9.06 13.7l-5.2 3M6.28 15.3v2.3M6.28 15.3l-1.99-1.15M9.06 10.3l-5.2-3M6.28 8.7l-1.99 1.15M6.28 8.7V6.4'
+const GLYPHS: { [phase: string]: string } = {
+    intake: '<path class="gb" d="M4.2 11.5h15.6l-1.5 8.3H5.7z"/><path class="ga" opacity=".5" d="M7.1 11.5h9.8l-.9 5H8z"/><circle class="ga" cx="9.4" cy="7.6" r="3.2"/><circle class="gc" cx="14.9" cy="8.1" r="2.9"/><path class="gs" d="M14.4 5.2c.6-1.5 1.9-2.3 3.5-2.2"/>',
+    cycle: `<path class="ga" d="${HEXAGON_MID}"/><path class="gs gw" d="${CRYSTAL}"/><path class="gc" d="M12 10.6l1.4 1.4-1.4 1.4-1.4-1.4z"/>`,
+    packing: `<path class="gb" d="M7.2 3.6h9.6l1.8 2.6v12.9a1.5 1.5 0 0 1-1.5 1.5H6.9a1.5 1.5 0 0 1-1.5-1.5V6.2z"/><path class="ga" d="M5.6 8.2h12.8v1.2H5.6z"/><path class="ga" d="${HEXAGON_LOW}"/><path class="gc" d="M12 12.8l1.4 1.4-1.4 1.4-1.4-1.4z"/>`,
+    transport:
+        '<path class="gc" d="M5 16.2l2.2 2.2-2.2 2.2-2.2-2.2z"/><path class="gs" stroke-dasharray="2.4 2.2" d="M6.9 18.4c3.4 0 3.1-5.4 6.4-5.4 2.3 0 2.6 1.8 4.7 1.8"/><path class="gb" d="M19 5.3a3.1 3.1 0 0 1 3.1 3.1c0 2.4-3.1 5.8-3.1 5.8s-3.1-3.4-3.1-5.8A3.1 3.1 0 0 1 19 5.3z"/><circle class="ga" cx="19" cy="8.4" r="1.3"/>'
+}
+const glyph = (phase: string) => (Object.hasOwn(GLYPHS, phase) ? `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[phase]}</svg>` : '')
+
 function card(event: Event, explorer: string | undefined) {
     const data = event.data
     // A record that did not pass the check was not read: its card carries the reference the page asked for and nothing of what arrived.
@@ -359,27 +398,32 @@ function card(event: Event, explorer: string | undefined) {
         <h2>Record not shown</h2>
         <p class="check pending">Checking against its Ethereum anchor…</p>
         <details><summary>Reference</summary><p>Swarm <code>${esc(event.ref)}</code></p></details>`
-    const links = `
+    // the check and the links of a record that was read: its anchor, its file, and what else the record names (`more`)
+    const links = (more = '') => `
         <p class="check pending">Checking against its Ethereum anchor…</p>
         <div class="links">
             ${explorer && event.block ? `<a class="btn anchor" href="${esc(`${explorer}/block/${event.block}`)}" target="_blank" rel="noopener">Ethereum anchor ↗</a>` : ''}
-            <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>
+            <a class="btn" href="${esc(`${event.gateway}/bytes/${event.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>${more}
         </div>`
     // A record that passed the check and is not one the page knows how to show: what it says, as it was written, and no rows.
     if (!data) {
         const raw = event.raw ?? ''
         return `
         <h2>Record not understood</h2>
-        <div class="chips"><span class="chip wait">A kind this page does not know</span></div>${links}
+        <div class="chips"><span class="chip wait">A kind this page does not know</span></div>${links()}
         <details><summary>Raw record</summary><pre>${esc(raw.length > RAW_SHOWN ? `${raw.slice(0, RAW_SHOWN)}…` : raw)}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
     }
     const { title, twin, rows: list } = steps[data.phase](data)
-    const correction = typeof data.version === 'number' && data.version > 1 ? `<span class="chip wait">Correction v${esc(data.version)}</span>` : ''
+    // A cycle names the SenML of its curves, which the page links and never downloads: a line in the small print of the
+    // card, beside the raw record, there when the record names a reference, from the gateway that served the record, and
+    // nowhere otherwise. The curves themselves come later, drawn from the light file the record also names (drawCurves).
+    const telemetry = data.phase === 'cycle' ? refOf(data.telemetry) : null
+    const curves = telemetry ? `<p class="quiet"><a href="${esc(`${event.gateway}/bytes/${telemetry.slice(2)}`)}" target="_blank" rel="noopener">Full curve data ↗</a></p>` : ''
     return `
-        <h2>${esc(title)}</h2>
+        <h2>${glyph(data.phase)}${esc(title)}</h2>
         ${twin ? '<p class="twin-born">This bag’s twin starts here.</p>' : ''}
-        ${correction ? `<div class="chips">${correction}</div>` : ''}
-        ${rows(list)}${links}
+        ${rows(list)}${links()}
+        ${curves}
         <details><summary>Raw record</summary><pre>${esc(JSON.stringify(data, null, 2))}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
 }
 
@@ -426,13 +470,34 @@ function markCheck(li: HTMLElement, event: Event) {
     swap(check as HTMLElement, event.verified ? `✓ Matches its Ethereum anchor of ${date(event.at!)}` : '✗ Does not match any Ethereum anchor')
 }
 
+// ---------- the files a record names ----------
+
+// A record names files among its documents, each by its name, its type and its reference. The page knows the ones it reads
+// by their name and the type each must declare, and looks for each in the record that names it: the packing record names
+// the files of the product, the intake record the location of the plant. A document under another name, of another type,
+// or whose reference is not one, is not that file, and the page does not ask for it; a record that was not read, or not
+// understood, names nothing.
+export function documentOf(record: Record | null | undefined, name: string, type: string): Hex | null {
+    const documents = record?.documents
+    if (!Array.isArray(documents)) return null
+    for (const entry of documents as unknown[]) {
+        if (typeof entry !== 'object' || entry === null) continue
+        const { name: named, type: typed, ref } = entry as { name?: unknown; type?: unknown; ref?: unknown }
+        if (named !== name || typed !== type) continue
+        try {
+            return hex(ref)
+        } catch {
+            // not a reference: there is nothing to ask a gateway for, and the next of that name may be one
+        }
+    }
+    return null
+}
+
 // ---------- the product: the files the packing record names ----------
 
-// What the page says of the fruit hangs from the bag's packing record: among its documents, four files the page finds by
-// their name, each with the type it must declare. The description says what the bag holds; the other three are the
-// photograph of the fruit and the two illustrations of the twin, taken from the art of its pouch: the cover, which opens
-// the page, and the background of the label. A document under another name, of another type, or whose reference is not
-// one, is not a file of the product, and the page does not ask for it.
+// What the page says of the fruit hangs from the bag's packing record: among its documents, four files. The description
+// says what the bag holds; the other three are the photograph of the fruit and the two illustrations of the twin, taken
+// from the art of its pouch: the cover, which opens the page, and the background of the label.
 const DESCRIPTION = 'product-description.json'
 const PHOTO = 'photo.webp'
 const COVER = 'cover.webp'
@@ -441,17 +506,10 @@ const PRODUCT_FILES: { [name: string]: string } = { [DESCRIPTION]: 'application/
 
 export function productFiles(events: Event[]) {
     const files = new Map<string, Hex>()
-    const documents = events.find(e => e.data?.phase === 'packing')?.data?.documents
-    if (!Array.isArray(documents)) return files
-    for (const entry of documents as unknown[]) {
-        if (typeof entry !== 'object' || entry === null) continue
-        const { name, type, ref } = entry as { name?: unknown; type?: unknown; ref?: unknown }
-        if (typeof name !== 'string' || !Object.hasOwn(PRODUCT_FILES, name) || files.has(name) || type !== PRODUCT_FILES[name]) continue
-        try {
-            files.set(name, hex(ref))
-        } catch {
-            // not a reference: there is nothing to ask a gateway for
-        }
+    const packing = events.find(e => e.data?.phase === 'packing')?.data
+    for (const [name, type] of Object.entries(PRODUCT_FILES)) {
+        const ref = documentOf(packing, name, type)
+        if (ref) files.set(name, ref)
     }
     return files
 }
@@ -515,6 +573,310 @@ function readProduct(gateways: string[], events: Event[]): Product {
     const ref = files.get(DESCRIPTION)
     const description = ref ? fileOf(gateways, ref).then(bytes => (bytes ? readDescription(bytes) : null)) : Promise.resolve(null)
     return { files, gateways, description }
+}
+
+// ---------- the plant: where the intake record says it is ----------
+
+const SITE_LOCATION = 'site-location.geojson'
+const GEOJSON = 'application/geo+json'
+// a coordinate: a number, finite, within so many degrees of zero
+const coordinate = (value: unknown, most: number): value is number => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= most
+
+// Where a location file says a place is, when the page can show it: a GeoJSON Feature whose geometry is a Point, with two
+// coordinates, the longitude and then the latitude, as GeoJSON writes them, that are on Earth; and the words for the place
+// and the key of the site, each when it is a line of text. Like a description it is found out here, once, before anything
+// is painted from it. A file of another shape, or that is not JSON, says nothing.
+export function readPoint(bytes: Uint8Array): Point | null {
+    try {
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { [key: string]: unknown } | null
+        if (typeof value !== 'object' || value === null || value.type !== 'Feature') return null
+        const geometry = (typeof value.geometry === 'object' && value.geometry !== null ? value.geometry : {}) as { [key: string]: unknown }
+        const coordinates = Array.isArray(geometry.coordinates) ? (geometry.coordinates as unknown[]) : []
+        const [lon, lat] = coordinates
+        if (geometry.type !== 'Point' || coordinates.length !== 2 || !coordinate(lon, 180) || !coordinate(lat, 90)) return null
+        const properties = (typeof value.properties === 'object' && value.properties !== null ? value.properties : {}) as { [key: string]: unknown }
+        return { site: line(properties.site), place: line(properties.place), lat, lon }
+    } catch {
+        return null
+    }
+}
+
+// The places of the path, kept as each file comes, with their coordinates: the plant, from the file the intake record
+// names, and in time the destination of the transport, for a map to join them. Another bag starts from none.
+export const places: { plant: Point | null } = { plant: null }
+
+// The coordinates as a visitor reads them, 20.2353° N, 85.1091° E, and as OpenStreetMap takes them: in the address only
+// numbers of the page's own making, to six decimals, and nothing the file said.
+const geo = ({ lat, lon }: Point) => `${Math.abs(lat).toFixed(4)}° ${lat < 0 ? 'S' : 'N'}, ${Math.abs(lon).toFixed(4)}° ${lon < 0 ? 'W' : 'E'}`
+const osm = ({ lat, lon }: Point) => `https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lon.toFixed(6)}#map=15/${lat.toFixed(6)}/${lon.toFixed(6)}`
+
+// Where the plant is. The intake record names the file among its documents; it is asked for once the records are checked,
+// with the description, and read like it: hashed against its reference, then found out once. When it has come, the
+// Received card, already on screen, gains two rows before its check: the place, and the coordinates, linked to
+// OpenStreetMap, which is asked for nothing unless the link is tapped.
+async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
+    const intake = events.find(e => e.data?.phase === 'intake')
+    const ref = documentOf(intake?.data, SITE_LOCATION, GEOJSON)
+    if (!intake || !ref) return
+    const bytes = await fileOf(mine.gateways, ref)
+    const point = bytes ? readPoint(bytes) : null
+    if (!point || product !== mine) return // it did not come, or another bag is being read
+    places.plant = point
+    const check = cards.get(intake.ref)?.querySelector('.check')
+    if (!check) return
+    // the rows land as the blocks do
+    const late = document.createElement('template')
+    late.innerHTML = rows([['Site', point.place], ['GPS', geo(point), osm(point)]])
+    late.content.querySelectorAll('.row').forEach(row => row.classList.add('late'))
+    check.before(late.content)
+}
+
+// ---------- the curves of a cycle: the light file its record names ----------
+
+// A cycle record names its curves twice: `telemetry`, the readings of the machine as SenML, about 2 MB, which the page
+// links and never downloads, and `telemetry_preview`, the same curves in columns, one clock and one list of values per
+// series, which the Notary publishes for the page. The page draws the second, read like a file of the product: hashed
+// against its reference, found out once, and drawn from its numbers alone. The names of its series are matched against
+// the ones the page knows, and nothing written in the file reaches the markup.
+const PREVIEW_SCHEMA = 'ffd/telemetry-preview/1.0'
+// a preview carries at most 600 points per series; the page draws up to this many
+const POINTS_MOST = 2000
+// the series the page draws, each in the unit the SenML gives it: the chamber, its pressure and up to eight shelves
+const CHAMBER = 'chamber_temperature'
+const PRESSURE = 'chamber_pressure'
+const SHELVES = Array.from({ length: 8 }, (_, i) => `shelf_${i + 1}_temperature`)
+const SERIES: { [name: string]: string } = { [CHAMBER]: 'Cel', [PRESSURE]: 'Pa', ...Object.fromEntries(SHELVES.map(name => [name, 'Cel'])) }
+type Preview = { t: number[]; series: Map<string, (number | null)[]> }
+
+// A Swarm reference a record names, or null: what is not one is asked of no gateway and linked nowhere.
+const refOf = (value: unknown) => {
+    try {
+        return hex(value)
+    } catch {
+        return null
+    }
+}
+
+// What a preview says, when the page can draw it: a clock of two to 2000 finite seconds that never goes back and does
+// advance, and for each series the page knows, in its unit, one number or null per tick of the clock. A series the page
+// does not know, or one in another unit, is passed over; one it knows whose values do not fit the clock makes the file
+// one the page does not draw. The cycle, the site and the device the file names are not read: the record says them.
+export function readPreview(bytes: Uint8Array): Preview | null {
+    try {
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { [key: string]: unknown } | null
+        if (typeof value !== 'object' || value === null || value.schema !== PREVIEW_SCHEMA) return null
+        const t = value.t
+        if (!Array.isArray(t) || t.length < 2 || t.length > POINTS_MOST || !Array.isArray(value.series)) return null
+        if (!t.every((s, i) => typeof s === 'number' && Number.isFinite(s) && (i === 0 || s >= t[i - 1])) || t[t.length - 1] <= t[0]) return null
+        const series = new Map<string, (number | null)[]>()
+        for (const entry of value.series as unknown[]) {
+            if (typeof entry !== 'object' || entry === null) continue
+            const { n, u, v } = entry as { n?: unknown; u?: unknown; v?: unknown }
+            if (typeof n !== 'string' || !Object.hasOwn(SERIES, n) || series.has(n) || (u != null && u !== SERIES[n])) continue
+            if (!Array.isArray(v) || v.length !== t.length || !v.every(x => x === null || (typeof x === 'number' && Number.isFinite(x)))) return null
+            series.set(n, v as (number | null)[])
+        }
+        return series.size ? { t: t as number[], series } : null
+    } catch {
+        return null
+    }
+}
+
+// The chart: a box in units of its own, scaled to the width of the card, with the plot inside margins that hold the marks
+const CHART = { w: 300, h: 172, x0: 30, x1: 266, y0: 16, y1: 150 }
+// the steps a scale of °C may take, and the ones a scale of hours may
+const DEGREE_STEPS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000]
+const HOUR_STEPS = [0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 24, 48, 96, 168, 336, 720]
+// a number as a mark reads it, without the noise of the arithmetic of the scale
+const num = (value: number) => String(Number(value.toPrecision(12)))
+// a pressure as the scale of Pa marks it: 20, 500, 1k, 100k
+const pascal = (value: number) => (value < 1000 ? num(value) : value < 1e6 ? `${num(value / 1000)}k` : value < 1e9 ? `${num(value / 1e6)}M` : `1e${Math.round(Math.log10(value))}`)
+const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
+// the step of a scale: the first of the steps it may take that divides the span into `parts` or fewer, else a round number that does
+function stepOf(span: number, parts: number, steps: number[]) {
+    const least = span / parts
+    const fit = steps.find(step => step >= least)
+    if (fit) return fit
+    const pow = 10 ** Math.floor(Math.log10(least))
+    return [1, 2, 2.5, 5, 10].map(m => m * pow).find(step => step >= least) ?? least
+}
+const given = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const numbers = (values: (number | null)[]) => values.filter((v): v is number => v !== null)
+const minOf = (values: number[]) => values.reduce((a, b) => Math.min(a, b), Infinity)
+const maxOf = (values: number[]) => values.reduce((a, b) => Math.max(a, b), -Infinity)
+// where a series is lowest: the index of its smallest number
+const lowestAt = (values: (number | null)[]) => {
+    let at = -1
+    values.forEach((v, i) => {
+        if (v !== null && (at < 0 || v < values[at]!)) at = i
+    })
+    return at
+}
+// the line of a series: its numbers joined in the order of the clock, lifted where the series did not read
+function curve(values: (number | null)[], x: number[], y: (v: number) => number | null) {
+    let d = ''
+    let pen = false
+    values.forEach((v, i) => {
+        const py = v === null ? null : y(v)
+        if (py === null) return void (pen = false)
+        d += `${pen ? 'L' : 'M'}${x[i]!.toFixed(1)} ${py.toFixed(1)}`
+        pen = true
+    })
+    return d
+}
+// The ground under a series: each unbroken run of its line, closed down to the base of the chart
+function band(values: (number | null)[], x: number[], y: (v: number) => number | null, base: number) {
+    let d = ''
+    let run: string[] = []
+    let from = -1
+    const close = (to: number) => {
+        if (run.length) d += `M${run.join('L')}L${x[to]!.toFixed(1)} ${base.toFixed(1)}L${x[from]!.toFixed(1)} ${base.toFixed(1)}Z`
+        run = []
+    }
+    values.forEach((v, i) => {
+        const py = v === null ? null : y(v)
+        if (py === null) return close(i - 1)
+        if (!run.length) from = i
+        run.push(`${x[i]!.toFixed(1)} ${py.toFixed(1)}`)
+    })
+    close(values.length - 1)
+    return d
+}
+const caption = (x: number, y: number, label: string, cls: string, anchor: 'start' | 'middle' | 'end' = 'start') =>
+    `<text class="${cls}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}">${esc(label)}</text>`
+
+// The cycle drawn: the chamber temperature and the shelves on a scale of °C at the left, the pressure on a scale of Pa
+// at the right in powers of ten, both over the hours since the cycle began, with three or four marks per scale, and the
+// two minima the record declares, each set on its curve where the curve is lowest. The markup is the page's own words
+// and numbers: nothing written in the file, or in the record, reaches it. Empty when the file has nothing to draw.
+export function drawCycle(preview: Preview, record: Record): string {
+    const { w, h, x0, x1, y0, y1 } = CHART
+    const clock = preview.t.map(s => s / 3600)
+    const h0 = clock[0]!, h1 = clock[clock.length - 1]!
+    const sx = (hr: number) => x0 + ((hr - h0) / (h1 - h0)) * (x1 - x0)
+    const x = clock.map(sx)
+    const chamber = preview.series.get(CHAMBER) ?? null
+    const shelves = SHELVES.map(name => preview.series.get(name)).filter((v): v is (number | null)[] => v !== undefined)
+    const pressure = preview.series.get(PRESSURE) ?? null
+    const pascals = pressure ? numbers(pressure).filter(p => p > 0) : []
+    // the minima the record declares, when they are numbers and there is a curve to set them on
+    const coldest = chamber && numbers(chamber).length && given(record.min_temperature_c) ? record.min_temperature_c : null
+    const lowestPa = pascals.length && given(record.min_pressure_pa) && record.min_pressure_pa > 0 ? record.min_pressure_pa : null
+    // the scale of °C: what the chamber and the shelves read, and the coldest, rounded out to a step of the scale
+    const degrees = [...(chamber ? numbers(chamber) : []), ...shelves.flatMap(numbers), ...(coldest === null ? [] : [coldest])]
+    let left: { lo: number; hi: number; ticks: number[] } | null = null
+    if (degrees.length) {
+        const min = minOf(degrees), max = maxOf(degrees)
+        const step = stepOf(max - min, 3, DEGREE_STEPS)
+        const lo = Math.floor(min / step) * step
+        const hi = Math.max(Math.ceil(max / step) * step, lo + step)
+        const count = Math.round((hi - lo) / step)
+        if (hi > lo && count <= 12) left = { lo, hi, ticks: Array.from({ length: count + 1 }, (_, i) => lo + i * step) }
+    }
+    // the scale of Pa, in powers of ten: from a little under the lowest reading, or the lowest declared, to a little over the highest
+    let right: { lo: number; hi: number; ticks: number[] } | null = null
+    if (pascals.length) {
+        const min = Math.log10(minOf([...pascals, ...(lowestPa === null ? [] : [lowestPa])])), max = Math.log10(maxOf(pascals))
+        const pad = Math.max((max - min) * 0.05, 0.05)
+        const lo = min - pad, hi = max + pad
+        // the marks, in powers of ten: the decades inside the scale or, when it holds fewer than three, the 1, 2 and 5 of each
+        const inside = (marks: number[]) => marks.filter(mark => mark >= lo && mark <= hi)
+        const decades = range(Math.floor(lo), Math.ceil(hi))
+        let ticks = inside(decades)
+        if (ticks.length < 3) ticks = inside(decades.flatMap(k => [k, k + Math.log10(2), k + Math.log10(5)]))
+        const every = Math.max(1, Math.ceil(ticks.length / 4))
+        right = { lo, hi, ticks: ticks.filter((_, i) => i % every === 0) }
+    }
+    if (!left && !right) return ''
+    const scale = (lo: number, hi: number) => (v: number) => y1 - ((v - lo) / (hi - lo)) * (y1 - y0)
+    const yT = left ? scale(left.lo, left.hi) : null
+    const yP = right ? scale(right.lo, right.hi) : null
+    // the marks: the hours along the bottom, the degrees at the left with a faint line across, the powers of ten at the right
+    const axis = [`M${x0} ${y1}H${x1}`], grid: string[] = [], marks: string[] = []
+    const hourStep = stepOf(h1 - h0, 4, HOUR_STEPS)
+    const firstHour = Math.ceil(h0 / hourStep) * hourStep
+    for (let i = 0; i < 12; i++) {
+        const hr = firstHour + i * hourStep
+        if (hr > h1 + 1e-9) break
+        axis.push(`M${sx(hr).toFixed(1)} ${y1}v3`)
+        marks.push(caption(sx(hr), h - 4, hr + hourStep > h1 ? `${num(hr)} h` : num(hr), 'hour', 'middle'))
+    }
+    if (left && yT) {
+        marks.push(caption(x0 - 4, y0 - 7, '°C', 'unit', 'end'))
+        for (const v of left.ticks) {
+            grid.push(`M${x0} ${yT(v).toFixed(1)}H${x1}`)
+            marks.push(caption(x0 - 4, yT(v) + 3, num(v), 'degree', 'end'))
+        }
+    }
+    if (right && yP) {
+        marks.push(caption(x1 + 4, y0 - 7, 'Pa', 'unit'))
+        for (const k of right.ticks) {
+            axis.push(`M${x1} ${yP(k).toFixed(1)}h3`)
+            marks.push(caption(x1 + 5, yP(k) + 3, pascal(10 ** k), 'pascal'))
+        }
+    }
+    // the lines: the ground under the chamber, then the shelves behind, the pressure, and the chamber in front
+    const lines: string[] = []
+    if (yT && chamber) lines.push(`<path class="fill" d="${band(chamber, x, yT, y1)}"/>`)
+    if (yT) for (const shelf of shelves) lines.push(`<path class="line shelf" d="${curve(shelf, x, yT)}"/>`)
+    if (yP && pressure) lines.push(`<path class="line press" d="${curve(pressure, x, p => (p > 0 ? yP(Math.log10(p)) : null))}"/>`)
+    if (yT && chamber) lines.push(`<path class="line temp" pathLength="1" d="${curve(chamber, x, yT)}"/>`)
+    // the two minima the record declares: each named above the chart, with the hour its curve was lowest, and marked on
+    // the curve there, the coldest as the filled diamond and the lowest pressure as the ring
+    const marksOn: string[] = [], stats: string[] = []
+    const diamond = (cx: number, cy: number) => `<path class="min dot" d="M${cx.toFixed(1)} ${(cy - 3.6).toFixed(1)}l3.6 3.6-3.6 3.6-3.6-3.6z"/>`
+    const ring = (cx: number, cy: number) => `<circle class="min ring" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.1"/>`
+    const hour = (at: number) => num(Number(clock[at]!.toFixed(clock[at]! < 10 ? 1 : 0)))
+    const stat = (row: string, mark: string, value: string, at: number) =>
+        `<div class="stat" data-row="${esc(row)}"><dt><i class="mk ${mark}"></i>${esc(row)}</dt><dd><b>${esc(value)}</b><small>at ${hour(at)} h</small></dd></div>`
+    if (coldest !== null && chamber && yT) {
+        const at = lowestAt(chamber)
+        marksOn.push(diamond(x[at]!, yT(coldest)))
+        stats.push(stat(COLDEST, 'mk-cold', `${num(coldest)} °C`, at))
+    }
+    if (lowestPa !== null && pressure && yP) {
+        const at = lowestAt(pressure.map(p => (p !== null && p > 0 ? p : null)))
+        marksOn.push(ring(x[at]!, yP(Math.log10(lowestPa))))
+        stats.push(stat(LOWEST, 'mk-low', `${num(lowestPa)} Pa`, at))
+    }
+    // the key under the chart names what is drawn, and so does the chart to whoever cannot see it
+    const drawn: [boolean, string, string, string][] = [
+        [!!chamber && !!yT && numbers(chamber).length > 0, 'temp', 'Chamber', 'the chamber temperature'],
+        [!!yT && shelves.some(shelf => numbers(shelf).length > 0), 'shelf', 'Shelves', 'the shelves'],
+        [!!pressure && !!yP, 'press', 'Pressure', 'the pressure']
+    ]
+    const there = drawn.filter(([is]) => is)
+    return `<figure class="curves">
+        ${stats.length ? `<dl class="minima">${stats.join('')}</dl>` : ''}
+        <svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="The cycle over ${num(Number((h1 - h0).toFixed(1)))} hours: ${there.map(([, , , said]) => said).join(', ')}">
+            ${grid.length ? `<path class="axis grid" d="${grid.join('')}"/>` : ''}
+            <path class="axis" d="${axis.join('')}"/>
+            ${marks.join('')}
+            ${lines.join('')}
+            ${marksOn.join('')}
+        </svg>
+        <figcaption class="key">${there.map(([, cls, name]) => `<span><i class="sw ${cls}"></i>${name}</span>`).join('')}</figcaption>
+    </figure>`
+}
+
+// The curves of a cycle, drawn in its card once their file has come: asked for after the check, with the description of
+// the product, and set between the rows and the check line of the card, which is already on screen. Nothing is drawn of
+// a file that does not come, that is not what its reference names or that is not a preview the page can read, and
+// nothing of one that comes once another bag is being read.
+async function drawCurves(mine: Product, event: Event, li: HTMLElement) {
+    const data = event.data
+    const ref = refOf(data?.telemetry_preview)
+    if (!ref || !data) return
+    const bytes = await fileOf(mine.gateways, ref)
+    const preview = bytes && readPreview(bytes)
+    if (!preview || product !== mine) return
+    const drawn = drawCycle(preview, data)
+    if (!drawn) return
+    li.querySelector('.card .check')?.insertAdjacentHTML('beforebegin', drawn)
+    // the two minima now stand above the chart, with the hour they came: their rows give way to them
+    const named = new Set([...li.querySelectorAll<HTMLElement>('.minima .stat')].map(stat => stat.dataset.row))
+    for (const row of li.querySelectorAll<HTMLElement>('.card .row')) if (named.has(row.querySelector('.k')?.textContent ?? '')) row.remove()
+    requestAnimationFrame(() => requestAnimationFrame(() => li.querySelector('.curves')?.classList.add('drawn')))
 }
 
 // ---------- the fruit (block 2) ----------
@@ -921,13 +1283,68 @@ function undress() {
     for (const url of [...held]) release(url)
 }
 
-// ---------- stored until: the date the records' storage is paid up to ----------
+// ---------- stored until: the day the records' storage is paid up to, read from the stamp that pays for it ----------
 
-// The date comes with the configuration (storage.until), kept by whoever keeps the postage batch paid; the page reads it from nowhere else.
-function showStoredUntil(config: Page) {
-    if (!config.storage?.until) return
-    $('alive-until').textContent = day(config.storage.until)
-    $('alive').hidden = false
+// A postage batch id: 64 hex digits in lowercase, with no 0x, as a record names it.
+const STAMP = /^[0-9a-f]{64}$/
+// The stamp the bag's record names, `stamp`: the postage batch its records were stored with, which anyone can look up,
+// and pay for, by its id. Only the head record's, and only in the form a stamp has; anything else names no stamp.
+const stampOf = (head: Record | null | undefined) => (typeof head?.stamp === 'string' && STAMP.test(head.stamp) ? head.stamp : null)
+
+// What the page asks the PostageStamp contract: what is left on the batch, per chunk, and the price of a chunk per block.
+const stampAbi = parseAbi(['function remainingBalance(bytes32 batchId) view returns (uint256)', 'function lastPrice() view returns (uint64)'])
+
+// The day the stamp is paid up to, read from the chain it lives on (storage.chain: Gnosis) through the RPCs the
+// configuration lists for that chain, in order, and never through a wallet: a wallet is on the network of the bag, and
+// the page does not ask it to change. What is left divided by the price is blocks, and a block is storage.block_s
+// seconds, counted from now. Null when the batch has run out (the contract says 0, or reverts), when no RPC answers, or
+// when the one that answers is on another network: the day written in the configuration then stands.
+async function stampUntil(config: Page, stamp: string): Promise<Date | null> {
+    const storage: Storage = config.storage ?? {}
+    const rpcs = storage.chain != null ? (config.rpcs?.[storage.chain] ?? []) : []
+    if (!storage.contract || !isAddress(storage.contract) || !storage.block_s) return null
+    for (const url of rpcs) {
+        try {
+            const client = createClient({ transport: http(url, { retryCount: 1, timeout: 8_000 }), ...ownRpc })
+            if ((await getChainId(client)) !== storage.chain) continue
+            const contract = { address: storage.contract, abi: stampAbi } as const
+            const [remaining, price] = await Promise.all([
+                readContract(client, { ...contract, functionName: 'remainingBalance', args: [`0x${stamp}`] }),
+                readContract(client, { ...contract, functionName: 'lastPrice' })
+            ])
+            if (!remaining || !price) return null
+            const until = new Date(Date.now() + Number(remaining / price) * storage.block_s * 1000)
+            return Number.isNaN(until.getTime()) ? null : until
+        } catch (error) {
+            console.error(error)
+        }
+    }
+    return null
+}
+
+// The line under the seal: "Stored until" and a day. The day written in the configuration (storage.until) goes up at
+// once and stands when nothing better comes; the stamp's takes its place when it comes, most often before the line is
+// in sight. With a stamp, and a page to look one up on (storage.stamp_page, an https address with {stamp} where the id
+// goes), the line is a link to that page for that stamp; without either it is a line and no link.
+function showStoredUntil(config: Page, stamp: string | null, until: Promise<Date | null> | null) {
+    const line = $<HTMLAnchorElement>('alive')
+    const page = config.storage?.stamp_page
+    line.removeAttribute('href')
+    line.removeAttribute('title')
+    if (stamp && page?.startsWith('https://') && page.includes('{stamp}')) {
+        line.href = page.replace('{stamp}', stamp)
+        line.title = `Swarm stamp ${stamp}`
+    }
+    const show = (when: string) => {
+        if (line.hidden) $('alive-until').textContent = when
+        else swap($('alive-until'), when)
+        line.hidden = false
+    }
+    if (config.storage?.until) show(day(config.storage.until))
+    const mine = product
+    void until?.then(when => {
+        if (when && product === mine) show(day(when.toISOString()))
+    })
 }
 
 // ---------- the report ----------
@@ -982,6 +1399,7 @@ export function reset() {
     $<HTMLOListElement>('path').innerHTML = ''
     resetLater()
     resetFruit()
+    places.plant = null
     row(1, 'reading…', 'busy')
     row(2, 'waiting', 'idle')
     row(3, 'waiting', 'idle')
@@ -1138,17 +1556,25 @@ async function check(config: Page) {
         const good = events.filter(e => e.verified).length
         const allGood = good === events.length
         row(3, `${good} of ${events.length} ${events.length === 1 ? 'match' : 'matches'}`, allGood ? 'lit' : 'bad')
+        // the stamp that pays for the records' storage hangs from the head record: once every record has matched, the
+        // chain it lives on is asked how long it is paid for, now, so that the day is there when the seal opens
+        const stamp = allGood ? stampOf(events.find(event => event.ref === run)?.data) : null
+        const until = stamp ? stampUntil(config, stamp) : null
         await edgesSettled()
         status(allGood ? 'verified' : 'mismatch')
         if (allGood) {
             $('proof-fold').classList.add('open')
-            showStoredUntil(config)
+            showStoredUntil(config, stamp, until)
         }
         const mine = product
         later(() => {
             revealFruit(events)
-            // the description fills the label when it has come, now or later
+            // the description fills the label when it has come, now or later; the location of the plant, the Received card
             void mine.description.then(described => product === mine && revealFruit(events, described))
+            void placePlant(mine, events, cards)
+            // the curves of a cycle hang from its record, as the files of the product from the packing: the light file each
+            // cycle names is asked for now, and drawn in its card when it has come
+            for (const event of events) if (event.data?.phase === 'cycle') void drawCurves(mine, event, cards.get(event.ref)!)
         }, 120)
         const lastCard = openPath(path, 1100)
         later(() => renderCo2(config, events), lastCard + UNFOLD_GAP + 120)

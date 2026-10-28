@@ -6,7 +6,7 @@ import { beforeEach, test } from 'node:test'
 import { clean, hostile, openPage } from './page.mjs'
 
 const { document, page } = await openPage()
-const { placeCard, productFiles, readDescription, renderCo2, reset, revealFruit } = page
+const { documentOf, placeCard, productFiles, readDescription, readPoint, renderCo2, reset, revealFruit } = page
 
 const config = { co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' } }
 // The description of the product, as the file a packing record names would give it.
@@ -78,10 +78,20 @@ test('a version that is HTML creates nothing', () => {
     clean(document)
 })
 
-test('a correction says its version', () => {
+test('the version of a record is in its raw record, and nowhere else on its card', () => {
     const packed = packing({ version: 2 })
     paint([intake(), cycle(), packed])
-    assert.equal(cardOf(packed).querySelector('.chip').textContent, 'Correction v2')
+    assert.equal(cardOf(packed).querySelector('.chip'), null)
+    assert.equal(cardOf(packed).textContent.includes('Correction'), false)
+    assert.match(cardOf(packed).querySelector('pre').textContent, /"version": 2/)
+    clean(document)
+})
+
+test('a card opens with the glyph of its record, the page’s own markup; a record not understood has none', () => {
+    const odd = event(3, null, { raw: 'not a record' })
+    paint([intake(), cycle(), packing(), odd])
+    const heads = [...document.querySelectorAll('#path .card h2')]
+    assert.deepEqual(Object.fromEntries(heads.map((h2) => [h2.textContent, !!h2.querySelector('svg.glyph')])), { Received: true, 'Freeze-dried': true, Packed: true, 'Record not understood': false })
     clean(document)
 })
 
@@ -259,5 +269,165 @@ test('the dates go under the full table as the pouch prints them, and the line i
     clean(document)
     revealFruit([packed], readDescription(bytes(mango)))
     assert.equal($('fruit-origin').querySelector('.origin-dates'), null)
+    clean(document)
+})
+
+// ---------- where a location file says the plant is, and the documents a record names ----------
+const india = { type: 'Feature', geometry: { type: 'Point', coordinates: [85.109112, 20.235281] }, properties: { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India' } }
+
+test('a location file gives its place, its site and its coordinates, the longitude first as GeoJSON writes it', () => {
+    assert.deepEqual(readPoint(bytes(india)), { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', lat: 20.235281, lon: 85.109112 })
+    // the words are read when they are lines of text, and the point is there without them
+    assert.deepEqual(readPoint(bytes({ ...india, properties: { site: 7, place: 'x'.repeat(301) } })), { site: null, place: null, lat: 20.235281, lon: 85.109112 })
+    assert.deepEqual(readPoint(bytes({ ...india, properties: undefined })), { site: null, place: null, lat: 20.235281, lon: 85.109112 })
+    // the ends of the Earth are on it
+    assert.deepEqual(readPoint(bytes({ type: 'Feature', geometry: { type: 'Point', coordinates: [-180, -90] } })), { site: null, place: null, lat: -90, lon: -180 })
+})
+
+test('what a location file says that is HTML is read as text, for the page to write as text', () => {
+    const loud = readPoint(bytes({ ...india, properties: { site: hostile('site'), place: hostile('place') } }))
+    assert.equal(loud.place, hostile('place'))
+    assert.equal(loud.site, hostile('site'))
+})
+
+for (const [what, file] of [
+    ['is not JSON', '{"type": '],
+    ['is not text', new Uint8Array([0x7b, 0x22, 0xe9, 0x22, 0x7d])],
+    ['is a list', [india]],
+    ['is nothing', 'null'],
+    ['is not a Feature', { ...india, type: 'FeatureCollection' }],
+    ['has no geometry', { ...india, geometry: null }],
+    ['has a geometry that is not a Point', { ...india, geometry: { type: 'Polygon', coordinates: [[[85, 20], [86, 20], [86, 21], [85, 20]]] } }],
+    ['has one coordinate', { ...india, geometry: { type: 'Point', coordinates: [85.109112] } }],
+    ['has three coordinates', { ...india, geometry: { type: 'Point', coordinates: [85.109112, 20.235281, 40] } }],
+    ['has coordinates that are text', { ...india, geometry: { type: 'Point', coordinates: ['85.109112', '20.235281'] } }],
+    ['has coordinates that are nothing', { ...india, geometry: { type: 'Point', coordinates: [null, null] } }],
+    ['has a longitude past 180', { ...india, geometry: { type: 'Point', coordinates: [180.1, 20] } }],
+    ['has a latitude past 90', { ...india, geometry: { type: 'Point', coordinates: [85, -90.1] } }],
+    // JSON has no word for a number that is not finite: a file can only say it as one too large to hold, 1e999
+    ['has a coordinate that is not finite', '{"type":"Feature","geometry":{"type":"Point","coordinates":[1e999,20]}}']
+])
+    test(`a location file that ${what} says nothing`, () => {
+        assert.equal(readPoint(file instanceof Uint8Array ? file : bytes(file)), null)
+    })
+
+test('the document of a record is the first under its name and its type whose reference is one', () => {
+    const ref = (n) => String(n).repeat(64)
+    const documents = [
+        { name: 'site-location.geojson', type: 'application/json', ref: ref(1) },
+        { name: 'site-location.geojson', type: 'application/geo+json', ref: 'not a reference' },
+        { name: 'site-location.geojson', type: 'application/geo+json', ref: ref(3) },
+        { name: 'site-location.geojson', type: 'application/geo+json', ref: ref(4) },
+        { name: hostile('name'), type: hostile('type'), ref: ref(5) },
+        null,
+        'site-location.geojson'
+    ]
+    const record = { phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', documents }
+    assert.equal(documentOf(record, 'site-location.geojson', 'application/geo+json'), `0x${ref(3)}`)
+    assert.equal(documentOf(record, 'site-location.geojson', 'application/json'), `0x${ref(1)}`)
+    assert.equal(documentOf(record, 'site.geojson', 'application/geo+json'), null)
+    assert.equal(documentOf(record, 'site-location.geojson', 'application/geo+json; charset=utf-8'), null)
+    for (const not of [undefined, null, 'site-location.geojson', { name: 'site-location.geojson' }, 7, []]) assert.equal(documentOf({ ...record, documents: not }, 'site-location.geojson', 'application/geo+json'), null)
+    for (const none of [null, undefined]) assert.equal(documentOf(none, 'site-location.geojson', 'application/geo+json'), null)
+})
+
+// ---------- the preview of a cycle's curves, and the cycle drawn from it ----------
+const { readPreview, drawCycle } = page
+const preview = (fields = {}) => ({
+    schema: 'ffd/telemetry-preview/1.0',
+    cycle: '5201',
+    bt: 1790911800,
+    every: 5,
+    t: [0, 3600, 7200],
+    series: [
+        { n: 'chamber_temperature', u: 'Cel', v: [21.4, -38.2, -30] },
+        { n: 'chamber_pressure', u: 'Pa', v: [101325, 21.3, 40] },
+        { n: 'shelf_3_temperature', u: 'Cel', v: [20, null, -10] },
+        { n: 'power', u: 'W', v: [400, 3100, 900] }
+    ],
+    ...fields
+})
+const dryer = (fields = {}) => ({ phase: 'cycle', at: '2026-09-29T08:00:00Z', ...fields })
+
+test('a preview gives its clock and the series the page knows, each in its unit, and nothing else', () => {
+    const read = readPreview(bytes(preview()))
+    assert.deepEqual(read.t, [0, 3600, 7200])
+    assert.deepEqual([...read.series.keys()], ['chamber_temperature', 'chamber_pressure', 'shelf_3_temperature'])
+    assert.deepEqual(read.series.get('shelf_3_temperature'), [20, null, -10])
+    // the first of two series of one name is the one read; a series in another unit is not the series the page knows; one with no unit is
+    const twice = readPreview(bytes(preview({ series: [{ n: 'chamber_temperature', u: 'Cel', v: [1, 2, 3] }, { n: 'chamber_temperature', u: 'Cel', v: [4, 5, 6] }, { n: 'chamber_pressure', u: 'kPa', v: [1, 2, 3] }, { n: 'shelf_8_temperature', v: [7, 8, 9] }] })))
+    assert.deepEqual([...twice.series], [['chamber_temperature', [1, 2, 3]], ['shelf_8_temperature', [7, 8, 9]]])
+    // a clock of 2000 points is drawn, one of 2001 is not
+    const long = (n) => preview({ t: Array.from({ length: n }, (_, i) => i), series: [{ n: 'chamber_temperature', v: Array.from({ length: n }, () => 0) }] })
+    assert.equal(readPreview(bytes(long(2000))).t.length, 2000)
+    assert.equal(readPreview(bytes(long(2001))), null)
+})
+
+for (const [what, file] of [
+    ['is not JSON', '{"schema": '],
+    ['is not text', new Uint8Array([0x7b, 0x22, 0xe9, 0x22, 0x7d])],
+    ['is a list', [preview()]],
+    ['is nothing', 'null'],
+    ['is of another kind', preview({ schema: 'ffd/telemetry/1.0' })],
+    ['has no clock', preview({ t: undefined })],
+    ['has a clock of one point', preview({ t: [0], series: [{ n: 'chamber_temperature', v: [1] }] })],
+    ['has a clock that goes back', preview({ t: [0, 7200, 3600] })],
+    ['has a clock that does not advance', preview({ t: [5, 5, 5] })],
+    ['has a clock that is not finite', JSON.stringify(preview()).replace('7200', '1e999')],
+    ['has a clock of text', preview({ t: ['0', '3600', '7200'] })],
+    ['has a series out of step with its clock', preview({ series: [{ n: 'chamber_temperature', v: [1, 2] }] })],
+    ['has a reading that is text', preview({ series: [{ n: 'chamber_pressure', v: [1, '2', 3] }] })],
+    ['has a reading that is not finite', JSON.stringify(preview()).replace('21.4', '1e999')],
+    ['has a reading that is not a number', JSON.stringify(preview()).replace('21.4', 'NaN')],
+    ['names its series with HTML', preview({ series: [{ n: hostile('n'), u: hostile('u'), v: [1, 2, 3] }] })],
+    ['has series that are not a list', preview({ series: { n: 'chamber_temperature', v: [1, 2, 3] } })],
+    ['names no series the page knows', preview({ series: [{ n: 'power', v: [1, 2, 3] }, { n: '__proto__', v: [1, 2, 3] }, { n: 'constructor', v: [1, 2, 3] }, 'chamber_temperature', null] })]
+])
+    test(`a preview that ${what} says nothing`, () => {
+        assert.equal(readPreview(file instanceof Uint8Array ? file : bytes(file)), null)
+    })
+
+test('the cycle is drawn from numbers alone: HTML where the record declares its minima creates nothing, and numbers are marked on their curves', () => {
+    const read = readPreview(bytes(preview()))
+    const card = document.createElement('div')
+    card.className = 'card'
+    document.getElementById('path').append(card)
+    card.innerHTML = drawCycle(read, dryer({ min_temperature_c: hostile('min_temperature_c'), min_pressure_pa: hostile('min_pressure_pa') }))
+    clean(document)
+    assert.equal(card.querySelectorAll('.min').length, 0)
+    assert.equal(card.querySelector('.minima'), null)
+    assert.equal(card.querySelectorAll('path.line').length, 3)
+    assert.equal(card.querySelector('.key').textContent, 'ChamberShelvesPressure')
+    card.innerHTML = drawCycle(read, dryer({ min_temperature_c: -38.2, min_pressure_pa: 21.3 }))
+    assert.deepEqual([...card.querySelectorAll('.minima b')].map((b) => b.textContent), ['-38.2 °C', '21.3 Pa'])
+    assert.deepEqual([...card.querySelectorAll('.minima small')].map((s) => s.textContent), ['at 1 h', 'at 1 h'])
+    assert.equal(card.querySelectorAll('svg .min').length, 2)
+    // a pressure that is not above zero has no place on a scale of powers of ten, and is not marked
+    card.innerHTML = drawCycle(read, dryer({ min_temperature_c: null, min_pressure_pa: 0 }))
+    assert.equal(card.querySelectorAll('.min').length, 0)
+    clean(document)
+})
+
+test('a preview of pressure alone has one scale, and one that read nothing draws nothing', () => {
+    const alone = drawCycle(readPreview(bytes(preview({ series: [{ n: 'chamber_pressure', u: 'Pa', v: [100, 10, 1] }] }))), dryer())
+    assert.ok(alone.includes('Pa'))
+    assert.equal(alone.includes('°C'), false)
+    assert.equal(alone.includes('class="line temp"'), false)
+    assert.equal(drawCycle(readPreview(bytes(preview({ series: [{ n: 'chamber_temperature', v: [null, null, null] }] }))), dryer()), '')
+    assert.equal(drawCycle(readPreview(bytes(preview({ series: [{ n: 'chamber_pressure', v: [0, -5, null] }] }))), dryer()), '')
+})
+
+test('the link to the full curves is there when the cycle names a reference, and not when it names something else', () => {
+    const path = document.getElementById('path')
+    const ref = 'ab'.repeat(32)
+    const named = event(2, { phase: 'cycle', at: '2026-09-29T08:00:00Z', telemetry: ref, telemetry_preview: 'cd'.repeat(32) })
+    const odd = event(4, { phase: 'cycle', at: '2026-09-29T09:00:00Z', telemetry: hostile('telemetry'), telemetry_preview: null })
+    placeCard(path, [named, odd], named, 'https://explorer.example')
+    placeCard(path, [named, odd], odd, 'https://explorer.example')
+    const link = cardOf(named).querySelector('.quiet a')
+    assert.equal(link.textContent, 'Full curve data ↗')
+    assert.equal(cardOf(named).querySelectorAll('.links a').length, 2) // the two buttons of every card, and no third
+    assert.equal(link.href, `https://gateway.example/bytes/${ref}`)
+    assert.equal(cardOf(odd).querySelector('.quiet'), null)
     clean(document)
 })

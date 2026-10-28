@@ -10,10 +10,14 @@ import { clean, hostile, loads, openPage } from './page.mjs'
 
 const contract = '0x240dfbca7064d091149169eff95f764d1e21cea7'
 const rpcs = ['https://rpc.example', 'https://other-rpc.example']
+// the chain the stamps live on, Gnosis, with two RPCs of its own, and the records' storage as the configuration gives it
+const gnosisRpcs = ['https://gnosis.example', 'https://other-gnosis.example']
+const storage = { until: '2027-01-27', chain: 100, contract: '0x45a1502382541Cd610CC9068e88727426b696293', block_s: 5, stamp_page: 'https://stamptime.example/?id={stamp}' }
 const config = {
-    rpcs: { 11155111: rpcs, 1: rpcs },
+    rpcs: { 11155111: rpcs, 1: rpcs, 100: gnosisRpcs },
     contract,
     gateways: ['https://gateway.example', 'https://second.example'],
+    storage,
     co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' }
 }
 
@@ -21,8 +25,9 @@ const config = {
 // Both gateways serve the files, unless a test says what one of them does instead (`net.instead`, by its address). Both
 // RPCs say the same, they are on Sepolia and the twin is not created yet, unless a test says otherwise: `net.chain`,
 // `net.owner` (an address, or a function that answers in its place), `net.ens` (what an RPC does when it is asked for a
-// name) and `net.says` (what one RPC answers in place of the other's answer, by its address).
-const net = { head: null, anchors: new Map(), files: new Map(), asked: [], calls: [], instead: new Map(), says: new Map(), chain: '0xaa36a7', owner: null, ens: null }
+// name) and `net.says` (what one RPC answers in place of the other's answer, by its address). The RPCs of Gnosis answer
+// for the stamp (`net.stamp`, below).
+const net = { head: null, anchors: new Map(), files: new Map(), asked: [], calls: [], instead: new Map(), says: new Map(), chain: '0xaa36a7', owner: null, ens: null, stamp: { chain: '0x64', remaining: 0n, price: 0n, asked: [] } }
 const [first, second] = config.gateways
 const answer = (body, type) => new Response(body, { headers: { 'content-type': type } })
 // what a contract says when it stops a call: the error it names, as an RPC hands it on
@@ -42,16 +47,34 @@ function rpc(method, [call] = []) {
     if (net.ens) return net.ens()
     throw revert()
 }
+// What the chain the stamps live on says, through either of its RPCs: its network (`net.stamp.chain`), what is left on
+// the batch it is asked about, per chunk (`net.stamp.remaining`; null for a batch the contract has forgotten, which it
+// refuses to answer for), and the price of a chunk per block (`net.stamp.price`). The batches asked about are kept.
+const stampAbi = parseAbi(['function remainingBalance(bytes32 batchId) view returns (uint256)', 'function lastPrice() view returns (uint64)'])
+function stampRpc(method, [call] = []) {
+    if (method === 'eth_chainId') return net.stamp.chain
+    if (method === 'eth_call' && call.to.toLowerCase() === storage.contract.toLowerCase()) {
+        const { functionName, args } = decodeFunctionData({ abi: stampAbi, data: call.data })
+        if (functionName === 'lastPrice') return encodeFunctionResult({ abi: stampAbi, functionName, result: net.stamp.price })
+        net.stamp.asked.push(args[0])
+        if (net.stamp.remaining === null) throw revert()
+        return encodeFunctionResult({ abi: stampAbi, functionName, result: net.stamp.remaining })
+    }
+    throw revert()
+}
 globalThis.fetch = async (input, init) => {
     const request = new Request(input, init)
     const url = request.url
+    const origin = new URL(url).origin
     net.asked.push(url)
-    if (rpcs.includes(new URL(url).origin)) {
+    if (rpcs.includes(origin) || gnosisRpcs.includes(origin)) {
         const { id, method, params } = await request.json()
         net.calls.push(`${new URL(url).host} ${method}`)
         try {
-            const says = net.says.get(new URL(url).origin)
-            return answer(JSON.stringify({ jsonrpc: '2.0', id, result: says ? says(method, params) : rpc(method, params) }), 'application/json')
+            const says = net.says.get(origin)
+            // a test may answer with a promise, to hold the answer back
+            const result = await (says ? says(method, params) : gnosisRpcs.includes(origin) ? stampRpc(method, params) : rpc(method, params))
+            return answer(JSON.stringify({ jsonrpc: '2.0', id, result }), 'application/json')
         } catch (error) {
             if (error instanceof Response) return error
             return answer(JSON.stringify({ jsonrpc: '2.0', id, error: { code: 3, message: error.message, data: error.data } }), 'application/json')
@@ -107,6 +130,8 @@ beforeEach(() => {
     net.instead.clear()
     net.says.clear()
     Object.assign(net, { chain: '0xaa36a7', owner: null, ens: null })
+    Object.assign(net.stamp, { chain: '0x64', remaining: REMAINING, price: PRICE })
+    net.stamp.asked.length = 0
     delete window.ethereum
 })
 
@@ -858,4 +883,550 @@ test('a table with more rows than a label has room for: the page takes the first
     assert.equal($('fruit-origin').querySelectorAll('tbody tr').length, 6 + 12)
     assert.ok($('fruit-origin').textContent.includes('Mineral 12'))
     assert.equal($('fruit-origin').textContent.includes('Mineral 13'), false)
+})
+
+// ---------- the plant: the file the intake record names ----------
+// Where the plant is comes from a file, as what the bag holds does: the intake record names `site-location.geojson` among
+// its documents, and the page reads it against its reference once the records are checked. The Received card then says
+// the place and the coordinates, and the coordinates are a link to OpenStreetMap, which is asked for nothing.
+const india = { type: 'Feature', geometry: { type: 'Point', coordinates: [85.109112, 20.235281] }, properties: { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India' } }
+const site = (value = india, name = 'site-location.geojson', type = 'application/geo+json') => file(name, type, bytes(value))
+// a bag of banana whose intake record names these documents; the reference of that record is returned, for a test that
+// takes its anchor away
+function received(documents) {
+    const intake = put({ phase: 'intake', at: '2026-09-25T08:00:00Z', fruit: 'banana', kg: 20, sourcing: 'rescued', documents })
+    net.head = put(packed({ product: 'dried banana', inputs: [intake] }))
+    return intake
+}
+const receivedCard = () => cards().find((li) => li.querySelector('h2').textContent === 'Received')
+const rowsOf = (li) => [...li.querySelectorAll('.row')].map((row) => [row.querySelector('.k').textContent, row.querySelector('.v').textContent])
+const asIs = ['Fruit', 'Weight', 'Sourcing']
+const plant = { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', lat: 20.235281, lon: 85.109112 }
+
+test('the plant: the Received card says where it is, from the file the intake record names, and its coordinates are a link to OpenStreetMap', async () => {
+    const files = [site()]
+    received(files)
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = receivedCard()
+    assert.deepEqual(rowsOf(card), [['Fruit', 'Banana'], ['Weight', '20 kg'], ['Sourcing', 'Rescued surplus'], ['Site', 'Dhodapalli, Odisha 752077, India'], ['GPS', '20.2353° N, 85.1091° E ↗']])
+    // the link holds numbers the page wrote and nothing else, and opens beside the page
+    const links = card.querySelectorAll('.row a')
+    assert.equal(links.length, 1)
+    assert.equal(links[0].getAttribute('href'), 'https://www.openstreetmap.org/?mlat=20.235281&mlon=85.109112#map=15/20.235281/85.109112')
+    assert.equal(links[0].getAttribute('target'), '_blank')
+    assert.equal(links[0].getAttribute('rel'), 'noopener')
+    // the two rows come after the record's own and before the check; the raw record is the record, without them
+    assert.equal(card.querySelector('.check').previousElementSibling.querySelector('.k').textContent, 'GPS')
+    assert.equal(card.querySelector('pre').textContent.includes('Dhodapalli'), false)
+    assert.equal(askedFor(files[0]), 1)
+    assert.deepEqual(page.places.plant, plant)
+    clean(document)
+})
+
+test('a location file whose words are HTML: they are written as text', async () => {
+    received([site({ ...india, properties: { site: hostile('site'), place: hostile('place') } })])
+    await scan()
+    clean(document)
+    assert.deepEqual(rowsOf(receivedCard()).slice(-2), [['Site', hostile('place')], ['GPS', '20.2353° N, 85.1091° E ↗']])
+    assert.equal(page.places.plant.site, hostile('site'))
+})
+
+for (const [what, content] of [
+    ['is not JSON', bytes('{"type": "Feature", ').slice(1, -1)],
+    ['is not a Feature', bytes({ ...india, type: 'FeatureCollection' })],
+    ['is not a Point', bytes({ ...india, geometry: { type: 'Polygon', coordinates: [[[85, 20], [86, 20], [86, 21], [85, 20]]] } })],
+    ['is a Point beyond the ends of the Earth', bytes({ ...india, geometry: { type: 'Point', coordinates: [85.109112, 90.235281] } })],
+    ['is a Point whose coordinates are text', bytes({ ...india, geometry: { type: 'Point', coordinates: ['85.109112', '20.235281'] } })]
+])
+    test(`a location file that ${what}: the card is as it was`, async () => {
+        const files = [file('site-location.geojson', 'application/geo+json', content)]
+        received(files)
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        assert.equal(askedFor(files[0]), 1)
+        assert.deepEqual(rowsOf(receivedCard()).map(([key]) => key), asIs)
+        assert.equal(receivedCard().querySelector('.row a'), null)
+        assert.equal(page.places.plant, null)
+        clean(document)
+    })
+
+test('a location file no gateway serves as its reference names it: it is not read, and the card is as it was', async () => {
+    const files = [site()]
+    received(files)
+    const elsewhere = () => answer(bytes({ ...india, properties: { ...india.properties, place: 'SERVED-BY-THE-GATEWAY' } }), 'application/octet-stream')
+    for (const gateway of [first, second]) net.instead.set(gateway, but(files[0], elsewhere))
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(rowsOf(receivedCard()).map(([key]) => key), asIs)
+    assert.equal(document.documentElement.outerHTML.includes('SERVED-BY-THE-GATEWAY'), false)
+    assert.equal(askedFor(files[0]), 2)
+    assert.equal(page.places.plant, null)
+})
+
+test('a location file under another name or of another type is not asked for, nor one named by an intake record that did not pass the check', async () => {
+    const elsewhere = { ...india, properties: { ...india.properties, place: 'Elsewhere' } }
+    received([site(elsewhere, 'site.geojson'), site(india, 'site-location.geojson', 'application/json'), { name: 'site-location.geojson', type: 'application/geo+json', ref: hostile('ref') }])
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(rowsOf(receivedCard()).map(([key]) => key), asIs)
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 2) // the two records, and no file
+    assert.equal(page.places.plant, null)
+    clean(document)
+    // an intake record with no anchor is not read, and names nothing
+    net.asked.length = 0
+    const files = [site()]
+    net.anchors.delete(received(files))
+    await scan()
+    assert.match(cards()[0].textContent, /Record not shown/)
+    assert.equal(askedFor(files[0]), 0)
+    assert.equal(page.places.plant, null)
+})
+
+test('an intake record that names no file: the card as it has been, and no one is asked for anything', async () => {
+    received(undefined)
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(rowsOf(receivedCard()).map(([key]) => key), asIs)
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 2)
+    assert.equal(page.places.plant, null)
+})
+
+test('another bag after one with its plant: nothing of it is left', async () => {
+    received([site()])
+    await scan()
+    assert.deepEqual(page.places.plant, plant)
+    net.head = put(packed())
+    await scan()
+    assert.equal(page.places.plant, null)
+    assert.equal(document.documentElement.outerHTML.includes('Dhodapalli'), false)
+    assert.deepEqual(cards().map((li) => li.querySelector('h2').textContent), ['Packed'])
+})
+
+test('a location file that is slow to come: the seal does not wait for it, and the card gains its rows when it has come', async () => {
+    const files = [site()]
+    received(files)
+    const open = slow(files[0])
+    location.hash = `#11155111:${contract}/1`
+    const scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.ok($('proof-fold').classList.contains('open'))
+    assert.ok(receivedCard().classList.contains('open'))
+    assert.deepEqual(rowsOf(receivedCard()).map(([key]) => key), asIs)
+    assert.equal(page.places.plant, null)
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual(rowsOf(receivedCard()).slice(-2).map(([key]) => key), ['Site', 'GPS'])
+    assert.equal(receivedCard().querySelectorAll('.row.late').length, 2)
+    assert.deepEqual(page.places.plant, plant)
+    clean(document)
+})
+
+// ---------- the stamp: the day under the seal, and the link to the page where the stamp is looked up ----------
+// The records are stored on Swarm under a stamp, a postage batch paid for by the block, and the bag's record names it
+// (`stamp`). Once every record has matched, the page asks the chain the stamp lives on, through the RPCs the
+// configuration lists for it and never through a wallet, how long it is paid for, and the day under the seal is the
+// stamp's. The day written in the configuration goes up first, and stands when the chain does not answer, the stamp has
+// run out, or the record names none. With a stamp, the line is a link to the page where it is looked up, by its id.
+const stamp = '7ccec48d'.repeat(8)
+const NOW = Date.parse('2026-10-28T12:00:00Z')
+const PRICE = 24_000n
+const REMAINING = PRICE * 1_036_800n // 60 days of blocks of 5 s, at that price: paid up to 27 December 2026
+const [gnosis, otherGnosis] = gnosisRpcs
+const stamptime = `https://stamptime.example/?id=${stamp}`
+const line = () => ({ shown: !$('alive').hidden, until: $('alive-until').textContent, href: $('alive').getAttribute('href'), title: $('alive').getAttribute('title') })
+const linked = { shown: true, until: '27 Dec 2026', href: stamptime, title: `Swarm stamp ${stamp}` }
+const written = { shown: true, until: '27 Jan 2027', href: null, title: null }
+// the stamp's chain holding its answers back until the test lets them through
+function hold() {
+    let open
+    const gate = new Promise((resolve) => (open = resolve))
+    net.says.set(gnosis, (method, params) => gate.then(() => stampRpc(method, params)))
+    return open
+}
+// a scan with another storage in the configuration
+async function stored(given) {
+    const inline = $('config')
+    const plain = inline.textContent
+    inline.textContent = JSON.stringify({ ...config, storage: given })
+    try {
+        await scan()
+    } finally {
+        inline.textContent = plain
+    }
+}
+
+test('the stamp of the bag’s record: the day it is paid up to, read from its chain, and the line a link to the page where it is looked up', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    net.head = put(packed({ stamp }))
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(line(), linked)
+    assert.equal($('alive').textContent, 'Stored until 27 Dec 2026')
+    assert.equal($('alive').target, '_blank')
+    assert.equal($('alive').rel, 'noopener')
+    // the chain is asked its network, then what is left on that batch and the price, and nothing else; its second RPC is not asked
+    assert.deepEqual(callsTo(gnosis), ['eth_chainId', 'eth_call', 'eth_call'])
+    assert.deepEqual(callsTo(otherGnosis), [])
+    assert.deepEqual(net.stamp.asked, [`0x${stamp}`])
+    clean(document)
+})
+
+test('a record that names no stamp, or one only on a record before the head: the day of the configuration, no link, and the chain is not asked', async () => {
+    const before = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, stamp })
+    for (const head of [put(packed()), put(packed({ inputs: [before] }))]) {
+        net.calls.length = 0
+        net.head = head
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        assert.deepEqual(line(), written)
+        assert.deepEqual(callsTo(gnosis), [])
+    }
+})
+
+test('a stamp in any other form: the day of the configuration, no link, the chain is not asked, and nothing of it reaches the page', async () => {
+    for (const other of [`0x${stamp}`, stamp.toUpperCase(), stamp.slice(2), `${stamp}00`, 7, null, [stamp], { stamp }, hostile('stamp')]) {
+        net.calls.length = 0
+        net.head = put(packed({ stamp: other }))
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        assert.deepEqual(line(), written)
+        assert.deepEqual(callsTo(gnosis), [])
+    }
+    clean(document)
+    assert.equal(document.documentElement.outerHTML.includes(stamp.toUpperCase()), false)
+})
+
+test('a stamp whose chain does not answer, is another network, or says the batch has run out: the day of the configuration, and the line still a link', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the page logs the RPC that failed
+    t.mock.method(Date, 'now', () => NOW)
+    // what each RPC of the chain is asked: an RPC on another network is asked nothing more, and the next is tried; what
+    // the contract says, run out or nothing for a price, is its word, and no other RPC is asked; one that refuses is
+    // passed over like one that does not answer
+    const whole = ['eth_chainId', 'eth_call', 'eth_call']
+    const cases = [
+        ['no RPC of the chain answers', () => [gnosis, otherGnosis].forEach((rpc) => net.says.set(rpc, fails)), null],
+        ['the RPC is on another network, and so is the next', () => (net.stamp.chain = '0x1'), [['eth_chainId'], ['eth_chainId']]],
+        ['the batch has run out', () => (net.stamp.remaining = 0n), [whole, []]],
+        ['the contract has forgotten the batch', () => (net.stamp.remaining = null), [whole, whole]],
+        ['the price is nothing', () => (net.stamp.price = 0n), [whole, []]]
+    ]
+    for (const [what, make, asked] of cases) {
+        net.calls.length = 0
+        net.says.clear()
+        Object.assign(net.stamp, { chain: '0x64', remaining: REMAINING, price: PRICE })
+        make()
+        net.head = put(packed({ stamp }))
+        await scan()
+        assert.ok($('hero').classList.contains('verified'), what)
+        assert.deepEqual(line(), { ...written, href: stamptime, title: `Swarm stamp ${stamp}` }, what)
+        if (asked) assert.deepEqual([callsTo(gnosis), callsTo(otherGnosis)], asked, what)
+        else assert.equal([...callsTo(gnosis), ...callsTo(otherGnosis)].includes('eth_call'), false, what)
+    }
+})
+
+test('a first RPC of the stamp’s chain that does not answer: the second is read', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    t.mock.method(Date, 'now', () => NOW)
+    net.says.set(gnosis, fails)
+    net.head = put(packed({ stamp }))
+    await scan()
+    assert.deepEqual(line(), linked)
+    assert.deepEqual(callsTo(otherGnosis), ['eth_chainId', 'eth_call', 'eth_call'])
+})
+
+test('a configuration without the chain, the contract, the seconds of a block or an RPC for the chain: the day written in it, and the chain is not asked', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    for (const given of [{ ...storage, chain: undefined }, { ...storage, contract: undefined }, { ...storage, contract: 'the postage stamp contract' }, { ...storage, block_s: undefined }, { ...storage, chain: 5 }]) {
+        net.calls.length = 0
+        net.head = put(packed({ stamp }))
+        await stored(given)
+        assert.deepEqual(line(), { ...written, href: stamptime, title: `Swarm stamp ${stamp}` })
+        assert.deepEqual(callsTo(gnosis), [])
+    }
+})
+
+test('no page for a stamp, one that is not https, or one with no place for the id: the stamp’s day, and no link', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    for (const given of [{ ...storage, stamp_page: undefined }, { ...storage, stamp_page: 'http://stamptime.example/?id={stamp}' }, { ...storage, stamp_page: 'https://stamptime.example/' }]) {
+        net.head = put(packed({ stamp }))
+        await stored(given)
+        assert.deepEqual(line(), { ...linked, href: null, title: null })
+    }
+    clean(document)
+})
+
+test('no day written in the configuration: the stamp’s day when its chain answers, and no line when it does not', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    t.mock.method(Date, 'now', () => NOW)
+    net.head = put(packed({ stamp }))
+    await stored({ ...storage, until: undefined })
+    assert.deepEqual(line(), linked)
+    net.says.set(gnosis, fails)
+    net.says.set(otherGnosis, fails)
+    net.head = put(packed({ stamp }))
+    await stored({ ...storage, until: undefined })
+    assert.equal($('alive').hidden, true)
+    // and a configuration that says nothing of the storage: the page as it was
+    net.says.clear()
+    net.calls.length = 0
+    net.head = put(packed({ stamp }))
+    await stored(undefined)
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal($('alive').hidden, true)
+    assert.deepEqual(callsTo(gnosis), [])
+})
+
+test('a record that did not match, before or at the head: the chain is not asked for the stamp, and the line stays folded', async () => {
+    const before = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20 })
+    net.head = put(packed({ stamp, inputs: [before] }))
+    net.anchors.delete(before)
+    await scan()
+    assert.equal($('step-3').querySelector('.v').textContent, '1 of 2 matches')
+    assert.equal($('proof-fold').classList.contains('open'), false)
+    assert.equal($('alive').hidden, true)
+    assert.deepEqual(callsTo(gnosis), [])
+    // the head record itself: not read, so it names no stamp
+    net.head = put(packed({ stamp }))
+    net.anchors.clear()
+    await scan()
+    assert.match(cards()[0].textContent, /Record not shown/)
+    assert.equal($('alive').hidden, true)
+    assert.deepEqual(callsTo(gnosis), [])
+})
+
+test('a wallet in the browser is not asked for the stamp: its chain is read through the RPCs of the configuration', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the wallet of the test knows no names, and the page logs that
+    t.mock.method(Date, 'now', () => NOW)
+    net.head = put(packed({ stamp }))
+    net.owner = holder
+    const asked = []
+    window.ethereum = {
+        request: async ({ method, params }) => {
+            asked.push(method === 'eth_call' ? `eth_call ${params[0].to.toLowerCase()}` : method)
+            return method === 'eth_chainId' ? '0xaa36a7' : rpc(method, params)
+        }
+    }
+    await scan()
+    assert.match($('twin').textContent, /Twin held by 0x1111…1111/) // the bag was read through the wallet
+    assert.deepEqual(line(), linked)
+    assert.ok(asked.includes(`eth_call ${contract}`))
+    assert.equal(asked.some((call) => call.includes(storage.contract.toLowerCase())), false)
+    assert.deepEqual(callsTo(gnosis), ['eth_chainId', 'eth_call', 'eth_call'])
+})
+
+test('a stamp whose chain answers after the seal: the day of the configuration first, and the stamp’s in its place when it comes', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    net.head = put(packed({ stamp }))
+    const open = hold()
+    location.hash = `#11155111:${contract}/1`
+    const scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.ok($('proof-fold').classList.contains('open'))
+    assert.deepEqual(line(), { ...linked, until: '27 Jan 2027' })
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual(line(), linked)
+})
+
+test('another bag while the stamp’s chain is still to answer for the first: its day does not reach the page', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    net.head = put(packed({ stamp }))
+    const open = hold()
+    location.hash = `#11155111:${contract}/1`
+    const scanning = page.main()
+    await turns()
+    assert.deepEqual(line(), { ...linked, until: '27 Jan 2027' })
+    net.head = put(packed())
+    await scan()
+    assert.deepEqual(line(), written)
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual(line(), written)
+})
+
+// ---------- the curves of a cycle: the light file its record names ----------
+// A cycle record names its curves twice: the readings of the machine as SenML, which the page links and never downloads,
+// and a preview in columns the Notary publishes for the page, which the page reads like a file of the product: hashed
+// against its reference, found out once, and drawn in the card of the cycle. Nothing written in the file reaches the page.
+const raw = (text) => new TextEncoder().encode(text)
+// a file on Swarm under its reference, as a record names it: 64 hex digits, no 0x
+function blob(content) {
+    const ref = swarmHash(content)
+    net.files.set(ref, content)
+    return ref.slice(2)
+}
+const senml = () => blob(bytes({ schema: 'ffd/telemetry/1.0', cycle: '5201', senml: [{ n: 'chamber_temperature', u: 'Cel', t: 0, v: 21.4 }] }))
+// the preview of a cycle of four hours, read every hour: the chamber, its pressure, one shelf that did not read once, and the power, which the page does not draw
+const curves = (fields = {}) => ({
+    schema: 'ffd/telemetry-preview/1.0',
+    cycle: '5201',
+    site: 'urn:bdf:site:india-1',
+    bn: 'urn:bdf:device:india-1:IND-L-1:',
+    bt: 1790911800,
+    every: 5,
+    t: [0, 3600, 7200, 10800, 14400],
+    series: [
+        { n: 'chamber_temperature', u: 'Cel', v: [21.4, -10.5, -38.2, -30.1, -20] },
+        { n: 'chamber_pressure', u: 'Pa', v: [101325, 5000, 21.3, 40.2, 60] },
+        { n: 'shelf_1_temperature', u: 'Cel', v: [20, 0, -20, null, 10] },
+        { n: 'power', u: 'W', v: [400, 3100, 1000, 900, 800] }
+    ],
+    ...fields
+})
+// a bag of mango whose cycle names its curves, the SenML and the preview, unless the test says what it names instead
+function dried(cycleFields = {}) {
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' })
+    const cycle = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', start: '2026-09-28T10:00:00Z', end: '2026-09-29T08:00:00Z', min_temperature_c: -38.2, min_pressure_pa: 21.3, loads: [{ trays: 10, kg: 20 }], kg_out: 2, telemetry: senml(), telemetry_preview: blob(bytes(curves())), inputs: [intake], ...cycleFields })
+    net.head = put(packed({ inputs: [cycle] }))
+    return cycle
+}
+const cycleCard = () => cards().find((li) => li.querySelector('h2').textContent === 'Freeze-dried')
+const askedRef = (ref) => net.asked.filter((url) => url.endsWith(`/bytes/${ref}`)).length
+const strokes = (path) => path.getAttribute('d').match(/[ML]/g).length
+
+test('a cycle that names its curves: the preview is read against its reference and drawn in the card, the SenML is linked and never asked for', async () => {
+    const preview = blob(bytes(curves()))
+    const full = senml()
+    dried({ telemetry: full, telemetry_preview: preview })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = cycleCard()
+    const chart = card.querySelector('.curves')
+    assert.ok(chart)
+    // the chart sits between the rows and the check line
+    assert.ok(chart.previousElementSibling.classList.contains('row'))
+    assert.ok(chart.nextElementSibling.classList.contains('check'))
+    // the chamber and the pressure have one point per tick of the clock; the shelf did not read once, and its line lifts there
+    assert.equal(strokes(chart.querySelector('path.temp')), 5)
+    assert.equal(strokes(chart.querySelector('path.press')), 5)
+    assert.equal(chart.querySelector('path.shelf').getAttribute('d').match(/M/g).length, 2)
+    // the power, which the page does not know, is not drawn: three lines
+    assert.equal(chart.querySelectorAll('path.line').length, 3)
+    // the marks of the three scales, and the two minima the record declares
+    assert.match(chart.textContent, /°C/)
+    assert.match(chart.textContent, /100k/)
+    assert.match(chart.textContent, /4 h/)
+    assert.deepEqual([...chart.querySelectorAll('.minima b')].map((b) => b.textContent), ['-38.2 °C', '21.3 Pa'])
+    assert.equal(chart.querySelectorAll('svg .min').length, 2)
+    // the two rows of the minima gave way to the figures above the chart
+    assert.equal([...card.querySelectorAll('.row .k')].some((k) => k.textContent === 'Coldest' || k.textContent === 'Lowest pressure'), false)
+    assert.equal(chart.querySelector('.key').textContent, 'ChamberShelvesPressure')
+    // the link to the full curves, from the gateway that served the record; the SenML itself is never asked for
+    const link = card.querySelector('.quiet a')
+    assert.equal(link.textContent, 'Full curve data ↗')
+    assert.equal(card.querySelectorAll('.links a').length, 2)
+    assert.equal(link.href, `${first}/bytes/${full}`)
+    assert.equal(link.rel, 'noopener')
+    assert.deepEqual([askedRef(preview), askedRef(full)], [1, 0])
+    clean(document)
+})
+
+for (const [what, file] of [
+    ['is of a kind the page does not know', bytes(curves({ schema: 'ffd/telemetry-preview/2.0' }))],
+    ['has a clock that goes back', bytes(curves({ t: [0, 7200, 3600, 10800, 14400] }))],
+    ['has a clock that does not advance', bytes(curves({ t: [0, 0, 0, 0, 0] }))],
+    ['has a clock of text', bytes(curves({ t: ['0', '3600', '7200', '10800', '14400'] }))],
+    ['has a series out of step with its clock', bytes(curves({ series: [{ n: 'chamber_temperature', u: 'Cel', v: [21.4, -10.5] }] }))],
+    ['has a reading that is not a number', raw(JSON.stringify(curves()).replace('21.4', 'NaN'))],
+    ['has a reading that is text', bytes(curves({ series: [{ n: 'chamber_temperature', u: 'Cel', v: ['21.4', -10.5, -38.2, -30.1, -20] }] }))],
+    ['has more points than the page draws', bytes(curves({ t: Array.from({ length: 2001 }, (_, i) => i * 60), series: [{ n: 'chamber_temperature', u: 'Cel', v: Array.from({ length: 2001 }, () => -20) }] }))],
+    ['names its series with HTML', bytes(curves({ series: [{ n: hostile('n'), u: hostile('u'), v: [21.4, -10.5, -38.2, -30.1, -20] }] }))],
+    ['has series that are not a list', bytes(curves({ series: 'chamber_temperature' }))],
+    ['names no series the page knows', bytes(curves({ series: [{ n: 'power', u: 'W', v: [1, 2, 3, 4, 5] }] }))],
+    ['is not JSON', raw('{"schema": ')]
+])
+    test(`a preview that ${what}: it is not drawn, and the card is as it would be without it`, async () => {
+        const preview = blob(file)
+        dried({ telemetry_preview: preview })
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        const card = cycleCard()
+        assert.equal(card.querySelector('.curves'), null)
+        assert.equal(card.querySelector('svg:not(.glyph)'), null) // the glyph at the head of the card is the page's own
+        assert.equal(card.querySelectorAll('.row').length, 5)
+        assert.equal(card.querySelectorAll('.links a').length, 2)
+        assert.ok(card.querySelector('.quiet a'))
+        assert.equal(askedRef(preview), 1)
+        assert.equal(document.documentElement.outerHTML.includes('ffd-probe'), false)
+        clean(document)
+    })
+
+test('a preview no gateway serves as its reference names it: it is not drawn, and both were asked', async () => {
+    const preview = blob(bytes(curves()))
+    dried({ telemetry_preview: preview })
+    for (const gateway of [first, second]) net.instead.set(gateway, but({ ref: preview }, () => answer(bytes(curves({ cycle: 'SERVED-BY-THE-GATEWAY' })), 'application/octet-stream')))
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(cycleCard().querySelector('.curves'), null)
+    assert.equal(askedRef(preview), 2)
+    assert.equal(document.documentElement.outerHTML.includes('SERVED-BY-THE-GATEWAY'), false)
+})
+
+test('a cycle that names no curves: nothing is drawn, no one is asked, and there is no link', async () => {
+    dried({ telemetry: null, telemetry_preview: null })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = cycleCard()
+    assert.equal(card.querySelector('.curves'), null)
+    assert.equal(card.querySelector('.quiet'), null)
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 3) // the three records, and no file
+})
+
+test('a cycle whose curves are named by something that is not a reference: no one is asked for them, and nothing is linked', async () => {
+    dried({ telemetry: hostile('telemetry'), telemetry_preview: hostile('telemetry_preview') })
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const card = cycleCard()
+    assert.equal(card.querySelector('.curves'), null)
+    assert.equal(card.querySelectorAll('.links a').length, 2)
+    assert.equal(net.asked.filter((url) => url.includes('/bytes/')).length, 3)
+    clean(document)
+})
+
+test('the curves of a cycle that did not pass the check are not asked for', async () => {
+    const preview = blob(bytes(curves()))
+    const cycle = dried({ telemetry_preview: preview })
+    net.anchors.delete(cycle)
+    await scan()
+    // the cycle was not read, so the intake it names was not followed either: two records, one of them matched
+    assert.equal($('step-3').querySelector('.v').textContent, '1 of 2 matches')
+    assert.equal(cycleCard(), undefined)
+    assert.equal(askedRef(preview), 0)
+})
+
+test('a bag from two cycles: each card draws what its own record names', async () => {
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20 })
+    const one = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', plant_id: '5203', telemetry: senml(), telemetry_preview: blob(bytes(curves({ cycle: '5203' }))), inputs: [intake] })
+    const two = put({ phase: 'cycle', at: '2026-09-29T09:00:00Z', plant_id: '5204', telemetry: null, telemetry_preview: null, inputs: [intake] })
+    net.head = put(packed({ inputs: [one, two] }))
+    await scan()
+    const dryings = cards().filter((li) => li.querySelector('h2').textContent === 'Freeze-dried')
+    assert.equal(dryings.length, 2)
+    assert.deepEqual(dryings.map((li) => !!li.querySelector('.curves')), [true, false])
+    clean(document)
+})
+
+test('another bag while the curves of the first are still on their way: nothing of them reaches the page', async () => {
+    const preview = blob(bytes(curves()))
+    dried({ telemetry_preview: preview })
+    const open = slow({ ref: preview })
+    location.hash = `#11155111:${contract}/1`
+    const scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(cycleCard().querySelector('.curves'), null)
+    net.instead.clear()
+    dried({ telemetry: null, telemetry_preview: null })
+    await scan()
+    open()
+    await turns()
+    await scanning
+    assert.ok(cycleCard())
+    assert.equal(document.querySelector('.curves'), null)
 })
