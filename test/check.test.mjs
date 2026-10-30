@@ -3,12 +3,16 @@
 // reference has no anchor, are never parsed and nothing of them is painted. An RPC that lies is the one thing the page
 // cannot see through, since the anchors are its word; even then, a record's values reach the page as text.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, mock, test } from 'node:test'
 import { decodeFunctionData, encodeErrorResult, encodeFunctionResult, parseAbi } from 'viem'
 import { abi, hex, swarmHash } from '../src/lib.ts'
 import { clean, hostile, loads, openPage } from './page.mjs'
 
 const contract = '0x240dfbca7064d091149169eff95f764d1e21cea7'
+// the contract the QR of every real bag names, on mainnet; it is the published configuration that lists it (see below)
+const printed = '0xc7e8Dd10265b5d4A549321411617Dff4DB4ccb8a'
 const rpcs = ['https://rpc.example', 'https://other-rpc.example']
 // the chain the stamps live on, with two RPCs of its own, and the records' storage as the configuration gives it
 const stampRpcs = ['https://stamp-rpc.example', 'https://other-stamp-rpc.example']
@@ -37,7 +41,7 @@ const others = parseAbi(['error OffchainLookup(address sender, string[] urls, by
 function rpc(method, [call] = []) {
     if (method === 'eth_chainId') return net.chain
     if (method === 'eth_getLogs') return []
-    if (method === 'eth_call' && call.to.toLowerCase() === contract) {
+    if (method === 'eth_call' && [contract, printed.toLowerCase()].includes(call.to.toLowerCase())) {
         const { functionName, args } = decodeFunctionData({ abi, data: call.data })
         if (functionName === 'recordOf') return encodeFunctionResult({ abi, functionName, result: net.head })
         if (functionName === 'anchoredAt') return encodeFunctionResult({ abi, functionName, result: net.anchors.get(args[0]) ?? [0n, 0n] })
@@ -480,6 +484,79 @@ test('a twin in custody: ENS is not asked for a name; a twin that has moved: it 
     await turns()
     assert.match($('twin').textContent, /Twin held by 0x1111…1111/)
     assert.ok(names > 0)
+})
+
+// ---------- the configuration that is published: what the QR of a bag opens ----------
+// The real bags are in a contract on mainnet, and the QR of each names it. The page opens it because its configuration lists
+// it: fairfooddata.eth is not asked, so whatever it names or does not name changes nothing. The test contract on Sepolia stays
+// listed. Here the configuration is the one the file carries, with the RPCs and the gateways of the test in place of its addresses.
+const published = JSON.parse(readFileSync(resolve(import.meta.dirname, '../web/public/config.json'), 'utf8'))
+const asPublished = { ...published, rpcs: { 1: rpcs, 11155111: rpcs, [published.storage.chain]: stampRpcs }, gateways: config.gateways }
+const onMainnet = (address) => ({ shown: true, href: `https://eth.blockscout.com/address/${address}`, text: address })
+// what fairfooddata.eth is asked, counted; it answers that it names nothing
+function ensAsked() {
+    const asked = { names: 0 }
+    net.ens = () => {
+        asked.names++
+        throw revert(encodeErrorResult({ abi: others, errorName: 'ResolverNotFound', args: ['0x'] }))
+    }
+    return asked
+}
+
+test('the configuration that is published: the contract of the QR and its custody on mainnet, Sepolia still listed, and at least two sources for each network', () => {
+    assert.equal(published.contract, printed)
+    assert.equal(published.chain, 1)
+    assert.equal(published.custody, '0xa645BF8c92AfEC02D9239E8d9f5dc27e641C012E')
+    assert.deepEqual(published.contracts, [contract])
+    for (const network of [1, 11155111]) assert.ok(published.rpcs[network].length >= 2, `a second opinion on ${network}`)
+    assert.ok(published.rpcs[published.storage.chain].length >= 1)
+    for (const url of Object.values(published.rpcs).flat()) assert.match(url, /^https:\/\//)
+    assert.equal(published.storage.contract, storage.contract)
+    assert.match(published.storage.until, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('a QR on mainnet, with the configuration that is published: the contract is opened by the list, ENS is not asked, and every link to the chain is mainnet’s', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    for (const address of [printed, printed.toLowerCase()]) {
+        const asked = ensAsked()
+        net.chain = '0x1'
+        net.owner = published.custody
+        net.head = put(packed({ stamp }))
+        await configured(asPublished, `1:${address}/144`)
+        await turns()
+        assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' }, address)
+        assert.equal($('notice').hidden, true, address)
+        assert.equal(asked.names, 0, address)
+        assert.match($('twin').textContent, /Twin held by Fair Food Data/, address)
+        assert.equal($('twin').querySelector('a.go').getAttribute('href'), `https://eth.blockscout.com/token/${address}/instance/144`)
+        assert.equal(cards()[0].querySelector('a.anchor').getAttribute('href'), 'https://eth.blockscout.com/block/7')
+        assert.deepEqual(contractRow(), onMainnet(address))
+        // the stamp the record names, read from its chain, on the page the configuration names for it
+        assert.deepEqual(line(), { ...linked, href: `https://stamptime.eth.limo/?id=${stamp}` })
+    }
+})
+
+test('a QR on Sepolia, with the configuration that is published: the test contract is still opened by the list, on its own network', async () => {
+    const asked = ensAsked()
+    net.head = put(packed())
+    await configured(asPublished, `11155111:${contract}/1`)
+    assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' })
+    assert.equal(asked.names, 0)
+    assert.deepEqual(contractRow(), onSepolia(contract))
+    assert.equal(cards()[0].querySelector('a.anchor').getAttribute('href'), 'https://eth-sepolia.blockscout.com/block/7')
+    // a record that names no stamp: the day written in the configuration, whatever it is
+    assert.equal(line().until, new Date(published.storage.until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }))
+})
+
+test('a contract the published configuration does not list, on mainnet: ENS is asked, and it is not a Fair Food Data bag', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    const asked = ensAsked()
+    net.chain = '0x1'
+    await configured(asPublished, `1:${stranger}/1`)
+    assert.ok(asked.names > 0)
+    assert.match($('notice').textContent, /This is not a Fair Food Data bag/)
+    assert.deepEqual(contractRow(), onMainnet(printed))
+    assert.equal(cards().length, 0)
 })
 
 // ---------- where Ethereum is read from ----------

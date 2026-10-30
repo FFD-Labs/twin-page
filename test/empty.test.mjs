@@ -96,7 +96,7 @@ test('the footer, the same without a bag: the code at the root of the repository
     assert.equal($('code-link').href, 'https://github.com/FFD-Labs/twin-page')
     assert.equal($('code-link').textContent, 'github.com/FFD-Labs/twin-page')
     assert.ok(shown('contract'))
-    assert.equal($('contract-link').href, `https://eth-sepolia.blockscout.com/address/${contract}`)
+    assert.equal($('contract-link').href, `https://eth.blockscout.com/address/${contract}`)
     assert.equal($('contract-addr').textContent, contract)
     // a release names the SHA256SUMS of its folder: the fingerprint links to it, and the code is still the root
     await again('', { ...config, source: `${config.source}/blob/main/releases/0.5/SHA256SUMS` })
@@ -223,5 +223,5 @@ test('nothing after #, from disk: no request at all, and no row for the fingerpr
     assert.equal(window.getComputedStyle($('fingerprint')).display, 'none')
     assert.notEqual(window.getComputedStyle($('about')).display, 'none')
     assert.equal($('code-link').href, 'https://github.com/FFD-Labs/twin-page')
-    assert.equal($('contract-link').href, `https://eth-sepolia.blockscout.com/address/${contract}`)
+    assert.equal($('contract-link').href, `https://eth.blockscout.com/address/${contract}`)
 })
