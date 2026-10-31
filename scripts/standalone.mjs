@@ -1,9 +1,12 @@
 // Folds the page into one file that opens anywhere and reads like the source. The file is web/devcon8.html as written,
 // with five things added in their marked places: the fonts and marks as data URIs, the merged config as JSON, the libraries
 // as one compact script, the page's own modules one after another with only their types removed (Node's stripper keeps
-// every comment and line), and in the head the policy that lets those two scripts run and no other. `node
+// every comment and line), and in the head the policy that lets those two scripts run, with the two lines the page writes
+// in its head to set the first paint, and no other. `node
 // scripts/standalone.mjs` writes dist/devcon8.html. With `--release <folder>` (what scripts/release.mjs passes: the
-// number of the release) the fingerprint line links to the SHA256SUMS of that folder of releases/ on GitHub.
+// number of the release) the fingerprint line links to the SHA256SUMS of that folder of releases/ on GitHub. With `--out
+// <dir>` the file is written there instead, and its pieces are built beside it: what the tests ask for, so that dist/
+// stays as it was.
 //
 // The file carries no image, and of the fruit only the colours of each pouch: the art of the pouches, the photographs and
 // the description of each product are files the packing record of a bag names, and the page reads them from Swarm. What is
@@ -17,8 +20,10 @@ import { build } from 'vite'
 import { inspect } from './inspect.mjs'
 
 const root = resolve(import.meta.dirname, '..')
-const release = process.argv.includes('--release') ? process.argv[process.argv.indexOf('--release') + 1] : null
-const out = resolve(root, 'dist-standalone')
+const option = (name) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null)
+const release = option('--release')
+const into = option('--out') ? resolve(option('--out')) : resolve(root, 'dist')
+const out = option('--out') ? resolve(into, 'pieces') : resolve(root, 'dist-standalone')
 const read = (file) => readFileSync(resolve(root, file))
 const text = (file) => read(file).toString()
 
@@ -29,7 +34,7 @@ await build({
     root,
     build: { lib: { entry: resolve(root, 'src/rails.ts'), name: 'rails', formats: ['iife'], fileName: () => 'rails.js' }, outDir: out, emptyOutDir: true, minify: true }
 })
-const libraries = text('dist-standalone/rails.js').replace(/<\/script/g, '<\\/script')
+const libraries = readFileSync(resolve(out, 'rails.js')).toString().replace(/<\/script/g, '<\\/script')
 const lock = JSON.parse(text('package-lock.json')).packages
 const versions = ['viem'].map(name => `${name} ${lock[`node_modules/${name}`].version}`).join(', ')
 
@@ -70,27 +75,66 @@ execFileSync(process.execPath, ['--check', resolve(out, 'page.mjs')], { stdio: '
 // ---------- the page as written, with the pieces in their places ----------
 let html = text('web/devcon8.html')
 const data = (file, type) => `data:${type};base64,${read(`web/public/${file}`).toString('base64')}`
+// A mark is text, and travels as text: base64 would make it a third longer and hide it from compression. It goes inside a
+// double-quoted attribute, so its own quotes become single ones, and only what an address would read otherwise is escaped:
+// % and # as in any address, < and >. A browser drops every tab and line break from an address before it reads it, and
+// reads an & in an attribute as the start of a character; a single quote would end an attribute once the quotes are
+// swapped. A mark with any of them is written again, without, rather than published changed.
+const mark = (file) => {
+    const svg = text(`web/public/${file}`).trim()
+    if (svg.includes("'")) throw Error(`${file}: a single quote, which would end an attribute once its quotes are single`)
+    const uri = `data:image/svg+xml,${svg.replaceAll('"', "'").replace(/[%#<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`
+    if (/[\t\n\r&]/.test(uri)) throw Error(`${file}: a tab, a line break or an &, which a browser would drop from the address or read as markup`)
+    return uri
+}
 html = html.replace(/url\((['"]?)\.\/(fonts\/[^'")]+\.woff2)\1\)/g, (_, __, file) => `url('${data(file, 'font/woff2')}')`)
-html = html.replace(/src="\.\/(brand\/[^"]+\.svg)"/g, (_, file) => `src="${data(file, 'image/svg+xml')}"`)
-html = html.replace(/href="\.\/favicon\.svg"/, `href="${data('favicon.svg', 'image/svg+xml')}"`)
+html = html.replace(/src="\.\/(brand\/[^"]+\.svg)"/g, (_, file) => `src="${mark(file)}"`)
+html = html.replace(/href="\.\/favicon\.svg"/, () => `href="${mark('favicon.svg')}"`)
 if (/\.\/(fonts|brand)\/|\.\/favicon/.test(html)) throw Error('a font or a mark is still external')
 
 // 3 · the merged config, read by loadConfig() before it would fetch
 const config = JSON.parse(text('web/public/config.json'))
 delete config._about
 if (release && config.source) config.source = `${config.source}/blob/main/releases/${release}/SHA256SUMS`
+// Its RPCs are listed by the number of their network. The comment over it says which is which, from the config itself:
+// the network of the contract first, and last the chain Swarm's stamps are paid on, read for the stamp alone and named by
+// its number only.
+const networks = { 1: 'Ethereum mainnet', 11155111: 'Sepolia' }
+const place = (id) => (id === config.chain ? 0 : id === config.storage?.chain ? 2 : 1)
+const legend = Object.keys(config.rpcs ?? {})
+    .map(Number)
+    .sort((a, b) => place(a) - place(b))
+    .map(id => (place(id) === 2 ? `${id}, the chain Swarm's stamps are paid on, read for the stamp alone` : [networks[id] ? `${id} ${networks[id]}` : `${id}`, place(id) === 0 && 'the network of the bag'].filter(Boolean).join(', ')))
+    .join('; ')
+// The footer's links to the source, as the script writes them from the config: the code at the root of the repository,
+// and the fingerprint at the source the config names, said without its scheme, /blob/main and /SHA256SUMS. Written into
+// the markup too, so that the footer is from its first paint what it will be: a release's longer link would otherwise
+// add a line to the fingerprint's row once the script has run.
+if (config.source) {
+    const attr = (value) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+    const code = config.source.replace(/\/blob\/.*$/, '')
+    const links = { 'code-link': [code, code.replace(/^https?:\/\//, '')], 'fp-source': [config.source, config.source.replace(/^https?:\/\//, '').replace('/blob/main', '').replace(/\/SHA256SUMS$/, '')] }
+    for (const [id, [href, words]] of Object.entries(links)) {
+        const at = new RegExp(`<a id="${id}" href="[^"]*"([^>]*)>[^<]*</a>`)
+        if (!at.test(html)) throw Error(`the link ${id} is not where the page writes it`)
+        html = html.replace(at, (_, rest) => `<a id="${id}" href="${attr(href)}"${rest}>${attr(words)}</a>`)
+    }
+}
 // The config says nothing of the fruit: what the page shows of it comes from Swarm, by the references of the bag's packing
 // record. A key that did would be a leftover the page no longer reads, and the build stops rather than publish it.
 for (const key of ['art', 'fruits', 'nutrition']) if (key in config) throw Error(`the config says something about the fruit: ${key}`)
 
-// The two scripts as they sit between their tags, to the byte: the policy names each by the hash of exactly this text.
-const scripts = { library: `\n${libraries}\n        `, page: `\n${ours}\n        ` }
+// The scripts as they sit between their tags, to the byte: the policy names each by the hash of exactly this text. The
+// two lines of the head are the page's, as it writes them before its styles; the library and the page's own code are added.
+const head = /<script>([^<]*)<\/script>/.exec(html.slice(0, html.indexOf('</head>')))
+if (!head) throw Error('the script of the head is not where the page writes it')
+const scripts = { head: head[1], library: `\n${libraries}\n        `, page: `\n${ours}\n        ` }
 
 // a function, so that a `$&` or a `$'` inside the minified libraries is not read as a replacement pattern
 html = html.replace(
     /[ \t]*<script type="module" src="\.\/devcon8\.ts"><\/script>\n/,
     () =>
-    `        <!-- 3 · Config: what the page reads from, read by loadConfig() before anything else. -->\n` +
+    `        <!-- 3 · Config: what the page reads from, read by loadConfig() before anything else. Its RPCs by network: ${legend}. -->\n` +
         `        <script type="application/json" id="config">\n${JSON.stringify(config, null, 2).replace(/</g, '\\u003c')}\n        </script>\n` +
         `        <!-- 4 · Library: ${versions}, bundled and minified from npm, unchanged. What the page takes from it is listed in src/rails.ts -->\n` +
         `        <script>${scripts.library}</script>\n` +
@@ -99,26 +143,26 @@ html = html.replace(
 )
 if (/<script type="module" src=/.test(html)) throw Error('the script tag was not replaced')
 
-// ---------- the policy: the file runs its own two scripts and no other ----------
-// A Content-Security-Policy, as a meta since the file travels without a server of its own. It names the two scripts by their
+// ---------- the policy: the file runs its own three scripts and no other ----------
+// A Content-Security-Policy, as a meta since the file travels without a server of its own. It names the three scripts by their
 // SHA-256 and allows no other: not a handler written into the markup, not a script added later, not a javascript: link. The
 // page writes what a record says as text; if a value ever reached the markup as it came, it would still not run. The policy
 // is about script and nothing else: what the page may load and where it may connect stay as they were.
 const sha256 = (script) => `'sha256-${createHash('sha256').update(script).digest('base64')}'`
-const policy = `script-src ${sha256(scripts.library)} ${sha256(scripts.page)}; object-src 'none'; base-uri 'none'`
+const policy = `script-src ${Object.values(scripts).map(sha256).join(' ')}; object-src 'none'; base-uri 'none'`
 html = html.replace(/([ \t]*)<meta charset="utf-8" \/>\n/, (charset, indent) => `${charset}${indent}<meta http-equiv="Content-Security-Policy" content="${policy}" />\n`)
 // What was hashed must be what a browser will hash. It reads the text between the tags after turning every carriage return
 // into a line feed and every NUL into a replacement character, and it would stop a script that does not match its hash.
 for (const script of Object.values(scripts)) if (/[\r\0]/.test(script)) throw Error('a script has a carriage return or a NUL: its hash would not be the one a browser computes')
 // And the policy must be where a browser finds it. That its words are in the file says nothing: inside a comment they are
 // text, and the file would run whatever was written into it. The file is parsed as a browser parses it, and it must have
-// this policy in its head, before any script, with the two scripts it names and nothing else that runs (scripts/inspect.mjs).
-if (inspect(html).policy !== policy) throw Error('the policy in the head is not the one that was written')
+// this policy in its head, before any script, with the three scripts it names and nothing else that runs (scripts/inspect.mjs).
+if (inspect(html, Object.keys(scripts).length).policy !== policy) throw Error('the policy in the head is not the one that was written')
 // A browser looks for the encoding in the first 1024 bytes. Past them it takes the server's word, or guesses, and a file
 // read in another encoding is another text: the page's script would not match its hash, and would not run.
 if (Buffer.from(html).indexOf('<meta charset="utf-8" />') + '<meta charset="utf-8" />'.length > 1024 || !html.includes('<meta charset="utf-8" />')) throw Error('the encoding is not declared in the first 1024 bytes')
 
-mkdirSync(resolve(root, 'dist'), { recursive: true })
+mkdirSync(into, { recursive: true })
 const name = 'devcon8.html'
-writeFileSync(resolve(root, 'dist', name), html)
-console.log(`dist/${name} · ${(html.length / 1024).toFixed(0)} kB`)
+writeFileSync(resolve(into, name), html)
+console.log(`${option('--out') ? resolve(into, name) : `dist/${name}`} · ${(html.length / 1024).toFixed(0)} kB`)

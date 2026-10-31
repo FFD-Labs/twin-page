@@ -1,5 +1,5 @@
 // The page a bag opens: seven blocks, the states, a loading that tells the check as it happens, a list of gateways, the
-// verification report. The looks live in devcon8.html; this file reads, checks and paints.
+// small print of the footer. The looks live in devcon8.html; this file reads, checks and paints.
 //
 // Reads ./config.json. The keys of the blocks are optional: a block whose data or assumptions are missing is not painted.
 // What the page says of the fruit, where the plant is and where the bag went, is not in the config: the bag's records name
@@ -97,7 +97,6 @@ type Storage = { until?: string; chain?: number; contract?: Address; block_s?: n
 
 type Page = Config & {
     gateways?: string[]
-    report?: string | null
     links?: { ethereum?: string; swarm?: string; ens?: string }
     co2?: Co2
     storage?: Storage
@@ -118,7 +117,9 @@ type Event = {
     tx: string | null
 }
 
-const explorers: { [chainId: number]: string } = { 1: 'https://etherscan.io', 11155111: 'https://sepolia.etherscan.io' }
+// The explorer the page's links to the chain open, by network. The page asks it for nothing: a link is followed only when
+// it is tapped.
+const explorers: { [chainId: number]: string } = { 1: 'https://eth.blockscout.com', 11155111: 'https://eth-sepolia.blockscout.com' }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 const esc = (value: unknown) => String(value).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
@@ -330,6 +331,18 @@ async function secondOpinion(others: Source[], chainId: number, contract: Addres
     return null
 }
 
+// Two sources that do not say the same: one of them is not telling what is anchored, and the page cannot tell which. So the
+// plate opens again, as for a record that does not match: the Ethereum read says so, the edge of the anchor breaks, the
+// line under the seal and the day of the stamp go, and a notice says it, with Try again. What was read stays below, as read.
+function disagree() {
+    $('hero').classList.remove('verified')
+    $('proof-fold').classList.remove('open')
+    $('alive').hidden = true
+    $('tri').classList.add('bad')
+    row(1, 'sources disagree', 'bad')
+    notice('Two sources disagree about this bag.', 'Two sources of Ethereum gave different answers about its records, so the page cannot say which one is right. Try again in a moment.', true)
+}
+
 // ---------- the record cards (block 4) ----------
 
 // The two minima of a cycle, as its card names them: rows at first, and the figures above the chart once the curves are drawn.
@@ -537,6 +550,16 @@ export function documentOf(record: Record | null | undefined, name: string, type
     return null
 }
 
+// ---------- the gateways: in order, and one that did not answer last ----------
+
+// The gateways are asked in the order of the configuration. One that did not answer, that kept the page waiting until it
+// gave up or could not be reached at all, is asked after the others for whatever the page asks from then on, so that it
+// costs its wait once and not once per file; what was already asked of it waits for it as before. One that answered,
+// with an error or with other bytes, keeps its place. Try again starts from the order of the configuration.
+const stalled = new Set<string>()
+const unanswered = (error: unknown) => error instanceof Error && ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name)
+const inTurn = (gateways: string[]) => [...gateways.filter(gateway => !stalled.has(gateway)), ...gateways.filter(gateway => stalled.has(gateway))]
+
 // ---------- the product: the files the packing record names ----------
 
 // What the page says of the fruit hangs from the bag's packing record: among its documents, four files. The description
@@ -563,12 +586,13 @@ export function productFiles(events: Event[]) {
 // that has its anchor, so the file is the one that record was sealed with. Null when no gateway has it, when none answers,
 // or when it weighs more than the page takes.
 async function fileOf(gateways: string[], ref: Hex) {
-    for (const gateway of gateways) {
+    for (const gateway of inTurn(gateways)) {
         try {
             const bytes = await download(gateway, ref)
             if (swarmHash(bytes) === ref) return bytes
-        } catch {
+        } catch (error) {
             // the next gateway is asked
+            if (unanswered(error)) stalled.add(gateway)
         }
     }
     return null
@@ -1281,7 +1305,7 @@ function renderTwin(id: bigint, owner: Address | null, config: Page, explorer: s
         <div class="card holder-line" id="holder">
             ${pic}
             <p class="who">${who}</p>
-            ${explorer && state !== 'none' ? `<a class="go" href="${explorer}/nft/${contract}/${id}" target="_blank" rel="noopener">Etherscan ↗</a>` : ''}
+            ${explorer && state !== 'none' ? `<a class="go" href="${explorer}/token/${contract}/instance/${id}" target="_blank" rel="noopener">Blockscout ↗</a>` : ''}
         </div>`
     $('twin').hidden = false
     return state
@@ -1364,26 +1388,34 @@ async function nameHolder(owner: Address, chainId: number, { transport }: Source
             swap(who, name)
         }
         const avatar = await getEnsAvatar(client, { name, assetGatewayUrls: { ipfs: 'https://ipfs.io' } }).catch(() => null)
-        if (!avatar) return
-        const img = new Image()
-        img.className = 'pic arrives'
-        img.alt = ''
-        img.onload = () => {
-            $('holder').querySelector('.pic')?.replaceWith(img)
-            requestAnimationFrame(() => requestAnimationFrame(() => img.classList.add('in')))
-        }
-        img.src = avatar
+        if (avatar) await holderPicture(avatar)
     } catch (error) {
         console.error(error)
     }
 }
 
+// The holder's picture, from wherever they keep it. Its host is not told which page asked for it, and it takes the place of
+// the jazzicon only once a browser has drawn it within the art's cap: a picture too large for a phone to hold, or one that
+// does not come, leaves the jazzicon.
+export async function holderPicture(src: string) {
+    if (!(await arrive(src))) return
+    const img = document.createElement('img')
+    img.className = 'pic arrives'
+    img.alt = ''
+    img.setAttribute('referrerpolicy', 'no-referrer')
+    img.decoding = 'async'
+    img.src = src
+    $('holder').querySelector('.pic')?.replaceWith(img)
+    requestAnimationFrame(() => requestAnimationFrame(() => img.classList.add('in')))
+}
+
 // ---------- the art: last of all ----------
 
 // The page is complete without an image: the crystal is drawn, the colours are its own, and the photograph has its place
-// kept. When everything else is on screen, and only then, it asks Swarm for the illustrations of the bag's pouch and the
-// photograph of its fruit, by the references the packing record names, and checks each against its reference before
-// it is shown. One that does not come, does not match, or is not an image a browser can draw, leaves the page as it was.
+// kept. When everything else is on screen, and only then, it asks Swarm for the photograph of the bag's fruit and then for
+// the illustrations of its pouch, the cover and then the background, by the references the packing record names, and
+// checks each against its reference before it is shown. One that does not come, does not match, or is not an image a
+// browser can draw, leaves the page as it was.
 const ART_WAIT = 20_000
 const PIXELS_MOST = 4096 * 4096
 const arrive = (src: string) =>
@@ -1397,6 +1429,8 @@ const arrive = (src: string) =>
         // a small file can still name a picture too large for a phone to hold: that one is not shown either
         image.onload = () => done(image.naturalWidth * image.naturalHeight <= PIXELS_MOST ? src : null)
         image.onerror = () => done(null)
+        // the art is the page's own address; a holder's picture is not, and its host is not told which page asked
+        image.referrerPolicy = 'no-referrer'
         image.src = src
     })
 
@@ -1407,49 +1441,85 @@ const release = (url: string | null | undefined) => {
     URL.revokeObjectURL(url)
 }
 
-// An image of the product: its bytes from Swarm, checked against their reference, and then tried as an image.
-async function picture(mine: Product, name: string) {
+// An image of the product: its bytes from Swarm, checked against their reference and held under an address of the
+// page's own making (checked), and then tried as an image (tried).
+async function checked(mine: Product, name: string) {
     const ref = mine.files.get(name)
     const bytes = ref ? await fileOf(mine.gateways, ref) : null
     if (!bytes || product !== mine) return null // it did not come, or another bag is being read
     const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: PRODUCT_FILES[name]! }))
     held.add(url)
-    if (await arrive(url)) return url
+    return url
+}
+async function tried(url: string | null) {
+    if (!url || (await arrive(url))) return url
     release(url)
     return null
 }
+const picture = (mine: Product, name: string) => checked(mine, name).then(tried)
+
+// The images come one after another: each is asked for once the one before it is in, or has not come, or ART_TURN has
+// passed, whichever is first, so that one held up by its gateways, which may take 12 s each, does not hold back the next.
+const ART_TURN = 4_000
+const waitTurn = (before: Promise<unknown>) =>
+    new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, ART_TURN)
+        const done = () => {
+            clearTimeout(timer)
+            resolve()
+        }
+        void before.then(done, done)
+    })
 
 async function dress() {
     const mine = product
     if (!mine) return
     const root = document.documentElement
-    // each illustration is shown as it comes, and none waits for another file
-    const plate = async (name: string, side: 'front' | 'back') => {
-        const url = await picture(mine, name)
+    // each illustration is shown as it comes
+    const plate = async (image: Promise<string | null>, side: 'front' | 'back') => {
+        const url = await image
         if (!url) return
         if (product !== mine) return release(url) // another bag was read meanwhile
         root.style.setProperty(`--art-${side}`, `url(${JSON.stringify(url)})`)
         root.dataset.art = ['front', 'back'].filter(s => s === side || root.dataset.art?.split(' ').includes(s)).join(' ')
     }
     // the photograph waits for the description, which gives it its text and names who took it
-    const photograph = async () => {
-        const [url, described] = await Promise.all([picture(mine, PHOTO), mine.description])
+    const photograph = async (photo: Promise<string | null>) => {
+        const [url, described] = await Promise.all([photo, mine.description])
         if (product !== mine) return release(url)
         if (!url) return void ($('stage').hidden = true) // it did not come: its place is given back
         const img = $<HTMLImageElement>('fruit-photo')
         img.alt = described?.alt ?? $('fruit-name').textContent ?? ''
-        img.onload = () => img.classList.add('in')
+        // it fades in on its pixels once they are decoded, or ART_TURN after it is put in place when the browser has not
+        // said so by then, as when the page is in the background and draws nothing; where the browser cannot say when
+        // that is, as jsdom cannot, once it has loaded
+        if (!img.decode) img.onload = () => img.classList.add('in')
         img.src = url
         img.hidden = false
         $('stage').classList.add('on')
         // who took it is said with the sources of the label, or under it when the label has none, once the photograph is
         // there to be credited
-        if (!described?.credit) return
-        const origin = $('fruit-origin')
-        const note = origin.querySelector('.origin-note') ?? origin.appendChild(Object.assign(document.createElement('p'), { className: 'origin-note' }))
-        note.append(`${note.textContent ? ' ' : ''}Photograph: ${described.credit}.`)
+        if (described?.credit) {
+            const origin = $('fruit-origin')
+            const note = origin.querySelector('.origin-note') ?? origin.appendChild(Object.assign(document.createElement('p'), { className: 'origin-note' }))
+            note.append(`${note.textContent ? ' ' : ''}Photograph: ${described.credit}.`)
+        }
+        if (!img.decode) return
+        await waitTurn(img.decode())
+        if (product === mine) img.classList.add('in')
     }
-    await Promise.all([plate(COVER, 'front'), plate(BACKGROUND, 'back'), photograph()])
+    // The photograph of the fruit first, then the cover, then the background. The cover is asked for once the photograph
+    // is checked and tried as an image, and the background once the cover's bytes are checked, while the cover is still
+    // being tried; each of them at the latest ART_TURN after the one before it was asked for.
+    const photo = picture(mine, PHOTO)
+    const shown = photograph(photo)
+    await waitTurn(photo)
+    if (product !== mine) return // another bag is being read: nothing more of this one is asked for
+    const cover = checked(mine, COVER)
+    const front = plate(cover.then(tried), 'front')
+    await waitTurn(cover)
+    if (product !== mine) return
+    await Promise.all([shown, front, plate(picture(mine, BACKGROUND), 'back')])
 }
 
 function undress() {
@@ -1472,7 +1542,7 @@ const stampOf = (head: Record | null | undefined) => (typeof head?.stamp === 'st
 // What the page asks the PostageStamp contract: what is left on the batch, per chunk, and the price of a chunk per block.
 const stampAbi = parseAbi(['function remainingBalance(bytes32 batchId) view returns (uint256)', 'function lastPrice() view returns (uint64)'])
 
-// The day the stamp is paid up to, read from the chain it lives on (storage.chain: Gnosis) through the RPCs the
+// The day the stamp is paid up to, read from the chain it lives on (storage.chain) through the RPCs the
 // configuration lists for that chain, in order, and never through a wallet: a wallet is on the network of the bag, and
 // the page does not ask it to change. What is left divided by the price is blocks, and a block is storage.block_s
 // seconds, counted from now. Null when the batch has run out (the contract says 0, or reverts), when no RPC answers, or
@@ -1520,40 +1590,58 @@ function showStoredUntil(config: Page, stamp: string | null, until: Promise<Date
     }
     if (config.storage?.until) show(day(config.storage.until))
     const mine = product
+    // the day is the seal's: on a plate that opened again, because its sources disagree, it does not come back
     void until?.then(when => {
-        if (when && product === mine) show(day(when.toISOString()))
+        if (when && product === mine && $('hero').classList.contains('verified')) show(day(when.toISOString()))
     })
-}
-
-// ---------- the report ----------
-
-async function report(config: Page, id: bigint, outcome: 'verified' | 'failed', gateway: string | null, reason?: string) {
-    if (!config.report) return
-    const body = JSON.stringify({ bag: Number(id), at: new Date().toISOString(), gateway, outcome, ...(reason ? { reason } : {}) })
-    try {
-        await fetch(config.report, { method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true, headers: { 'content-type': 'application/json' }, body })
-        $('reported').hidden = false
-    } catch {
-    }
 }
 
 // ---------- the fingerprint ----------
 
-// A page cannot carry its own hash: writing it in would change the bytes.
+// A page cannot carry its own hash: writing it in would change the bytes. So the device asks for the file once more, from
+// where it came, with a bag in the link or without one, and hashes it. Opened from the web, the head of the file has kept
+// the row's place (data-fingerprint) since the first paint; from disk, or with no way to hash, the row is not there.
 async function fingerprint(config: Page) {
-    if (!config.source || !location.protocol.startsWith('http') || !globalThis.crypto?.subtle) return
+    const root = document.documentElement
+    if (!config.source || !location.protocol.startsWith('http') || !globalThis.crypto?.subtle) return void delete root.dataset.fingerprint
+    root.dataset.fingerprint = ''
+    const source = $<HTMLAnchorElement>('fp-source')
+    source.href = config.source
+    source.textContent = config.source.replace(/^https?:\/\//, '').replace('/blob/main', '').replace(/\/SHA256SUMS$/, '')
     try {
         const bytes = await (await fetch(location.href.replace(/#.*$/, ''))).arrayBuffer()
         const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
         const hash = [...digest].map(b => b.toString(16).padStart(2, '0')).join('')
         $('fp-hash').innerHTML = (hash.match(/.{16}/g) ?? [hash]).map(group => `<span>${group}</span>`).join('')
-        const source = $<HTMLAnchorElement>('fp-source')
-        source.href = config.source
-        source.textContent = config.source.replace(/^https?:\/\//, '').replace('/blob/main', '').replace(/\/SHA256SUMS$/, '')
-        $('fingerprint').hidden = false
     } catch (error) {
         console.error(error)
+        delete root.dataset.fingerprint
     }
+}
+
+// ---------- the rest of the small print: the code and the contract ----------
+
+// The code: the repository that publishes the file, at its root, which config.source names with or without the folder of
+// a release. Without a source, no row.
+function showCode(source: string | undefined) {
+    $('code').hidden = !source
+    if (!source) return
+    const root = source.replace(/\/blob\/.*$/, '')
+    const link = $<HTMLAnchorElement>('code-link')
+    link.href = root
+    link.textContent = root.replace(/^https?:\/\//, '')
+}
+
+// The contract on the explorer of its network: the one the page trusts, from the config (`chain` and `contract`), in every
+// state; once the link's contract has proved one of Fair Food Data's, the one the bag is in. Without an explorer for the
+// network, or with something that is not an address, no row.
+function showContract(chainId: number | undefined, contract: string | undefined) {
+    const explorer = chainId === undefined ? undefined : explorers[chainId]
+    const shown = !!explorer && !!contract && isAddress(contract, { strict: false })
+    $('contract').hidden = !shown
+    if (!shown) return
+    $<HTMLAnchorElement>('contract-link').href = `${explorer}/address/${contract}`
+    $('contract-addr').textContent = contract
 }
 
 // ---------- the states ----------
@@ -1570,7 +1658,7 @@ function hideLead() {
 }
 
 export function reset() {
-    for (const id of ['notice', 'co2', 'twin', 'reported', 'alive']) $(id).hidden = true
+    for (const id of ['notice', 'co2', 'twin', 'alive']) $(id).hidden = true
     $('proof-fold').classList.remove('open')
     for (const id of ['notice', 'co2', 'twin']) $(id).innerHTML = ''
     $('co2').classList.remove('drawn')
@@ -1578,6 +1666,7 @@ export function reset() {
     resetLater()
     resetFruit()
     places.plant = places.destination = null
+    stalled.clear()
     row(1, 'reading…', 'busy')
     row(2, 'waiting', 'idle')
     row(3, 'waiting', 'idle')
@@ -1587,6 +1676,7 @@ export function reset() {
     status('checking')
     $('hero').hidden = false
     $('fruit').hidden = false
+    delete document.documentElement.dataset.empty
 }
 
 // ---------- the check ----------
@@ -1613,11 +1703,15 @@ async function check(config: Page) {
     if (config.links?.ethereum) $<HTMLAnchorElement>('eth-link').href = config.links.ethereum
     if (config.links?.swarm) $<HTMLAnchorElement>('swarm-link').href = config.links.swarm
     if (config.links?.ens) $<HTMLAnchorElement>('ens-link').href = config.links.ens
+    showCode(config.source)
+    showContract(config.chain, config.contract)
     const gateways = config.gateways
     const tried = new Set<string>()
-    let served: string | null = null
     const raw = location.hash.slice(1)
     const parsed = parseSticker(location.hash)
+    // with no bag in the link, or one cut short, the page opens on how it works: the head of the file has said so since
+    // the first paint, by the same test, and the notice of no bag is already written in the markup
+    if (!parsed) document.documentElement.dataset.empty = ''
     if (!raw) {
         hideLead()
         return notice('No bag to show yet. Go get one. They are yummy.', 'Scan the QR code on a bag to follow its fruit from the plant to your hands.')
@@ -1657,11 +1751,13 @@ async function check(config: Page) {
         }
         if (!first) throw failed
         const { source, reader, run, owner } = first
+        showContract(chainId, address)
         const others = asked.slice(asked.indexOf(source) + 1)
+        // ENS is asked for the holder's name only when the twin has moved: in custody it is Fair Food Data's, by the config
         const twin = () => {
             if (owner === undefined) return
             const state = renderTwin(parsed.id, owner, config, explorer, address)
-            if (state !== 'none' && owner) void nameHolder(owner, chainId, source)
+            if (state === 'held' && owner) void nameHolder(owner, chainId, source)
         }
         if (run === zeroHash) {
             twin()
@@ -1685,32 +1781,36 @@ async function check(config: Page) {
         const seen = new Set<Hex>()
         // What a gateway serves is hashed as it lands, and the first bytes that give the reference are the record. A gateway
         // that serves other bytes is passed over like one that does not answer. `bytes` is null when gateways answered and
-        // none of them had the record; when none answered at all, that is the network, and it is thrown.
+        // none of them had the record; when none answered at all, that is the network, and it is thrown: what the gateway
+        // the configuration names last said, whatever order they were asked in.
         const fetchBytes = async (ref: Hex) => {
-            let last: unknown
+            const failed = new Map<string, unknown>()
             let other: string | null = null
-            for (const gateway of gateways) {
+            for (const gateway of inTurn(gateways)) {
                 tried.add(gateway)
                 try {
                     const bytes = await download(gateway, ref)
-                    if (swarmHash(bytes) === ref) {
-                        served = gateway
-                        return { bytes, gateway }
-                    }
+                    if (swarmHash(bytes) === ref) return { bytes, gateway }
                     other ??= gateway
                 } catch (error) {
-                    last = error
+                    if (unanswered(error)) stalled.add(gateway)
+                    failed.set(gateway, error)
                 }
             }
             if (other) return { bytes: null, gateway: other }
+            const last = failed.get([...gateways].reverse().find(gateway => failed.has(gateway)) ?? '')
             throw last instanceof Error ? last : Error('no gateway answered')
         }
         while (queue.length) {
             const ref = queue.shift()!
             if (seen.has(ref)) continue
             seen.add(ref)
+            // the anchor is asked while the bytes are on their way, and read once they are in: when no gateway answers, that
+            // is said at once, without waiting for the source, and what the source says of the anchor is not read
+            const anchor = reader.anchoredAt(ref)
+            void anchor.catch(() => {})
             const { bytes, gateway } = await fetchBytes(ref)
-            const [anchored, block] = await reader.anchoredAt(ref)
+            const [anchored, block] = await anchor
             const at = when(anchored)
             const text = at !== null && bytes ? new TextDecoder().decode(bytes) : null
             const verified = text !== null
@@ -1771,15 +1871,14 @@ async function check(config: Page) {
         )
 
         // The plate closes on what the first source says. A second one is then asked whether it says the same, and the answer
-        // is kept on the plate (`data-sources`: agree, differ, or single when there was no second one) and nowhere in sight:
-        // the page has no words for it yet, and until it has, nothing the visitor sees depends on it.
+        // is kept on the plate (`data-sources`: agree, differ, or single when there was no second one). When it differs, one
+        // of the two is not telling what is anchored, and the page cannot tell which: the plate opens again and says so.
         if (allGood) {
             const second = await secondOpinion(others, chainId, address, parsed.id, run, events)
+            if (product !== mine) return // another bag is being read
             $('hero').dataset.sources = !second ? 'single' : second.same ? 'agree' : 'differ'
+            if (second && !second.same) disagree()
         }
-
-        const outcome = events.length && allGood ? 'verified' : 'failed'
-        await report(config, parsed.id, outcome, served, outcome === 'failed' ? 'mismatch' : undefined)
     } catch (error) {
         console.error(error)
         const details = `<details><summary>Technical details</summary><pre>${esc(error)}</pre></details>`
@@ -1789,7 +1888,6 @@ async function check(config: Page) {
         }
         const where = tried.size ? `<br><span class="tried">Tried ${[...tried].map(g => esc(new URL(g).host)).join(', ')}.</span>` : ''
         notice('We couldn’t reach the records right now.', `The records don’t expire. Try again in a moment.${where}${details}`, true)
-        await report(config, parsed.id, 'failed', served, 'unreachable')
     }
 }
 

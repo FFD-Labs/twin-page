@@ -10,14 +10,16 @@ const root = resolve(import.meta.dirname, '..')
 const text = (file) => readFileSync(resolve(root, file), 'utf8')
 
 // Importing the script starts the page, as loading it does: with no bag in the link it settles on its notice. After that
-// its functions are the test's to call. One page per test file: node runs each file in a process of its own.
+// its functions are the test's to call. One page per test file: node runs each file in a process of its own. The page
+// opens from disk unless a test gives it another address (`url`), and with no wallet unless it gives one (`ethereum`).
 // jsdom does not load a page again: when the page asks for it, jsdom says what it will not do, and that is kept here.
 export const loads = []
 const virtualConsole = new VirtualConsole().on('jsdomError', (error) => loads.push(error.message))
 
-export async function openPage(config = JSON.parse(text('web/public/config.json'))) {
-    const { window } = new JSDOM(text('web/devcon8.html'), { url: 'file:///devcon8.html', virtualConsole })
+export async function openPage(config = JSON.parse(text('web/public/config.json')), { url = 'file:///devcon8.html', ethereum } = {}) {
+    const { window } = new JSDOM(text('web/devcon8.html'), { url, virtualConsole })
     const { document } = window
+    if (ethereum) window.ethereum = ethereum
     const inline = document.createElement('script')
     inline.type = 'application/json'
     inline.id = 'config'

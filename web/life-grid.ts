@@ -7,7 +7,7 @@
 //   measured to sealed, as the glider of the mark does.
 // - The field never passes under the text, the images or the plates of the footer: those cells are not painted and the
 //   ones at their edge go to half opacity, so the text keeps its contrast.
-// - It only works near the screen: it prepares the field when the footer comes close, advances a generation every 160 ms
+// - It only works near the screen: it prepares the field when the footer comes close, advances a generation every 120 ms
 //   while it is in view and stops when it leaves. With reduced motion it leaves one still frame.
 // The canvas sits in the flow of the footer, before its content: here it receives the footer's height and the same
 // negative margin. The fade at the top is drawn row by row. A module: it runs after parsing. Without JavaScript the

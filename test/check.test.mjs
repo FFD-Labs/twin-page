@@ -3,19 +3,24 @@
 // reference has no anchor, are never parsed and nothing of them is painted. An RPC that lies is the one thing the page
 // cannot see through, since the anchors are its word; even then, a record's values reach the page as text.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, mock, test } from 'node:test'
 import { decodeFunctionData, encodeErrorResult, encodeFunctionResult, parseAbi } from 'viem'
 import { abi, hex, swarmHash } from '../src/lib.ts'
 import { clean, hostile, loads, openPage } from './page.mjs'
 
 const contract = '0x240dfbca7064d091149169eff95f764d1e21cea7'
+// the contract the QR of every real bag names, on mainnet; it is the published configuration that lists it (see below)
+const printed = '0xc7e8Dd10265b5d4A549321411617Dff4DB4ccb8a'
 const rpcs = ['https://rpc.example', 'https://other-rpc.example']
-// the chain the stamps live on, Gnosis, with two RPCs of its own, and the records' storage as the configuration gives it
-const gnosisRpcs = ['https://gnosis.example', 'https://other-gnosis.example']
+// the chain the stamps live on, with two RPCs of its own, and the records' storage as the configuration gives it
+const stampRpcs = ['https://stamp-rpc.example', 'https://other-stamp-rpc.example']
 const storage = { until: '2027-01-27', chain: 100, contract: '0x45a1502382541Cd610CC9068e88727426b696293', block_s: 5, stamp_page: 'https://stamptime.example/?id={stamp}' }
 const config = {
-    rpcs: { 11155111: rpcs, 1: rpcs, 100: gnosisRpcs },
+    rpcs: { 11155111: rpcs, 1: rpcs, 100: stampRpcs },
     contract,
+    chain: 11155111,
     gateways: ['https://gateway.example', 'https://second.example'],
     storage,
     co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' }
@@ -25,8 +30,8 @@ const config = {
 // Both gateways serve the files, unless a test says what one of them does instead (`net.instead`, by its address). Both
 // RPCs say the same, they are on Sepolia and the twin is not created yet, unless a test says otherwise: `net.chain`,
 // `net.owner` (an address, or a function that answers in its place), `net.ens` (what an RPC does when it is asked for a
-// name) and `net.says` (what one RPC answers in place of the other's answer, by its address). The RPCs of Gnosis answer
-// for the stamp (`net.stamp`, below).
+// name) and `net.says` (what one RPC answers in place of the other's answer, by its address). The RPCs of the chain the
+// stamps live on answer for the stamp (`net.stamp`, below).
 const net = { head: null, anchors: new Map(), files: new Map(), asked: [], calls: [], instead: new Map(), says: new Map(), chain: '0xaa36a7', owner: null, ens: null, stamp: { chain: '0x64', remaining: 0n, price: 0n, asked: [] } }
 const [first, second] = config.gateways
 const answer = (body, type) => new Response(body, { headers: { 'content-type': type } })
@@ -36,7 +41,7 @@ const others = parseAbi(['error OffchainLookup(address sender, string[] urls, by
 function rpc(method, [call] = []) {
     if (method === 'eth_chainId') return net.chain
     if (method === 'eth_getLogs') return []
-    if (method === 'eth_call' && call.to.toLowerCase() === contract) {
+    if (method === 'eth_call' && [contract, printed.toLowerCase()].includes(call.to.toLowerCase())) {
         const { functionName, args } = decodeFunctionData({ abi, data: call.data })
         if (functionName === 'recordOf') return encodeFunctionResult({ abi, functionName, result: net.head })
         if (functionName === 'anchoredAt') return encodeFunctionResult({ abi, functionName, result: net.anchors.get(args[0]) ?? [0n, 0n] })
@@ -67,13 +72,13 @@ globalThis.fetch = async (input, init) => {
     const url = request.url
     const origin = new URL(url).origin
     net.asked.push(url)
-    if (rpcs.includes(origin) || gnosisRpcs.includes(origin)) {
+    if (rpcs.includes(origin) || stampRpcs.includes(origin)) {
         const { id, method, params } = await request.json()
         net.calls.push(`${new URL(url).host} ${method}`)
         try {
             const says = net.says.get(origin)
             // a test may answer with a promise, to hold the answer back
-            const result = await (says ? says(method, params) : gnosisRpcs.includes(origin) ? stampRpc(method, params) : rpc(method, params))
+            const result = await (says ? says(method, params) : stampRpcs.includes(origin) ? stampRpc(method, params) : rpc(method, params))
             return answer(JSON.stringify({ jsonrpc: '2.0', id, result }), 'application/json')
         } catch (error) {
             if (error instanceof Response) return error
@@ -334,6 +339,19 @@ test('a twin that has a holder: its address', async (t) => {
     assert.match($('twin').textContent, /Twin held by 0x1111…1111/)
 })
 
+test('a twin that exists opens on the explorer of its network, at its instance of the contract; one not created yet links nowhere', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    net.head = put(packed())
+    await scan()
+    assert.equal($('twin').querySelector('a.go'), null)
+    net.head = put(packed())
+    net.owner = holder
+    await scan()
+    const go = $('twin').querySelector('a.go')
+    assert.equal(go.getAttribute('href'), `https://eth-sepolia.blockscout.com/token/${contract}/instance/1`)
+    assert.equal(go.textContent, 'Blockscout ↗')
+})
+
 test('an RPC that fails when asked who holds the twin: the page does not say the twin was never created', async (t) => {
     t.mock.method(console, 'error', () => {})
     net.head = put(packed())
@@ -397,18 +415,172 @@ test('another bag in the link: the page is loaded again, not left under the seal
     assert.match(loads.at(-1), /navigation/)
 })
 
+// ---------- the footer: the contract, on the explorer of its network ----------
+// The last row of the footer is the contract: the one the page trusts, from the configuration (`chain` and `contract`), in
+// every state, and once the link's contract has proved one of Fair Food Data's, the one the bag is in, on the explorer of
+// the link's network. A network the page has no explorer for, or no network at all, has no row.
+const contractRow = () => ({ shown: !$('contract').hidden, href: $('contract-link').getAttribute('href'), text: $('contract-addr').textContent })
+const onSepolia = (address) => ({ shown: true, href: `https://eth-sepolia.blockscout.com/address/${address}`, text: address })
+// a scan with another configuration
+async function configured(given, link) {
+    const inline = $('config')
+    const plain = inline.textContent
+    inline.textContent = JSON.stringify(given)
+    try {
+        await scan(link)
+    } finally {
+        inline.textContent = plain
+    }
+}
+
+test('a bag: the footer names the contract it is in, on the explorer of its network, and the page is the bag’s', async () => {
+    net.head = put(packed())
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(document.documentElement.hasAttribute('data-empty'), false)
+    assert.deepEqual(contractRow(), onSepolia(contract))
+    assert.equal($('contract-link').target, '_blank')
+    assert.equal($('contract-link').rel, 'noopener')
+})
+
+test('a contract the page does not list: the footer names the one the page trusts, never the stranger', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    await scan(`11155111:${stranger}/1`)
+    assert.match($('notice').textContent, /This is not a Fair Food Data bag/)
+    assert.deepEqual(contractRow(), onSepolia(contract))
+    assert.equal($('contract').innerHTML.includes(stranger), false)
+})
+
+test('a configuration that names no network for its contract, or one with no explorer: no row, until a bag is read on a network that has one', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    for (const chain of [undefined, 100, 5]) {
+        await configured({ ...config, chain }, `11155111:${stranger}/1`)
+        assert.match($('notice').textContent, /This is not a Fair Food Data bag/)
+        assert.equal(contractRow().shown, false, String(chain))
+    }
+    net.head = put(packed())
+    await configured({ ...config, chain: undefined })
+    assert.deepEqual(contractRow(), onSepolia(contract))
+    await configured({ ...config, contract: 'the contract' }, `11155111:${stranger}/1`)
+    assert.equal(contractRow().shown, false)
+})
+
+// ---------- the holder's name: asked of ENS only when the twin has moved ----------
+test('a twin in custody: ENS is not asked for a name; a twin that has moved: it is', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    let names = 0
+    net.ens = () => {
+        names++
+        throw revert()
+    }
+    net.owner = holder
+    net.head = put(packed())
+    await configured({ ...config, custody: holder })
+    await turns()
+    assert.match($('twin').textContent, /Twin held by Fair Food Data/)
+    assert.equal(names, 0)
+    net.head = put(packed())
+    await scan()
+    await turns()
+    assert.match($('twin').textContent, /Twin held by 0x1111…1111/)
+    assert.ok(names > 0)
+})
+
+// ---------- the configuration that is published: what the QR of a bag opens ----------
+// The real bags are in a contract on mainnet, and the QR of each names it. The page opens it because its configuration lists
+// it: fairfooddata.eth is not asked, so whatever it names or does not name changes nothing. The test contract on Sepolia stays
+// listed. Here the configuration is the one the file carries, with the RPCs and the gateways of the test in place of its addresses.
+const published = JSON.parse(readFileSync(resolve(import.meta.dirname, '../web/public/config.json'), 'utf8'))
+const asPublished = { ...published, rpcs: { 1: rpcs, 11155111: rpcs, [published.storage.chain]: stampRpcs }, gateways: config.gateways }
+const onMainnet = (address) => ({ shown: true, href: `https://eth.blockscout.com/address/${address}`, text: address })
+// what fairfooddata.eth is asked, counted; it answers that it names nothing
+function ensAsked() {
+    const asked = { names: 0 }
+    net.ens = () => {
+        asked.names++
+        throw revert(encodeErrorResult({ abi: others, errorName: 'ResolverNotFound', args: ['0x'] }))
+    }
+    return asked
+}
+
+test('the configuration that is published: the contract of the QR and its custody on mainnet, Sepolia still listed, and at least two sources for each network', () => {
+    assert.equal(published.contract, printed)
+    assert.equal(published.chain, 1)
+    assert.equal(published.custody, '0xa645BF8c92AfEC02D9239E8d9f5dc27e641C012E')
+    assert.deepEqual(published.contracts, [contract])
+    for (const network of [1, 11155111]) assert.ok(published.rpcs[network].length >= 2, `a second opinion on ${network}`)
+    assert.ok(published.rpcs[published.storage.chain].length >= 1)
+    for (const url of Object.values(published.rpcs).flat()) assert.match(url, /^https:\/\//)
+    assert.equal(published.storage.contract, storage.contract)
+    assert.match(published.storage.until, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('a QR on mainnet, with the configuration that is published: the contract is opened by the list, ENS is not asked, and every link to the chain is mainnet’s', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    for (const address of [printed, printed.toLowerCase()]) {
+        const asked = ensAsked()
+        net.chain = '0x1'
+        net.owner = published.custody
+        net.head = put(packed({ stamp }))
+        await configured(asPublished, `1:${address}/144`)
+        await turns()
+        assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' }, address)
+        assert.equal($('notice').hidden, true, address)
+        assert.equal(asked.names, 0, address)
+        assert.match($('twin').textContent, /Twin held by Fair Food Data/, address)
+        assert.equal($('twin').querySelector('a.go').getAttribute('href'), `https://eth.blockscout.com/token/${address}/instance/144`)
+        assert.equal(cards()[0].querySelector('a.anchor').getAttribute('href'), 'https://eth.blockscout.com/block/7')
+        assert.deepEqual(contractRow(), onMainnet(address))
+        // the stamp the record names, read from its chain, on the page the configuration names for it
+        assert.deepEqual(line(), { ...linked, href: `https://stamptime.eth.limo/?id=${stamp}` })
+    }
+})
+
+test('a QR on Sepolia, with the configuration that is published: the test contract is still opened by the list, on its own network', async () => {
+    const asked = ensAsked()
+    net.head = put(packed())
+    await configured(asPublished, `11155111:${contract}/1`)
+    assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' })
+    assert.equal(asked.names, 0)
+    assert.deepEqual(contractRow(), onSepolia(contract))
+    assert.equal(cards()[0].querySelector('a.anchor').getAttribute('href'), 'https://eth-sepolia.blockscout.com/block/7')
+    // a record that names no stamp: the day written in the configuration, whatever it is
+    assert.equal(line().until, new Date(published.storage.until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }))
+})
+
+test('a contract the published configuration does not list, on mainnet: ENS is asked, and it is not a Fair Food Data bag', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    const asked = ensAsked()
+    net.chain = '0x1'
+    await configured(asPublished, `1:${stranger}/1`)
+    assert.ok(asked.names > 0)
+    assert.match($('notice').textContent, /This is not a Fair Food Data bag/)
+    assert.deepEqual(contractRow(), onMainnet(printed))
+    assert.equal(cards().length, 0)
+})
+
 // ---------- where Ethereum is read from ----------
 // What is anchored is the word of a source, and a source that lied could seal anything. So the page reads with the first
 // that answers and asks the next whether it says the same. The plate closes on the first; what the second said is kept on
-// the plate (`data-sources`) and is not in sight yet.
+// the plate (`data-sources`), and when it differs the plate opens again and says so.
 const [rpc1, rpc2] = rpcs
 const plate = () => ({ sealed: $('hero').classList.contains('verified'), open: $('proof-fold').classList.contains('open'), sources: $('hero').dataset.sources })
+// what the plate says of the sources: the Ethereum read, the edge of the anchor, the line under the seal and the notice
+const doubt = () => ({
+    read: $('step-1').querySelector('.v').textContent,
+    bad: $('step-1').classList.contains('bad'),
+    edge: $('tri').classList.contains('bad'),
+    line: !$('alive').hidden,
+    notice: $('notice').hidden ? null : $('notice').querySelector('strong').textContent
+})
+const sure = { read: 'record and holder', bad: false, edge: false, line: true, notice: null }
 const callsTo = (url) => net.calls.filter((call) => call.startsWith(`${new URL(url).host} `)).map((call) => call.split(' ')[1])
 
 test('two sources that say the same: the plate closes, and keeps that they agree', async () => {
     net.head = put(packed())
     await scan()
     assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' })
+    assert.deepEqual(doubt(), sure)
     assert.deepEqual(callsTo(rpc1).slice(0, 3), ['eth_chainId', 'eth_call', 'eth_call'])
     // the second is asked which record the bag has and whether each record has its anchor, and nothing else
     assert.deepEqual(callsTo(rpc2), ['eth_chainId', 'eth_call', 'eth_call'])
@@ -432,19 +604,34 @@ test('a first source that does not answer: the page reads with the second, which
     assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
 })
 
-for (const [what, lie] of [
+const lies = [
     ['names another record for the bag', (method, params) => (method === 'eth_call' && params[0].data.startsWith('0x55d742e4') ? `0x${'ab'.repeat(32)}` : rpc(method, params))],
     ['says a record has no anchor', (method, params) => (method === 'eth_call' && !params[0].data.startsWith('0x55d742e4') ? encodeFunctionResult({ abi, functionName: 'anchoredAt', result: [0n, 0n] }) : rpc(method, params))],
     ['gives a record another anchor', (method, params) => (method === 'eth_call' && !params[0].data.startsWith('0x55d742e4') ? encodeFunctionResult({ abi, functionName: 'anchoredAt', result: [1759400001n, 7n] }) : rpc(method, params))]
-])
-    test(`a second source that ${what}: nothing in sight changes yet, and the plate keeps that they differ`, async () => {
+]
+for (const [what, lie] of lies)
+    test(`a second source that ${what}: the plate opens again and says the sources disagree, and the cards stay as read`, async () => {
         net.head = put(packed())
         net.says.set(rpc2, lie)
         await scan()
-        assert.deepEqual(plate(), { sealed: true, open: true, sources: 'differ' })
-        assert.equal($('notice').hidden, true)
+        assert.deepEqual(plate(), { sealed: false, open: false, sources: 'differ' })
+        assert.deepEqual(doubt(), { read: 'sources disagree', bad: true, edge: true, line: false, notice: 'Two sources disagree about this bag.' })
+        assert.match($('notice').textContent, /cannot say which one is right/)
+        assert.ok(document.getElementById('retry'))
         assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
     })
+
+test('sources that disagree, and then say the same: Try again closes the plate as for any bag', async () => {
+    net.head = put(packed())
+    net.says.set(rpc2, lies[0][1])
+    await scan()
+    assert.equal(plate().sources, 'differ')
+    net.says.delete(rpc2)
+    document.getElementById('retry').click()
+    await turns(200)
+    assert.deepEqual(plate(), { sealed: true, open: true, sources: 'agree' })
+    assert.deepEqual(doubt(), sure)
+})
 
 // A wallet in the browser is the visitor's own way to the chain. It is asked to read, and nothing else.
 function wallet(chain = '0xaa36a7') {
@@ -506,10 +693,12 @@ test('a link to a network the page has no RPC for: a wallet that is on it is not
 // The page tries an image before it shows it, and holds it under an address of its own making. Here an image is one when
 // its bytes begin as a WebP file does, which stands for a picture a browser can draw; the bytes behind each address are
 // kept, to tell, with the type the page gave them and whether it let the address go. A picture is 720 px a side, unless
-// its bytes say it is one too large to hold (`webp(mark, size, true)`).
+// its bytes say it is one too large to hold (`webp(mark, size, true)`). One whose mark a test puts in `undrawn` never
+// loads, nor fails: the page stops waiting for it when it has waited long enough.
 const pictures = new Map()
 const made = []
 const letGo = new Set()
+const undrawn = new Set()
 const createObjectURL = URL.createObjectURL.bind(URL)
 const revokeObjectURL = URL.revokeObjectURL.bind(URL)
 URL.createObjectURL = (blob) => {
@@ -525,6 +714,7 @@ URL.revokeObjectURL = (url) => {
 beforeEach(() => {
     made.length = 0
     letGo.clear()
+    undrawn.clear()
 })
 const NodeBlob = globalThis.Blob
 globalThis.Blob = class extends NodeBlob {
@@ -539,6 +729,7 @@ globalThis.Image = class {
         const file = pictures.get(url)
         const drawn = file && ascii(file, 0, 4) === 'RIFF' && ascii(file, 8, 12) === 'WEBP'
         this.naturalWidth = this.naturalHeight = drawn && file[21] ? 20000 : 720
+        if (drawn && undrawn.has(file[20])) return
         queueMicrotask(() => (drawn ? this.onload?.() : this.onerror?.()))
     }
 }
@@ -866,6 +1057,271 @@ test('another bag while the files of the first are still on their way: nothing o
     for (const url of before) assert.ok(letGo.has(url))
 })
 
+// ---------- the images in turn: the photograph, then the cover, then the background ----------
+// Each image is asked for once the one before it is in, or four seconds after it was asked for. The scan runs every timer
+// at once, which would let those four seconds pass at once: here it runs until the page asks for the image the test holds
+// back, and the test then moves the clock itself.
+async function until(document) {
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    while (!askedFor(document) && !done) {
+        mock.timers.runAll()
+        await new Promise((turn) => setImmediate(turn))
+    }
+    return scanning
+}
+// a few turns with the clock stopped
+async function still(count = 20) {
+    for (let i = 0; i < count; i++) await new Promise((turn) => setImmediate(turn))
+}
+const firstAsked = (document) => net.asked.findIndex((url) => url.endsWith(`/bytes/${document.ref}`))
+
+test('a photograph that is slow to come: no art is asked for until it is in, or until four seconds have passed', async () => {
+    // it comes before the four seconds: the cover is asked for when it does, and then the background
+    let files = [description(), photo(), cover(), background()]
+    bag(files)
+    let open = slow(files[1])
+    let scanning = until(files[1])
+    await still()
+    mock.timers.tick(3999)
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [0, 0])
+    open()
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [1, 1])
+    await turns()
+    await scanning
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal(root().dataset.art, 'front back')
+    // it does not come in four seconds: the art is asked for then, and shown, and the photograph when it comes
+    net.instead.clear()
+    files = [description(), photo(webp(4)), cover(webp(5)), background(webp(6))]
+    bag(files)
+    open = slow(files[1])
+    scanning = until(files[1])
+    await still()
+    mock.timers.tick(3999)
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [0, 0])
+    mock.timers.tick(1)
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [1, 1])
+    assert.equal(root().dataset.art, 'front back')
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    open()
+    await turns()
+    await scanning
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal($('fruit-photo').alt, 'A pineapple cut in half')
+    assert.equal($('stage').hidden, false)
+    clean(document)
+})
+
+test('a cover that is slow to come: the background is asked for four seconds after it, and shown, and the cover when it comes', async () => {
+    // its bytes are in and it is slow to be drawn: the background is asked for at once, and does not wait for it
+    let files = [description(), photo(), cover(webp(8)), background()]
+    undrawn.add(8)
+    bag(files)
+    let scanning = until(files[2])
+    await still()
+    assert.equal(askedFor(files[3]), 1)
+    assert.equal(root().dataset.art, 'back')
+    await turns()
+    await scanning
+    assert.equal(art('front'), '')
+    assert.equal(root().dataset.art, 'back')
+    // its bytes are slow to come
+    net.instead.clear()
+    net.asked.length = 0
+    made.length = 0
+    files = [description(), photo(), cover(), background()]
+    bag(files)
+    const open = slow(files[2])
+    scanning = until(files[2])
+    await still()
+    // the photograph was in before the cover was asked for
+    assert.match($('fruit-photo').src, /^blob:/)
+    mock.timers.tick(3999)
+    await still()
+    assert.equal(askedFor(files[3]), 0)
+    mock.timers.tick(1)
+    await still()
+    assert.equal(askedFor(files[3]), 1)
+    assert.equal(root().dataset.art, 'back')
+    assert.equal(art('front'), '')
+    open()
+    await turns()
+    await scanning
+    assert.equal(root().dataset.art, 'front back')
+    assert.match(art('front'), /^url\("blob:[^"]+"\)$/)
+    // none of the three is let go while it is on screen
+    assert.equal(made.length, 3)
+    for (const { url } of made) assert.equal(letGo.has(url), false)
+})
+
+test('another bag while the photograph of the first is on its way: the art of the first is never asked for', async () => {
+    const files = [description(), photo(), cover(), background()]
+    bag(files)
+    const open = slow(files[1])
+    const scanning = until(files[1])
+    await still()
+    net.instead.clear()
+    net.head = put(packed())
+    await scan()
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [0, 0])
+    assert.equal(root().dataset.art, undefined)
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    assert.equal(made.length, 0)
+})
+
+test('a description that is slow to come, or a photograph slow to decode: the art waits for neither', async () => {
+    // the description held back: the photograph waits for it, and the art is asked for once the photograph is in
+    let files = [description(), photo(), cover(), background()]
+    bag(files)
+    const open = slow(files[0])
+    let scanning = until(files[1])
+    await still()
+    assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [1, 1])
+    assert.equal(root().dataset.art, 'front back')
+    assert.equal($('fruit-photo').hasAttribute('src'), false)
+    open()
+    await turns()
+    await scanning
+    assert.match($('fruit-photo').src, /^blob:/)
+    // the pixels of the photograph slow to decode: the art does not wait for them
+    const { prototype } = window.HTMLImageElement
+    let decoded
+    prototype.decode = () => new Promise((resolve) => (decoded = resolve))
+    try {
+        net.instead.clear()
+        net.asked.length = 0
+        files = [description(), photo(webp(10)), cover(webp(11)), background(webp(12))]
+        bag(files)
+        scanning = until(files[1])
+        await still()
+        assert.ok(decoded)
+        assert.equal($('fruit-photo').classList.contains('in'), false)
+        assert.deepEqual([askedFor(files[2]), askedFor(files[3])], [1, 1])
+        assert.equal(root().dataset.art, 'front back')
+        decoded()
+        await turns()
+        await scanning
+    } finally {
+        delete prototype.decode
+    }
+})
+
+test('another bag while the cover, or the pixels of the photograph, of the first are on their way: nothing more of the first is asked for or shown', async () => {
+    // the cover held back: the background of the first is never asked for
+    let files = [description(), photo(), cover(), background()]
+    bag(files)
+    const open = slow(files[2])
+    let scanning = until(files[2])
+    await still()
+    net.instead.clear()
+    net.head = put(packed())
+    await scan()
+    open()
+    await turns()
+    await scanning
+    assert.equal(askedFor(files[3]), 0)
+    assert.equal(root().dataset.art, undefined)
+    // the photograph was held, and let go; the cover came once the bag had changed, and was not held at all
+    assert.equal(made.length, 1)
+    for (const { url } of made) assert.ok(letGo.has(url))
+    // the pixels of the photograph still to decode: it does not fade in on the bag after
+    const { prototype } = window.HTMLImageElement
+    let decoded
+    prototype.decode = () => new Promise((resolve) => (decoded = resolve))
+    try {
+        net.asked.length = 0
+        files = [description(), photo(webp(13))]
+        bag(files)
+        scanning = until(files[1])
+        await still()
+        assert.ok(decoded)
+        net.head = put(packed())
+        await scan()
+        decoded()
+        await turns()
+        await scanning
+        assert.equal($('fruit-photo').hasAttribute('src'), false)
+        assert.equal($('fruit-photo').classList.contains('in'), false)
+    } finally {
+        delete prototype.decode
+    }
+})
+
+test('a photograph whose bytes are in and that is slow to be drawn: the cover waits for it, four seconds at most', async () => {
+    const files = [description(), photo(webp(9)), cover(), background()]
+    undrawn.add(9)
+    bag(files)
+    const scanning = until(files[1])
+    await still()
+    mock.timers.tick(3999)
+    await still()
+    assert.equal(askedFor(files[2]), 0)
+    mock.timers.tick(1)
+    await still()
+    assert.equal(askedFor(files[2]), 1)
+    await turns()
+    await scanning
+    // the browser never drew it: its place is given back, and its address let go
+    assert.equal($('stage').hidden, true)
+    assert.equal(root().dataset.art, 'front back')
+    assert.equal(made.length, 3)
+    assert.ok(letGo.has(made[0].url))
+})
+
+test('a photograph no gateway has: its place is given back, and the art is asked for after it, in turn, and comes', async () => {
+    const files = [description(), photo(), cover(), background()]
+    bag(files)
+    for (const gateway of [first, second]) net.instead.set(gateway, but(files[1], down))
+    await scan()
+    assert.equal($('stage').hidden, true)
+    assert.equal(root().dataset.art, 'front back')
+    assert.deepEqual(files.slice(1).map(askedFor), [2, 1, 1])
+    const photoLast = net.asked.findLastIndex((url) => url.endsWith(`/bytes/${files[1].ref}`))
+    assert.ok(photoLast < firstAsked(files[2]) && firstAsked(files[2]) < firstAsked(files[3]))
+})
+
+test('a photograph whose pixels are slow to decode: it is in its place, and fades in once they are, once the browser gives up on them, or four seconds after', async () => {
+    const { prototype } = window.HTMLImageElement
+    let decoded
+    prototype.decode = () => new Promise((resolve, reject) => (decoded = { resolve, reject }))
+    try {
+        for (const end of ['resolve', 'reject', 'never']) {
+            decoded = null
+            net.asked.length = 0
+            const files = [description(), photo()]
+            bag(files)
+            const scanning = until(files[1])
+            await still()
+            assert.ok(decoded, end)
+            assert.match($('fruit-photo').src, /^blob:/)
+            assert.equal($('fruit-photo').hidden, false)
+            assert.equal($('fruit-photo').classList.contains('in'), false)
+            if (end === 'never') {
+                // the browser draws nothing, as for a page in the background, and never says
+                mock.timers.tick(3999)
+                await still()
+                assert.equal($('fruit-photo').classList.contains('in'), false)
+                mock.timers.tick(1)
+            } else decoded[end](Error('the browser could not decode it'))
+            await still()
+            assert.ok($('fruit-photo').classList.contains('in'), end)
+            await turns()
+            await scanning
+        }
+    } finally {
+        delete prototype.decode
+    }
+})
+
 test('a photograph with a credit and a description with no table: the credit is said under the label', async () => {
     const files = [description({ ...pineapple, nutrition: undefined }), photo()]
     bag(files)
@@ -883,6 +1339,189 @@ test('a table with more rows than a label has room for: the page takes the first
     assert.equal($('fruit-origin').querySelectorAll('tbody tr').length, 6 + 12)
     assert.ok($('fruit-origin').textContent.includes('Mineral 12'))
     assert.equal($('fruit-origin').textContent.includes('Mineral 13'), false)
+})
+
+// ---------- the walk, and a gateway that keeps it waiting ----------
+// A record is asked of the gateways and its anchor of the source at once, and its card waits for both. When no gateway
+// answers, the page says so as soon as that is known, whatever the source is doing. A gateway that takes the request and
+// never answers, or cannot be reached, costs its wait once: what the page asks after that goes to the other first.
+
+// the anchors the first source is asked for, kept in order; `then` is what it does before it answers, to hold the answer
+// back or to fail
+function anchorsAsked(then = () => {}) {
+    const anchors = []
+    net.says.set(rpc1, async (method, params) => {
+        const call = method === 'eth_call' && params[0].to.toLowerCase() === contract ? decodeFunctionData({ abi, data: params[0].data }) : null
+        if (call?.functionName === 'anchoredAt') {
+            anchors.push(call.args[0])
+            await then()
+        }
+        return rpc(method, params)
+    })
+    return anchors
+}
+
+test('a record that is slow to come: its anchor is asked while it is on its way, and its card waits for both', async () => {
+    net.head = put(packed())
+    const open = slow({ ref: net.head.slice(2) })
+    const anchors = anchorsAsked()
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    await turns()
+    assert.equal(done, false)
+    assert.deepEqual(anchors, [net.head])
+    assert.equal(cards().length, 0)
+    open()
+    await turns()
+    await scanning
+    assert.equal(cards()[0].querySelector('h2').textContent, 'Packed')
+    assert.match(cards()[0].querySelector('.check').textContent, /^✓ Matches its Ethereum anchor of /)
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(anchors, [net.head])
+})
+
+test('no gateway answers while the source keeps the anchor back: the page says so without waiting for the source', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    net.instead.set(first, down)
+    net.instead.set(second, down)
+    let open
+    const held = new Promise((resolve) => (open = resolve))
+    const anchors = anchorsAsked(() => held)
+    location.hash = `#11155111:${contract}/1`
+    let done = false
+    const scanning = page.main().finally(() => (done = true))
+    await turns()
+    assert.equal(done, true)
+    assert.deepEqual(anchors, [net.head]) // asked, and not answered yet
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example, second\.example\./)
+    assert.ok(document.getElementById('retry'))
+    assert.equal(cards().length, 0)
+    open()
+    await scanning
+})
+
+test('a source that fails when asked for an anchor, while a gateway serves the record: the page says it could not reach the records', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    anchorsAsked(fails)
+    await scan()
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example\./)
+    assert.match($('notice').querySelector('pre').textContent, /Status: 429/) // what the source said, in the details
+    assert.ok(document.getElementById('retry'))
+    assert.equal(cards().length, 0)
+    assert.equal($('hero').classList.contains('verified'), false)
+})
+
+// the rejections nobody handled while `scanning` ran, and for a few turns after it: an anchor that fails when its answer
+// is no longer read must not become one
+async function unhandled(scanning) {
+    const seen = []
+    const on = (reason) => seen.push(reason)
+    process.on('unhandledRejection', on)
+    try {
+        await scanning()
+        await turns(40)
+    } finally {
+        process.off('unhandledRejection', on)
+    }
+    return seen
+}
+
+test('no gateway answers, and the source fails when asked for the anchor: the page says so, and leaves no rejection unhandled', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    net.instead.set(first, down)
+    net.instead.set(second, down)
+    const anchors = anchorsAsked(fails)
+    const seen = await unhandled(() => scan())
+    assert.equal(anchors.length, 2) // asked, and asked again, before it gave up
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').querySelector('pre').textContent, /download failed: 502/)
+    assert.deepEqual(seen, [])
+})
+
+test('the source fails when asked for the anchor while a gateway still serves the record: the page says so once the bytes are in, and leaves no rejection unhandled', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    net.head = put(packed())
+    const open = slow({ ref: net.head.slice(2) })
+    const anchors = anchorsAsked(fails)
+    location.hash = `#11155111:${contract}/1`
+    const seen = await unhandled(async () => {
+        const scanning = page.main()
+        await turns(80)
+        assert.equal(anchors.length, 2)
+        assert.equal($('notice').hidden, true)
+        open()
+        await turns()
+        await scanning
+    })
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').querySelector('pre').textContent, /Status: 429/)
+    assert.deepEqual(seen, [])
+})
+
+test('a first gateway that takes the request and never answers, and a bag of three records and two files: it is asked once, not once for each, and the bag seals', async (t) => {
+    const timeout = AbortSignal.timeout.bind(AbortSignal)
+    t.mock.method(AbortSignal, 'timeout', () => timeout(5)) // the wait, cut short for the test
+    bag([description(), photo()])
+    net.instead.set(first, silent)
+    await scan()
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches')
+    assert.ok($('hero').classList.contains('verified'))
+    for (const li of cards()) assert.ok(li.querySelector('.links a:not(.anchor)').href.startsWith(`${second}/bytes/`))
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.deepEqual([asked(first), asked(second)], [1, 5])
+    // a check after it, as Try again starts one, asks in the order of the configuration
+    net.instead.clear()
+    net.asked.length = 0
+    await scan()
+    assert.deepEqual([asked(first), asked(second)], [5, 0])
+})
+
+test('a first gateway that answers with an error, for a bag of three records: it keeps its place, and is asked for each', async () => {
+    bag([])
+    net.instead.set(first, down)
+    await scan()
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches')
+    assert.deepEqual([asked(first), asked(second)], [3, 3])
+})
+
+test('a first gateway that never answers, and a second that fails the next record: the details say what the second said, as they would have in the order of the configuration', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    const timeout = AbortSignal.timeout.bind(AbortSignal)
+    t.mock.method(AbortSignal, 'timeout', () => timeout(5)) // the wait, cut short for the test
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' })
+    const cycle = put({ phase: 'cycle', at: '2026-09-29T08:00:00Z', start: '2026-09-28T10:00:00Z', end: '2026-09-29T08:00:00Z', loads: [{ trays: 10, kg: 20 }], kg_out: 2, inputs: [intake] })
+    net.head = put(packed({ inputs: [cycle] }))
+    net.instead.set(first, silent)
+    net.instead.set(second, but({ ref: cycle.slice(2) }, down))
+    await scan()
+    assert.match($('notice').textContent, /We couldn’t reach the records right now/)
+    assert.match($('notice').textContent, /Tried gateway\.example, second\.example\./)
+    assert.match($('notice').querySelector('pre').textContent, /download failed: 502/)
+})
+
+test('a first gateway that serves the records and cannot be reached for the files: it is asked for the first of them, and the rest go to the second first', async () => {
+    const files = [description(), photo(), cover()]
+    bag(files)
+    const refused = new Set(files.map((document) => document.ref))
+    net.instead.set(first, (request) => {
+        const ref = request.url.split('/bytes/')[1]
+        if (refused.has(ref)) throw new TypeError('Failed to fetch')
+        return answer(net.files.get(`0x${ref}`), 'application/octet-stream')
+    })
+    await scan()
+    const of = (gateway, document) => net.asked.filter((url) => url === `${gateway}/bytes/${document.ref}`).length
+    assert.deepEqual(files.map((document) => of(first, document)), [1, 0, 0])
+    assert.deepEqual(files.map((document) => of(second, document)), [1, 1, 1])
+    assert.equal($('fruit-name').textContent, 'Golden pineapple')
+    assert.match($('fruit-photo').src, /^blob:/)
+    assert.equal(root().dataset.art, 'front')
 })
 
 // ---------- the plant: the file the intake record names ----------
@@ -1071,7 +1710,7 @@ const stamp = '7ccec48d'.repeat(8)
 const NOW = Date.parse('2026-10-28T12:00:00Z')
 const PRICE = 24_000n
 const REMAINING = PRICE * 1_036_800n // 60 days of blocks of 5 s, at that price: paid up to 27 December 2026
-const [gnosis, otherGnosis] = gnosisRpcs
+const [stampSource, otherStampSource] = stampRpcs
 const stamptime = `https://stamptime.example/?id=${stamp}`
 const line = () => ({ shown: !$('alive').hidden, until: $('alive-until').textContent, href: $('alive').getAttribute('href'), title: $('alive').getAttribute('title') })
 const linked = { shown: true, until: '27 Dec 2026', href: stamptime, title: `Swarm stamp ${stamp}` }
@@ -1080,7 +1719,7 @@ const written = { shown: true, until: '27 Jan 2027', href: null, title: null }
 function hold() {
     let open
     const gate = new Promise((resolve) => (open = resolve))
-    net.says.set(gnosis, (method, params) => gate.then(() => stampRpc(method, params)))
+    net.says.set(stampSource, (method, params) => gate.then(() => stampRpc(method, params)))
     return open
 }
 // a scan with another storage in the configuration
@@ -1105,10 +1744,24 @@ test('the stamp of the bag’s record: the day it is paid up to, read from its c
     assert.equal($('alive').target, '_blank')
     assert.equal($('alive').rel, 'noopener')
     // the chain is asked its network, then what is left on that batch and the price, and nothing else; its second RPC is not asked
-    assert.deepEqual(callsTo(gnosis), ['eth_chainId', 'eth_call', 'eth_call'])
-    assert.deepEqual(callsTo(otherGnosis), [])
+    assert.deepEqual(callsTo(stampSource), ['eth_chainId', 'eth_call', 'eth_call'])
+    assert.deepEqual(callsTo(otherStampSource), [])
     assert.deepEqual(net.stamp.asked, [`0x${stamp}`])
     clean(document)
+})
+
+test('the stamp’s day, when it comes after two sources have disagreed: it does not come back under the plate that opened', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    net.head = put(packed({ stamp }))
+    net.says.set(rpc2, lies[0][1])
+    const open = hold()
+    await scan()
+    assert.equal(plate().sources, 'differ')
+    assert.equal(line().shown, false)
+    open()
+    await turns()
+    assert.equal(line().shown, false)
+    assert.deepEqual(net.stamp.asked, [`0x${stamp}`])
 })
 
 test('a record that names no stamp, or one only on a record before the head: the day of the configuration, no link, and the chain is not asked', async () => {
@@ -1119,7 +1772,7 @@ test('a record that names no stamp, or one only on a record before the head: the
         await scan()
         assert.ok($('hero').classList.contains('verified'))
         assert.deepEqual(line(), written)
-        assert.deepEqual(callsTo(gnosis), [])
+        assert.deepEqual(callsTo(stampSource), [])
     }
 })
 
@@ -1130,7 +1783,7 @@ test('a stamp in any other form: the day of the configuration, no link, the chai
         await scan()
         assert.ok($('hero').classList.contains('verified'))
         assert.deepEqual(line(), written)
-        assert.deepEqual(callsTo(gnosis), [])
+        assert.deepEqual(callsTo(stampSource), [])
     }
     clean(document)
     assert.equal(document.documentElement.outerHTML.includes(stamp.toUpperCase()), false)
@@ -1144,7 +1797,7 @@ test('a stamp whose chain does not answer, is another network, or says the batch
     // passed over like one that does not answer
     const whole = ['eth_chainId', 'eth_call', 'eth_call']
     const cases = [
-        ['no RPC of the chain answers', () => [gnosis, otherGnosis].forEach((rpc) => net.says.set(rpc, fails)), null],
+        ['no RPC of the chain answers', () => [stampSource, otherStampSource].forEach((rpc) => net.says.set(rpc, fails)), null],
         ['the RPC is on another network, and so is the next', () => (net.stamp.chain = '0x1'), [['eth_chainId'], ['eth_chainId']]],
         ['the batch has run out', () => (net.stamp.remaining = 0n), [whole, []]],
         ['the contract has forgotten the batch', () => (net.stamp.remaining = null), [whole, whole]],
@@ -1159,19 +1812,19 @@ test('a stamp whose chain does not answer, is another network, or says the batch
         await scan()
         assert.ok($('hero').classList.contains('verified'), what)
         assert.deepEqual(line(), { ...written, href: stamptime, title: `Swarm stamp ${stamp}` }, what)
-        if (asked) assert.deepEqual([callsTo(gnosis), callsTo(otherGnosis)], asked, what)
-        else assert.equal([...callsTo(gnosis), ...callsTo(otherGnosis)].includes('eth_call'), false, what)
+        if (asked) assert.deepEqual([callsTo(stampSource), callsTo(otherStampSource)], asked, what)
+        else assert.equal([...callsTo(stampSource), ...callsTo(otherStampSource)].includes('eth_call'), false, what)
     }
 })
 
 test('a first RPC of the stamp’s chain that does not answer: the second is read', async (t) => {
     t.mock.method(console, 'error', () => {})
     t.mock.method(Date, 'now', () => NOW)
-    net.says.set(gnosis, fails)
+    net.says.set(stampSource, fails)
     net.head = put(packed({ stamp }))
     await scan()
     assert.deepEqual(line(), linked)
-    assert.deepEqual(callsTo(otherGnosis), ['eth_chainId', 'eth_call', 'eth_call'])
+    assert.deepEqual(callsTo(otherStampSource), ['eth_chainId', 'eth_call', 'eth_call'])
 })
 
 test('a configuration without the chain, the contract, the seconds of a block or an RPC for the chain: the day written in it, and the chain is not asked', async (t) => {
@@ -1181,7 +1834,7 @@ test('a configuration without the chain, the contract, the seconds of a block or
         net.head = put(packed({ stamp }))
         await stored(given)
         assert.deepEqual(line(), { ...written, href: stamptime, title: `Swarm stamp ${stamp}` })
-        assert.deepEqual(callsTo(gnosis), [])
+        assert.deepEqual(callsTo(stampSource), [])
     }
 })
 
@@ -1201,8 +1854,8 @@ test('no day written in the configuration: the stamp’s day when its chain answ
     net.head = put(packed({ stamp }))
     await stored({ ...storage, until: undefined })
     assert.deepEqual(line(), linked)
-    net.says.set(gnosis, fails)
-    net.says.set(otherGnosis, fails)
+    net.says.set(stampSource, fails)
+    net.says.set(otherStampSource, fails)
     net.head = put(packed({ stamp }))
     await stored({ ...storage, until: undefined })
     assert.equal($('alive').hidden, true)
@@ -1213,7 +1866,7 @@ test('no day written in the configuration: the stamp’s day when its chain answ
     await stored(undefined)
     assert.ok($('hero').classList.contains('verified'))
     assert.equal($('alive').hidden, true)
-    assert.deepEqual(callsTo(gnosis), [])
+    assert.deepEqual(callsTo(stampSource), [])
 })
 
 test('a record that did not match, before or at the head: the chain is not asked for the stamp, and the line stays folded', async () => {
@@ -1224,14 +1877,14 @@ test('a record that did not match, before or at the head: the chain is not asked
     assert.equal($('step-3').querySelector('.v').textContent, '1 of 2 matches')
     assert.equal($('proof-fold').classList.contains('open'), false)
     assert.equal($('alive').hidden, true)
-    assert.deepEqual(callsTo(gnosis), [])
+    assert.deepEqual(callsTo(stampSource), [])
     // the head record itself: not read, so it names no stamp
     net.head = put(packed({ stamp }))
     net.anchors.clear()
     await scan()
     assert.match(cards()[0].textContent, /Record not shown/)
     assert.equal($('alive').hidden, true)
-    assert.deepEqual(callsTo(gnosis), [])
+    assert.deepEqual(callsTo(stampSource), [])
 })
 
 test('a wallet in the browser is not asked for the stamp: its chain is read through the RPCs of the configuration', async (t) => {
@@ -1251,7 +1904,7 @@ test('a wallet in the browser is not asked for the stamp: its chain is read thro
     assert.deepEqual(line(), linked)
     assert.ok(asked.includes(`eth_call ${contract}`))
     assert.equal(asked.some((call) => call.includes(storage.contract.toLowerCase())), false)
-    assert.deepEqual(callsTo(gnosis), ['eth_chainId', 'eth_call', 'eth_call'])
+    assert.deepEqual(callsTo(stampSource), ['eth_chainId', 'eth_call', 'eth_call'])
 })
 
 test('a stamp whose chain answers after the seal: the day of the configuration first, and the stamp’s in its place when it comes', async (t) => {
@@ -1285,6 +1938,22 @@ test('another bag while the stamp’s chain is still to answer for the first: it
     await turns()
     await scanning
     assert.deepEqual(line(), written)
+})
+
+// ---------- whom a whole check asks ----------
+test('a whole check, with a stamp and a holder: no one is asked but the RPCs and the gateways of the configuration', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    t.mock.method(Date, 'now', () => NOW)
+    const intake = put({ phase: 'intake', at: '2026-09-28T08:00:00Z', fruit: 'mango', kg: 20, sourcing: 'rescued' })
+    net.head = put(packed({ stamp, inputs: [intake] }))
+    net.owner = holder
+    await scan()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual(line(), linked)
+    const asked = new Set(net.asked.map((url) => new URL(url).origin))
+    assert.deepEqual([...asked].filter((origin) => ![...rpcs, ...stampRpcs, ...config.gateways].includes(origin)), [])
+    for (const origin of [rpcs[0], stampSource, config.gateways[0]]) assert.ok(asked.has(origin), origin)
 })
 
 // ---------- the curves of a cycle: the light file its record names ----------
@@ -1742,4 +2411,33 @@ test('another bag while the files of the route are still on their way: nothing o
     assert.deepEqual(cards().map((li) => li.querySelector('h2').textContent), ['Packed'])
     assert.equal(document.querySelector('.route'), null)
     assert.equal(document.documentElement.outerHTML.includes('Jio'), false)
+})
+
+// ---------- the holder's picture ----------
+// A holder's ENS avatar lives wherever they keep it. It takes the jazzicon's place without its host being told which page
+// asked, and only once a browser has drawn it within the art's cap: one too large for a phone to hold, or one that does
+// not come, leaves the jazzicon.
+test('the holder’s picture: it takes the jazzicon’s place without telling its host which page asked, and not when too large or missing', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    net.owner = holder
+    net.head = put(packed())
+    await scan()
+    await turns()
+    const picture = 'https://pictures.example/holder.webp'
+    pictures.set(picture, webp(7))
+    await page.holderPicture(picture)
+    const shown = $('holder').querySelector('img.pic')
+    assert.equal(shown?.getAttribute('src'), picture)
+    assert.equal(shown.getAttribute('referrerpolicy'), 'no-referrer')
+    assert.equal($('holder').querySelector('.pic.jazz'), null)
+    for (const [name, content] of [['huge', webp(8, 64, true)], ['missing', null]]) {
+        net.head = put(packed())
+        await scan()
+        await turns()
+        const src = `https://pictures.example/${name}.webp`
+        if (content) pictures.set(src, content)
+        await page.holderPicture(src)
+        assert.equal($('holder').querySelector('img.pic'), null, name)
+        assert.ok($('holder').querySelector('.pic.jazz'), name)
+    }
 })

@@ -3,7 +3,8 @@
 import { bytesToHex, keccak256, parseAbi, type Address, type Hex } from './rails.ts'
 
 // `rpcs`: the RPCs the page asks, by network and in order. The first that answers is read; the next is asked whether it says the same.
-export type Config = { rpcs: Record<string, string[]>; contract: Address; custody?: Address; contracts?: Address[]; gateways: string[] }
+// `chain`: the network of `contract`, on whose explorer the footer links it.
+export type Config = { rpcs: Record<string, string[]>; contract: Address; chain?: number; custody?: Address; contracts?: Address[]; gateways: string[] }
 
 export const abi = parseAbi([
     'function anchoredAt(bytes32 ref) view returns (uint64 at, uint64 block)',

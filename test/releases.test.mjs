@@ -1,8 +1,9 @@
 // The releases: what the table of the README says against what releases/ holds. A published file is never written again,
 // so every folder must still hold the file its SHA256SUMS names, and the table must name every folder with that hash.
 // The release script reads the same table; it must refuse any number but the two that may come next, before it builds or
-// writes anything. And a published file that is still to be used must run its own two scripts and no other, read the way a
-// browser reads it (scripts/inspect.mjs, which the build asks of every file it writes).
+// writes anything. And a published file that is still to be used must run its own scripts and no other, read the way a
+// browser reads it (scripts/inspect.mjs, which the build asks of every file it writes): two up to release 0.4, the library
+// and the page's code, and three from the one after it, which adds the two lines of its head that set the first paint.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -65,15 +66,21 @@ test('the release script takes one of the two numbers that may come next, and wr
 // ---------- what a published file runs ----------
 // Release 0.1 has no policy, which is one of the reasons it was withdrawn: it is kept to be recognised, not to be used.
 const inUse = rows.filter((row) => row.status !== 'withdrawn')
+// how many scripts a release runs: two up to 0.4, three after it
+const scriptsOf = (number) => {
+    const [line, count] = number.split('.').map(Number)
+    return line === 0 && count <= 4 ? 2 : 3
+}
 
-test('every published file that is still to be used runs its own two scripts and no other', () => {
+test('every published file that is still to be used runs its own scripts and no other', () => {
     assert.ok(inUse.length)
-    for (const { folder } of inUse) assert.equal(inspect(file('releases', folder, 'devcon8.html').toString()).scripts, 2, `releases/${folder}/devcon8.html`)
-    assert.throws(() => inspect(file('releases', rows[0].folder, 'devcon8.html').toString()), /it has 0 policies, not one/)
+    for (const { number, folder } of inUse) assert.equal(inspect(file('releases', folder, 'devcon8.html').toString(), scriptsOf(number)).scripts, scriptsOf(number), `releases/${folder}/devcon8.html`)
+    assert.throws(() => inspect(file('releases', rows[0].folder, 'devcon8.html').toString(), scriptsOf(rows[0].number)), /it has 0 policies, not one/)
 })
 
 // The same file, with one thing changed that a search for the policy's words would not notice.
 const published = file('releases', inUse.at(-1).folder, 'devcon8.html').toString()
+const runs = scriptsOf(inUse.at(-1).number)
 const policy = /[ \t]*<meta http-equiv="Content-Security-Policy"[^>]*>\n/.exec(published)[0]
 const changed = {
     'its policy inside a comment': [(html) => html.replace(policy, `<!--\n${policy}-->\n`), /0 policies/],
@@ -82,9 +89,9 @@ const changed = {
     'a script before its policy': [(html) => html.replace(policy, `<script type="module">void 0</script>\n${policy}`), /before the policy/],
     'a policy that lets any script run': [(html) => html.replace("script-src '", "script-src 'unsafe-inline' '"), /other than by its hash/],
     'a policy that leaves base-uri open': [(html) => html.replace("; base-uri 'none'", ''), /leaves base-uri open/],
-    'a third script': [(html) => html.replace('</body>', '<script>void 0</script></body>'), /3 scripts can run/],
+    'a script more': [(html) => html.replace('</body>', '<script>void 0</script></body>'), new RegExp(`${runs + 1} scripts can run, not ${runs}`)],
     'a script loaded from elsewhere': [(html) => html.replace('</body>', '<script src="https://elsewhere.example/a.js"></script></body>'), /a script is loaded from elsewhere/],
-    'one character more in its own script': [(html) => html.replace('void main()', 'void main() '), /not the two its policy names/],
+    'one character more in its own script': [(html) => html.replace('void main()', 'void main() '), /not the ones its policy names/],
     'a handler written into the markup': [(html) => html.replace('<main>', '<main onclick="void 0">'), /a handler written into it, onclick/],
     'a frame': [(html) => html.replace('</main>', '<iframe src="data:text/html,x"></iframe></main>'), /it has a <iframe>/],
     'a form': [(html) => html.replace('</main>', '<form action="https://elsewhere.example"></form></main>'), /it has a <form>/],
@@ -98,5 +105,5 @@ for (const [what, [change, why]] of Object.entries(changed))
     test(`a file with ${what} is not the file it says it is`, () => {
         const html = change(published)
         assert.notEqual(html, published, 'the test changed nothing')
-        assert.throws(() => inspect(html), why)
+        assert.throws(() => inspect(html, runs), why)
     })
