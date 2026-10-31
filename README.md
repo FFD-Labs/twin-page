@@ -94,7 +94,8 @@ The first two were named by their date and keep their folder and their tag, sinc
 | 0.1 | 9 Oct 2026 | `releases/2026-10-09/` | `2026-10-09` | `c9840efe1f223e1d199b2f6039be5573bdefd9685378a51631ac4f4f32e2ed87` | withdrawn |
 | 0.2 | 10 Oct 2026 | `releases/2026-10-10/` | `2026-10-10` | `0e6f48570feedab7d29b1b6a741eabf1366ea2a4aacd201b3052f54eee69d95e` | superseded |
 | 0.3 | 11 Oct 2026 | `releases/0.3/` | `v0.3` | `804395a26c31d6739ecacdd80b0fc210a9f1b5e0e566341f4aee44630428b1fd` | superseded |
-| 0.4 | 11 Oct 2026 | `releases/0.4/` | `v0.4` | `df51fe61184360017716f81cee96f6eba8cf3f0bb9e1c1664a563c28fd9ba613` | current |
+| 0.4 | 11 Oct 2026 | `releases/0.4/` | `v0.4` | `df51fe61184360017716f81cee96f6eba8cf3f0bb9e1c1664a563c28fd9ba613` | superseded |
+| 0.5 | 1 Nov 2026 | `releases/0.5/` | `v0.5` | `c28d6309cca9dfd5e891e31959b3f3a26f08742614f87a31a43f2e2c0597fe85` | current |
 
 The file to use is the one marked current. A superseded one has a newer file after it and nothing known against it. Release 0.1 is withdrawn: it painted a record before checking it and wrote one of its values into the page as it came, so a gateway or an RPC that lied could run script in it. Its file stays here with its hash so that a copy of it can be recognised; do not use it.
 
