@@ -140,8 +140,6 @@ What the page says of the fruit, and where the plant is, is not in the page. A r
 
 Each is read like a record: fetched by its reference, hashed the way Swarm does, used only when the bytes give that reference. A file of another name or type, heavier than 1 MiB, or whose bytes are not what they should be is not shown, and the page is the same without it. Whatever a file says is written as text. The map of the route is drawn by the page from two points: no tile, nothing loaded from anyone.
 
-The files of the three fruits are in `products/`, with a note beside each image of where it comes from.
-
 ## What the page never does
 
 - No server of ours. It reads Ethereum and Swarm, and that is all.
@@ -178,15 +176,14 @@ The faces are cut once, when a master changes or the page writes something new i
 | `src/rails.ts` | Everything the page takes from viem, by name |
 | `web/public/config.json` | What the page reads: RPCs, contracts, gateways, the stamp, the links, the CO₂ assumptions. Nothing about the fruit |
 | `web/public/fonts/`, `fonts-src/` | The five faces the page inlines, and the masters they are cut from |
-| `products/<fruit>/` | The files of each product, as its packing records name them. Not part of the page |
 | `scripts/standalone.mjs` | Folds the page into one file and writes the policy that names its three scripts by hash |
 | `scripts/release.mjs` | Builds the file and files it as the next release. It never writes over one |
 | `scripts/inspect.mjs` | Parses a built file as a browser would: one policy, the scripts it names, nothing else that runs or loads |
-| `scripts/fonts.py`, `scripts/plates.py` | Cut the faces from their masters; make the plates of a pouch from its flat art, kept with the packaging |
+| `scripts/fonts.py`, `scripts/plates.py` | Cut the faces from their masters; make the plates of a pouch from its flat art, kept with the packaging. The plates are not part of the page: they go to Swarm with the packing record that names them |
 | `test/check.test.mjs` | The whole check against gateways, RPCs and a wallet that lie, fail or do not answer |
 | `test/paint.test.mjs` | The paint functions, given records and files whose values are HTML: nothing of it may become an element |
 | `test/empty.test.mjs` | The page with no bag in the link: a single request, for its own file |
-| `test/products.test.mjs`, `test/fonts.test.mjs`, `test/releases.test.mjs` | The files in `products/`, the faces against their masters, and every release against its hash and its row |
+| `test/fonts.test.mjs`, `test/releases.test.mjs` | The faces against their masters, and every release against its hash and its row |
 | `releases/<folder>/` | The published files and their `SHA256SUMS` |
 
 ## Status
@@ -197,7 +194,7 @@ The faces are cut once, when a master changes or the page writes something new i
 - Each fruit has a stamp of its own on Swarm. Unless someone adds to them, the three run out on 28 December 2026; the page shows the day of the bag's own stamp when it can read it.
 - The nutrition figures are the producer's, received on 15 October 2026, given per 5 g serving as ranges; each description keeps them as given and declares the middle of each range for 100 g.
 - Placeholder: the CO₂ factor and reference scenario, being closed with our partners.
-- The files of banana are on Swarm and not yet in `products/`. The test records of bags 1 to 20 on Sepolia are of mango and name no file of a product.
+- The test records of bags 1 to 20 on Sepolia are of mango and name no file of a product.
 - The bags and their packaging are separate work, not in this repository.
 
 ## License
