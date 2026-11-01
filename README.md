@@ -17,7 +17,7 @@ One HTML file, nothing else to load. Anyone can read it top to bottom with view 
 devcon8.html#1:0xc7e8Dd10265b5d4A549321411617Dff4DB4ccb8a/144
 ```
 
-   That is a real bag of pineapple on Ethereum mainnet: bags 1 to 2500 are pineapple, 2501 to 5000 banana, 5001 to 7500 jackfruit. The test bags on Sepolia still open, with `11155111:0x240dfbca7064d091149169eff95f764d1e21cea7` in place of the network and the contract. The page reads Ethereum and Swarm, so it needs an internet connection.
+   That is a real bag of pineapple on Ethereum mainnet: bags 1 to 2500 are pineapple, 2501 to 5000 banana, 5001 to 7500 jackfruit. The test bags on Sepolia open too, with `11155111:0x240dfbca7064d091149169eff95f764d1e21cea7` in place of the network and the contract. The page reads Ethereum and Swarm, so it needs an internet connection.
 3. What you see, in order: the front of the pouch with its crystal drawn as an outline; a line from your device to Ethereum and on to Swarm, each stretch drawn as its read comes back; the hexagon closing, the pouch taking its colours and the line "Your device just checked this bag with Ethereum and Swarm."; the fruit and what the bag holds; the records of the path; the arithmetic of the CO₂; who holds the twin; and, last, the photograph of the fruit and the art of the pouch.
 
 ## The link
@@ -112,7 +112,7 @@ shasum -a 256 dist/devcon8.html
 
 ## Releases
 
-Every file that has been published, in the order it was. A release has a number, a folder that is never written again and a tag on the commit it was built from. The first number is 0 while the page is in the workshop and 1 from the first official release; the first two releases were named by their date and keep their folder and their tag.
+Every published file, in order. A release has a number, a folder that is never written again and a tag on the commit it is built from. The first number is 0 until the first official release, 1.0. The first two folders and tags are dates; from 0.3 on, release n is `releases/n/` and its tag `vn`.
 
 | Release | Date | Folder | Tag | SHA-256 of `devcon8.html` | Status |
 |---|---|---|---|---|---|
@@ -122,7 +122,7 @@ Every file that has been published, in the order it was. A release has a number,
 | 0.4 | 11 Oct 2026 | `releases/0.4/` | `v0.4` | `df51fe61184360017716f81cee96f6eba8cf3f0bb9e1c1664a563c28fd9ba613` | superseded |
 | 0.5 | 1 Nov 2026 | `releases/0.5/` | `v0.5` | `c28d6309cca9dfd5e891e31959b3f3a26f08742614f87a31a43f2e2c0597fe85` | current |
 
-The file to use is the one marked current. Release 0.1 is withdrawn: it painted a record before checking it, so a gateway or an RPC that lied could run script in it. Its file stays here with its hash so that a copy of it can be recognised; do not use it.
+The file to use is the one marked current. Do not use 0.1, withdrawn: it paints a record before checking it, so a gateway or an RPC that lies can run script in it. Its file stays here with its hash so that a copy can be recognised.
 
 To publish the next one: `npm run release -- <n>` builds the file, files it in `releases/<n>/` with its `SHA256SUMS` and adds its row to this table. Commit the folder and the README; once that commit is on `main`, tag it `v<n>` and attach the two files to a GitHub release of that name, marked as a pre-release while the first number is 0.
 
@@ -188,12 +188,12 @@ The faces are cut once, when a master changes or the page writes something new i
 
 ## Status
 
-30 October 2026. Work in progress, on real records, for Devcon 8 (3 to 6 November).
+1 November 2026. Release 0.5, on real records, for Devcon 8 (3 to 6 November).
 
-- The page reads the real records on mainnet, in the contract the QR of every bag names, as far as its packing: no transport has been declared on mainnet yet. The test contract on Sepolia still opens, with a transport on its banana bags.
+- The page reads the real records on mainnet, in the contract the QR of every bag names, as far as its packing: no transport is declared on mainnet. The test contract on Sepolia opens too, with a transport on its banana bags.
 - Each fruit has a stamp of its own on Swarm. Unless someone adds to them, the three run out on 28 December 2026; the page shows the day of the bag's own stamp when it can read it.
-- The nutrition figures are the producer's, received on 15 October 2026, given per 5 g serving as ranges; each description keeps them as given and declares the middle of each range for 100 g.
-- Placeholder: the CO₂ factor and reference scenario, being closed with our partners.
+- The nutrition figures are the producer's, given per 5 g serving as ranges; each description declares the middle of each range for 100 g and keeps the ranges as given.
+- The CO₂ factor and its reference scenario are placeholders.
 - The test records of bags 1 to 20 on Sepolia are of mango and name no file of a product.
 - The bags and their packaging are separate work, not in this repository.
 
