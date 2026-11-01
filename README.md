@@ -1,10 +1,16 @@
 # twin-page
 
-The page a bag opens. A visitor scans the QR code on a bag of freeze-dried fruit and this page reads the bag's records, anchored on Ethereum and stored on Swarm, and checks them on the visitor's own device: every record is hashed again and compared with the reference its anchor names. No server of ours sits in between.
+**The page a bag opens.** Scan the QR on a bag of freeze-dried fruit from Devcon 8 and this page reads the bag's records, anchored on Ethereum and stored on Swarm, and checks them on your own device: every record is hashed again and compared with the reference its anchor names. No server of ours sits in between.
 
-The page is one HTML file with everything it needs inside: the script, the fonts and the configuration. It carries no image, and of the fruit only the colours of each pouch: what it shows of the pouch it draws, and the name of the fruit, what the bag holds, its photograph and the illustrations of its pouch are files the bag's packing record names, which the page reads from Swarm and checks against their references, the images last of all. It is complete without them. It is being built for Devcon 8 (Mumbai, 3 to 6 November 2026). The structure is final; the content is not (see Status).
+![The front of three bags, pineapple, banana and jackfruit, each checked on the device: 3 of 3 records match](docs/readme/front.webp)
 
-The published file reads like the source. It opens with a map of what it contains and what it talks to, and two lines of script that set the first paint: whether the link holds a bag, and whether the footer keeps the place of the fingerprint. Then it comes in six marked parts: the styles, the markup, the configuration as JSON, the library (viem, bundled and minified from npm, unchanged), the page's own code exactly as written here with only the types removed, and the fonts. Anyone can read it top to bottom with view source.
+The page is one HTML file with everything it needs inside: the script, the fonts and the configuration. It carries no image, and of the fruit only the colours of each pouch: what it shows of the pouch it draws, and the name of the fruit, what the bag holds, its photograph and the illustrations of its pouch are files the bag's packing record names, which the page reads from Swarm and checks against their references, the images last of all. It is complete without them.
+
+The published file reads like the source. It opens with a map of what it contains and what it talks to, and two lines of script that set the first paint. Then it comes in six marked parts: the styles, the markup, the configuration as JSON, the library (viem, bundled and minified from npm, unchanged), the page's own code exactly as written here with only the types removed, and the fonts. Anyone can read it top to bottom with view source, and every release is published here with its SHA-256 (see [The fingerprint](#the-fingerprint)).
+
+Built for Devcon 8 (Mumbai, 3 to 6 November 2026). The structure is final; the content is not (see [Status](#status)).
+
+**Contents.** [Try it](#try-it) · [The link](#the-link) · [What the page shows](#what-the-page-shows) · [Who the page asks](#who-the-page-asks) · [The fingerprint](#the-fingerprint) · [Releases](#releases) · [The product](#the-product) · [What the page never does](#what-the-page-never-does) · [Build](#build) · [Files](#files) · [Status](#status) · [License](#license)
 
 ## Try it
 
@@ -31,6 +37,8 @@ https://fairfooddata.eth.limo/devcon8.html#<chainId>:<contract>/<id>
 ## What the page shows
 
 Top to bottom, each block filling in as its records arrive. The page looks like the pouch that opened it: it opens in ivory and teal, and takes the colourway of the bag's pouch once a record that passed the check has named its fruit.
+
+![Three blocks of a pineapple bag: the Received card, the Freeze-dried card with the curves of its cycle, and the arithmetic of the CO₂](docs/readme/path.webp)
 
 | Block | What it shows | Where it comes from |
 |---|---|---|
