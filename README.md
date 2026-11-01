@@ -6,7 +6,7 @@
 
 One HTML file, nothing else to load. Anyone can read it top to bottom with view source, and every release is published here with its SHA-256. Built for Devcon 8 (Mumbai, 3 to 6 November 2026). The structure is final; the content is not (see [Status](#status)).
 
-**Contents.** [Try it](#try-it) · [The link](#the-link) · [The file](#the-file) · [What the page shows](#what-the-page-shows) · [The check](#the-check) · [The fingerprint](#the-fingerprint) · [Releases](#releases) · [The product](#the-product) · [What the page never does](#what-the-page-never-does) · [Build](#build) · [Files](#files) · [Status](#status) · [License](#license)
+**Contents.** [Try it](#try-it) · [The link](#the-link) · [The file](#the-file) · [What the page shows](#what-the-page-shows) · [The check](#the-check) · [The fingerprint](#the-fingerprint) · [Releases](#releases) · [What the page never does](#what-the-page-never-does) · [Build](#build) · [Files](#files) · [Status](#status) · [License](#license)
 
 ## Try it
 
@@ -78,6 +78,8 @@ The states the page handles: no record yet for the bag; no bag in the link, or o
 
 A record that fails the check is never read: what a gateway serves is hashed and compared with its anchor before a byte of it is parsed. A record that passes and that the page does not understand gets a card that says so, with its text as it was written, and the rest of the page goes on.
 
+What the page says of the fruit, and where it has been, is not in the page: the packing record names the description, the photograph and the art of the pouch, and the intake and transport records name the two places, each file by name, type and Swarm reference. Each is read like a record, used only when its bytes give that reference, and written as text. A file of another name or type, heavier than 1 MiB, or whose bytes are not what they should be is not shown, and the page is the same without it.
+
 ## The check
 
 The records are checked by arithmetic: whatever gateway serves them, their bytes give their reference or they do not. The gateways of the config are asked in order; one that did not answer goes last until Try again.
@@ -125,20 +127,6 @@ Every published file, in order. A release has a number, a folder that is never w
 The file to use is the one marked current. Do not use 0.1, withdrawn: it paints a record before checking it, so a gateway or an RPC that lies can run script in it. Its file stays here with its hash so that a copy can be recognised.
 
 To publish the next one: `npm run release -- <n>` builds the file, files it in `releases/<n>/` with its `SHA256SUMS` and adds its row to this table. Commit the folder and the README; once that commit is on `main`, tag it `v<n>` and attach the two files to a GitHub release of that name, marked as a pre-release while the first number is 0.
-
-## The product
-
-What the page says of the fruit, and where the plant is, is not in the page. A record names files among its `documents`, each by name, type and Swarm reference, and the page reads the ones it knows:
-
-| Document | Named by | What the page does with it |
-|---|---|---|
-| `product-description.json` | the packing record | The name of the fruit, the key of its colourway, the table per 100 g, the two dates of the label, the alt and the credit of the photograph |
-| `photo.webp` | the packing record | The photograph of the fruit |
-| `cover.webp`, `background.webp` | the packing record | The art of the pouch: the front around the twin's number, the back behind the label |
-| `site-location.geojson` | the intake record | Where the plant is, on the Received card |
-| `destination-location.geojson` | the transport record | Where the bag went, and the end of the route on the Delivered card |
-
-Each is read like a record: fetched by its reference, hashed the way Swarm does, used only when the bytes give that reference. A file of another name or type, heavier than 1 MiB, or whose bytes are not what they should be is not shown, and the page is the same without it. Whatever a file says is written as text. The map of the route is drawn by the page from two points: no tile, nothing loaded from anyone.
 
 ## What the page never does
 
