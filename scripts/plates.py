@@ -9,11 +9,12 @@ A plate is the flat illustration of a panel with its ground turned to alpha, so 
 any colourway. On a front, the window of the hexagon at the heart of the crystal is cut clear: the page shows the twin
 there, not the fruit the pouch prints in it.
 
-    uv run scripts/plates.py <folder of the flat art> jackfruit
+    uv run scripts/plates.py <folder of the flat art> <folder for the plates> jackfruit
 
 The flat art is the `_build/source/` folder of the pouch's print files, which is not in this repository: one PNG per panel,
-3392 x 5056, `<fruit>-front.png` and `<fruit>-back.png`. The plates are written to products/<fruit>/, under the names a
-packing record gives them among its documents: the front is cover.webp and the back is background.webp.
+3392 x 5056, `<fruit>-front.png` and `<fruit>-back.png`. The plates are written to <folder for the plates>/<fruit>/, under the
+names a packing record gives them among its documents: the front is cover.webp and the back is background.webp. They are
+not part of the page: whoever declares a packing puts them among its documents, and they reach Swarm with its record.
 """
 import sys
 from pathlib import Path
@@ -21,7 +22,6 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-OUT = Path(__file__).resolve().parent.parent / "products"
 NAMES = {"front": "cover.webp", "back": "background.webp"}
 
 # The window of each front, measured on its art: the six corners of the fruit inside the hexagon, in pixels of the flat
@@ -108,10 +108,11 @@ def placed(rgba, window, target):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 4:
         sys.exit(__doc__)
     source = Path(sys.argv[1])
-    for fruit in sys.argv[2:]:
+    OUT = Path(sys.argv[2])
+    for fruit in sys.argv[3:]:
         if fruit not in WINDOWS:
             sys.exit(f"{fruit}: the window of its front is not measured yet (WINDOWS)")
         (OUT / fruit).mkdir(parents=True, exist_ok=True)
