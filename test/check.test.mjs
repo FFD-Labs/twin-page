@@ -2421,16 +2421,16 @@ test('another bag while the files of the route are still on their way: nothing o
 // UTC first, and again when it has come.
 const madrid = { type: 'Feature', geometry: { type: 'Point', coordinates: [-3.70379, 40.416775] }, properties: { place: 'Madrid, Spain', timezone: 'Europe/Madrid' } }
 // the anchor of every record the tests put, 2 October 2025 at 10:13 UTC, in the time of the plant, of Madrid, and as written
-const anchoredInIndia = '✓ Matches its Ethereum anchor of 2 Oct 2025, 15:43'
-const anchoredInMadrid = '✓ Matches its Ethereum anchor of 2 Oct 2025, 12:13'
+const anchoredInIndia = '✓ Matches its Ethereum anchor of 2 Oct 2025, 15:43 IST'
+const anchoredInMadrid = '✓ Matches its Ethereum anchor of 2 Oct 2025, 12:13 CEST'
 const anchoredInUtc = '✓ Matches its Ethereum anchor of 2 Oct 2025, 10:13 UTC'
 const cardOf = (title) => cards().find((li) => li.querySelector('h2').textContent === title)
 const checkOf = (li) => li.querySelector('.check').textContent
 const tileOf = (li) => [...li.querySelectorAll('.tile b, .tile span')].map((el) => el.textContent)
 const momentsOf = (li) => rowsOf(li).filter(([key]) => ['Departed', 'Arrived'].includes(key))
 const inUtc = [['Departed', '27 Oct 2026, 03:26 UTC'], ['Arrived', '2 Nov 2026, 09:20 UTC']]
-const inMadrid = [['Departed', '27 Oct 2026, 04:26'], ['Arrived', '2 Nov 2026, 10:20']]
-const inIndia = [['Departed', '27 Oct 2026, 08:56'], ['Arrived', '2 Nov 2026, 14:50']]
+const inMadrid = [['Departed', '27 Oct 2026, 04:26 CET'], ['Arrived', '2 Nov 2026, 10:20 CET']]
+const inIndia = [['Departed', '27 Oct 2026, 08:56 IST'], ['Arrived', '2 Nov 2026, 14:50 IST']]
 // a bag of banana whose packing was written at 20:30 UTC on 30 September, two in the morning of 1 October at the plant, and
 // that went from the plant, whose intake names `plant`, to where `went` says, with what else the transport record is told
 function wentTo(went, transport = {}, plant = [site()]) {
@@ -2480,6 +2480,26 @@ test('a zone the file names that the browser does not know, or that is not a nam
         assert.deepEqual(momentsOf(deliveredCard()), inIndia, String(timezone))
         assert.equal(page.places.destination.zone, null, String(timezone))
     }
+    clean(document)
+})
+
+test('the name of a clock: the one the browser has in the English of the country, the offset for a zone no English names, and none for a moment that is not one', async () => {
+    const at = (properties) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [105.8542, 21.0285] }, properties })
+    const arrivedAt = async (properties, transport) => {
+        wentTo([destination(at(properties))], transport)
+        await scan()
+        assert.ok($('hero').classList.contains('verified'))
+        return momentsOf(deliveredCard()).at(-1)[1]
+    }
+    assert.equal(await arrivedAt({ place: 'Hanoi, Vietnam' }), '2 Nov 2026, 16:20 GMT+7')
+    assert.equal(await arrivedAt({ place: 'London, United Kingdom' }), '2 Nov 2026, 09:20 GMT')
+    // a zone the file names, whose country is said in the code, in the words, or not at all
+    assert.equal(await arrivedAt({ country: 'IN', timezone: 'Asia/Kolkata' }), '2 Nov 2026, 14:50 IST')
+    assert.equal(await arrivedAt({ place: 'Chicago, Illinois, United States', timezone: 'America/Chicago' }), '2 Nov 2026, 03:20 CST')
+    assert.equal(await arrivedAt({ timezone: 'Asia/Kolkata' }), '2 Nov 2026, 14:50 GMT+5:30')
+    // a moment that is not one: what the record said is no hour, the rest of the card goes on
+    assert.equal(await arrivedAt({ place: 'Mumbai, India' }, { arrival: 'today' }), 'Invalid Date')
+    assert.ok(checkOf(deliveredCard()).startsWith('✓ Matches'))
     clean(document)
 })
 
