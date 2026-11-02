@@ -83,7 +83,6 @@ type Clock = { zone: string; locale: string }
 // The arithmetic of block 5.
 type Co2 = {
     factor_kg_per_kg: number
-    factor_source?: string
     scenario: string
     scenario_written: string
     yield_pct?: number

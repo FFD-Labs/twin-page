@@ -181,7 +181,6 @@ The faces are cut once, when a master changes or the page writes something new i
 - The page reads the real records on mainnet, in the contract the QR of every bag names, as far as delivery: each of the 7,500 bags points to its transport, from the plant to Mumbai. The test contract on Sepolia opens too, with a transport on its banana bags.
 - Each fruit has a stamp of its own on Swarm. Unless someone adds to them, the three run out on 28 December 2026; the page shows the day of the bag's own stamp when it can read it.
 - The nutrition figures are the producer's, given per 5 g serving as ranges; each description declares the middle of each range for 100 g and keeps the ranges as given.
-- The CO₂ factor and its reference scenario are placeholders.
 - The test records of bags 1 to 20 on Sepolia are of mango and name no file of a product.
 - The bags and their packaging are separate work, not in this repository.
 
