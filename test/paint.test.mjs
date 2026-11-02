@@ -6,7 +6,7 @@ import { beforeEach, test } from 'node:test'
 import { clean, hostile, openPage } from './page.mjs'
 
 const { document, page } = await openPage()
-const { documentOf, placeCard, productFiles, readDescription, readPoint, renderCo2, reset, revealFruit } = page
+const { documentOf, placeCard, productFiles, readDescription, readPoint, renderCo2, reset, revealFruit, zoneOf } = page
 
 const config = { co2: { factor_kg_per_kg: 0.6, scenario: 'an open dump', scenario_written: '2026-10-04' } }
 // The description of the product, as the file a packing record names would give it.
@@ -276,12 +276,12 @@ test('the dates go under the full table as the pouch prints them, and the line i
 const india = { type: 'Feature', geometry: { type: 'Point', coordinates: [85.109112, 20.235281] }, properties: { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India' } }
 
 test('a location file gives its place, its site, its country and its coordinates, the longitude first as GeoJSON writes it', () => {
-    assert.deepEqual(readPoint(bytes(india)), { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', country: null, lat: 20.235281, lon: 85.109112 })
+    assert.deepEqual(readPoint(bytes(india)), { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', country: null, zone: null, lat: 20.235281, lon: 85.109112 })
     // the words are read when they are lines of text, and the point is there without them
-    assert.deepEqual(readPoint(bytes({ ...india, properties: { site: 7, place: 'x'.repeat(301) } })), { site: null, place: null, country: null, lat: 20.235281, lon: 85.109112 })
-    assert.deepEqual(readPoint(bytes({ ...india, properties: undefined })), { site: null, place: null, country: null, lat: 20.235281, lon: 85.109112 })
+    assert.deepEqual(readPoint(bytes({ ...india, properties: { site: 7, place: 'x'.repeat(301) } })), { site: null, place: null, country: null, zone: null, lat: 20.235281, lon: 85.109112 })
+    assert.deepEqual(readPoint(bytes({ ...india, properties: undefined })), { site: null, place: null, country: null, zone: null, lat: 20.235281, lon: 85.109112 })
     // the ends of the Earth are on it
-    assert.deepEqual(readPoint(bytes({ type: 'Feature', geometry: { type: 'Point', coordinates: [-180, -90] } })), { site: null, place: null, country: null, lat: -90, lon: -180 })
+    assert.deepEqual(readPoint(bytes({ type: 'Feature', geometry: { type: 'Point', coordinates: [-180, -90] } })), { site: null, place: null, country: null, zone: null, lat: -90, lon: -180 })
     // the country is its code of two capital letters, as the file writes it; nothing else is one
     const country = (value) => readPoint(bytes({ ...india, properties: { ...india.properties, country: value } })).country
     assert.equal(country('IN'), 'IN')
@@ -292,6 +292,27 @@ test('what a location file says that is HTML is read as text, for the page to wr
     const loud = readPoint(bytes({ ...india, properties: { site: hostile('site'), place: hostile('place') } }))
     assert.equal(loud.place, hostile('place'))
     assert.equal(loud.site, hostile('site'))
+})
+
+test('a location file names the zone its place keeps, when the browser knows it by that name', () => {
+    const zone = (value) => readPoint(bytes({ ...india, properties: { ...india.properties, timezone: value } })).zone
+    assert.equal(zone('Asia/Kolkata'), 'Asia/Kolkata')
+    assert.equal(zone('Europe/Madrid'), 'Europe/Madrid')
+    assert.equal(zone('UTC'), 'UTC')
+    for (const value of ['Mars/Olympus', '+05:30', 'Asia/Kolkata ', hostile('timezone'), 'x'.repeat(65), 7, null, ['Asia/Kolkata']]) assert.equal(zone(value), null, String(value))
+})
+
+test('the zone of a place: the one its file names, else the one of its country when the country keeps one clock, by the code the file gives or the name its words end with', () => {
+    const at = (fields) => zoneOf({ site: null, place: null, country: null, zone: null, lat: 0, lon: 0, ...fields })
+    // the zone of a country comes from the browser, under the name the browser gives it: Asia/Calcutta and Asia/Kolkata are one
+    const canonical = (zone) => new Intl.DateTimeFormat('en', { timeZone: zone }).resolvedOptions().timeZone
+    const same = (zone, known) => assert.equal(zone && canonical(zone), canonical(known), `${zone} is not ${known}`)
+    same(at({ place: 'Dhodapalli, Odisha 752077, India' }), 'Asia/Kolkata')
+    same(at({ country: 'IN' }), 'Asia/Kolkata')
+    same(at({ country: 'JP', place: 'Somewhere, India' }), 'Asia/Tokyo') // the code the file gives, before the words
+    assert.equal(at({ zone: 'Europe/Madrid', country: 'IN' }), 'Europe/Madrid') // the zone the file names, as named, before either
+    // a country with several clocks, by its code or its name; a code no country has; words that end with no country; nothing
+    for (const fields of [{ country: 'US' }, { place: 'Chicago, Illinois, United States' }, { country: 'ES' }, { country: 'XX' }, { place: 'Nowhere, Atlantis' }, {}]) assert.equal(at(fields), null, JSON.stringify(fields))
 })
 
 for (const [what, file] of [

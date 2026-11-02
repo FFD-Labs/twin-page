@@ -74,9 +74,9 @@ type Nutrition = {
 type Description = { fruit: string | null; name: string | null; nutrition: Nutrition | null; alt: string | null; credit: string | null; manufactured: string | null; expires: string | null }
 
 // A place of the path, from the file a record names: the key the records call it by (`urn:bdf:site:india-1`), the words
-// for it, the code of its country when the file gives one, and where it is. The intake record names the file of the
-// plant, the transport record that of its destination.
-type Point = { site: string | null; place: string | null; country: string | null; lat: number; lon: number }
+// for it, the code of its country when the file gives one, the zone its clocks keep when the file names one, and where
+// it is. The intake record names the file of the plant, the transport record that of its destination.
+type Point = { site: string | null; place: string | null; country: string | null; zone: string | null; lat: number; lon: number }
 
 // The arithmetic of block 5.
 type Co2 = {
@@ -123,9 +123,17 @@ const explorers: { [chainId: number]: string } = { 1: 'https://eth.blockscout.co
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 const esc = (value: unknown) => String(value).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
-const date = (iso: string) =>
-    new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC'
-const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+// A moment as the page writes it: 2 Nov 2026, 14:50, the hour on the clocks of the zone it is given, as someone there
+// would say it, and nothing after it; in UTC, said so, when no zone is given.
+const date = (iso: string, zone: string | null = null) => {
+    const shown = new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: zone ?? 'UTC' })
+    return zone ? shown : `${shown} UTC`
+}
+// A day as the page writes it, 2 Nov 2026. A day written as one (2026-11-02, a harvest, the day of the configuration) is
+// that day wherever it is read; a moment falls on the day it does in the zone it is given, or in UTC.
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const day = (value: string, zone: string | null = null) =>
+    new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: (DAY.test(value) ? null : zone) ?? 'UTC' })
 const place = (value = '') => (value.startsWith('urn:bdf:site:') ? `Plant ${value.split(':').pop()}` : value)
 const hours = (from = '', to = '') => `${Math.round((Date.parse(to) - Date.parse(from)) / 36e5)} h`
 const sum = (list: { trays: number | null; kg: number }[], key: 'trays' | 'kg') => list.reduce((total, load) => total + (load[key] ?? 0), 0)
@@ -180,6 +188,37 @@ const countryOf = (place: string | null) => {
     const words = place?.split(',').pop()
     return words ? codeOf(words) : null
 }
+// A zone by its name as the browser knows it, Asia/Kolkata: the name as given, when it is a line of letters, digits and
+// the marks such names carry and the browser can keep a clock in it; null for anything else.
+const knownZone = (value: unknown) => {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_+\-\/]{1,64}$/.test(value)) return null
+    try {
+        new Intl.DateTimeFormat('en', { timeZone: value })
+        return value
+    } catch {
+        return null
+    }
+}
+// The zones a country keeps, as the browser knows them: Intl.Locale('und-IN').getTimeZones() gives ['Asia/Calcutta'],
+// so the page carries no table of its own. A browser of a few years ago gives them as `timeZones`; one that gives neither,
+// or knows no such region, gives none.
+const zonesOf = (country: string): string[] => {
+    try {
+        const locale = new Intl.Locale(`und-${country}`) as Intl.Locale & { getTimeZones?: () => string[] | undefined; timeZones?: string[] }
+        return (typeof locale.getTimeZones === 'function' ? locale.getTimeZones() : locale.timeZones) ?? []
+    } catch {
+        return []
+    }
+}
+// The zone a place keeps: the one its file names, else the one of its country, by the code the file gives or the name
+// its words end with, when that country keeps one clock. Null for a place whose zone the page cannot tell: a place in a
+// country with several clocks (the United States, Brazil, Spain with the Canaries) keeps UTC unless its file names the zone.
+export const zoneOf = (point: Point) => {
+    if (point.zone) return point.zone
+    const country = point.country ?? countryOf(point.place)
+    const zones = country ? zonesOf(country) : []
+    return zones.length === 1 ? knownZone(zones[0]) : null
+}
 const farm = (f: Farm) =>
     [[f.zone, f.country && flagged(f.country, country(f.country))].filter(Boolean).join(', '), f.variety, f.harvested && `harvested ${day(f.harvested)}`, f.kg != null && `${f.kg} kg`]
         .filter(Boolean)
@@ -222,16 +261,21 @@ const resetEdges = () => {
     edgeDue = 0
 }
 
+// A text set with a fade: the element goes out and comes back with the new text. A text asked for while another is on
+// its way takes its place; the text already shown, asked for again while another is on its way, keeps its place and the
+// other does not come.
 const swapTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>()
 const swap = (el: HTMLElement, text: string) => {
-    if (el.textContent === text) return
-    el.classList.add('swap', 'out')
     clearTimeout(swapTimers.get(el))
+    swapTimers.delete(el)
+    if (el.textContent === text) return void el.classList.remove('out')
+    el.classList.add('swap', 'out')
     swapTimers.set(
         el,
         setTimeout(() => {
             el.textContent = text
             el.classList.remove('out')
+            swapTimers.delete(el)
         }, 140)
     )
 }
@@ -349,7 +393,15 @@ function disagree() {
 const COLDEST = 'Coldest'
 const LOWEST = 'Lowest pressure'
 
-const steps = {
+// The moments a record gives, as rows: the Departed and Arrived of a transport, in the zone of its card.
+const moments = (r: Record, zone: string | null) => [
+    ['Departed', r.departure && date(r.departure, zone)],
+    ['Arrived', r.arrival && date(r.arrival, zone)]
+]
+// What a card says of its record, by phase, with the zone its hours are written in: the title, whether the twin starts there,
+// and the rows. The zone reaches the rows that give a moment: the Departed and Arrived of a transport.
+type Step = { title: string; twin: boolean; rows: (string | null | undefined)[][] }
+const steps: { [phase in Record['phase']]: (r: Record, zone: string | null) => Step } = {
     intake: (r: Record) => ({
         title: 'Received',
         twin: true,
@@ -388,15 +440,14 @@ const steps = {
             ['Order', r.plant_id]
         ]
     }),
-    transport: (r: Record) => ({
+    transport: (r: Record, zone: string | null) => ({
         title: 'Delivered',
         twin: false,
         rows: [
             ['Product', cap(r.product)],
             ['From', place(r.origin)],
             ['To', r.destination],
-            ['Departed', r.departure && date(r.departure)],
-            ['Arrived', r.arrival && date(r.arrival)],
+            ...moments(r, zone),
             ['Carrier', r.carrier],
             ['Tracking', r.tracking]
         ]
@@ -418,7 +469,7 @@ export function read(text: string): { data: Record | null; inputs: Hex[] } {
         const placed = typeof data.at === 'string' && !Number.isNaN(Date.parse(data.at))
         const named = data.product == null || typeof data.product === 'string'
         if (!known || !placed || !named) return { data: null, inputs }
-        rows(steps[data.phase](data).rows)
+        rows(steps[data.phase](data, null).rows)
         return { data, inputs }
     } catch {
         return { data: null, inputs }
@@ -447,7 +498,7 @@ const GLYPHS: { [phase: string]: string } = {
 }
 const glyph = (phase: string) => (Object.hasOwn(GLYPHS, phase) ? `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">${GLYPHS[phase]}</svg>` : '')
 
-function card(event: Event, explorer: string | undefined) {
+function card(event: Event, explorer: string | undefined, zone: string | null) {
     const data = event.data
     // A record that did not pass the check was not read: its card carries the reference the page asked for and nothing of what arrived.
     if (!event.verified)
@@ -470,7 +521,7 @@ function card(event: Event, explorer: string | undefined) {
         <div class="chips"><span class="chip wait">A kind this page does not know</span></div>${links()}
         <details><summary>Raw record</summary><pre>${esc(raw.length > RAW_SHOWN ? `${raw.slice(0, RAW_SHOWN)}…` : raw)}</pre><p>Swarm <code>${esc(event.ref)}</code></p></details>`
     }
-    const { title, twin, rows: list } = steps[data.phase](data)
+    const { title, twin, rows: list } = steps[data.phase](data, zone)
     // A cycle names the SenML of its curves, which the page links and never downloads: a line in the small print of the
     // card, beside the raw record, there when the record names a reference, from the gateway that served the record, and
     // nowhere otherwise. The curves themselves come later, drawn from the light file the record also names (drawCurves).
@@ -498,20 +549,68 @@ const resetLater = () => {
     laterTimers.clear()
 }
 
-// The station of a card on the line: the day and the month the record gives. A record that was not read, or not understood, has no date to give.
-function tile({ data, verified }: Event) {
+// The station of a card on the line: the day and the month the record gives, in the zone of its hours. A record that was
+// not read, or not understood, has no date to give.
+const dayAndMonth = (at: string, zone: string | null): [string, string] => {
+    const when = new Date(at)
+    return [when.toLocaleDateString('en-GB', { day: 'numeric', timeZone: zone ?? 'UTC' }), when.toLocaleDateString('en-GB', { month: 'short', timeZone: zone ?? 'UTC' })]
+}
+function tile({ data, verified }: Event, zone: string | null) {
     if (!data) return `<span class="tile"><b>${verified ? '?' : '✗'}</b></span>`
-    const when = new Date(data.at)
-    const d = when.toLocaleDateString('en-GB', { day: 'numeric', timeZone: 'UTC' })
-    const m = when.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
+    const [d, m] = dayAndMonth(data.at, zone)
     return `<time class="tile" datetime="${esc(data.at)}"><b>${d}</b><span>${m}</span></time>`
+}
+
+// ---------- the zone of a card's hours ----------
+
+// The records write their moments in UTC. The page shows each in the time of where the bag was: the last place the path
+// gives at or before the record, its own when its file gave one (the intake record names the plant's, the transport
+// record its destination's), else the nearest before it that did, since a record without a place of its own, a cycle, a
+// packing, was written where the bag last was. Null, and the hours in UTC, said so, until a place has come, when none
+// comes, or when the place's zone is not known.
+const zoneAt = (events: Event[], event: Event) => {
+    for (let i = events.indexOf(event); i >= 0; i--) {
+        const point = placed.get(events[i]!.ref)
+        if (point) return zoneOf(point)
+    }
+    return null
+}
+// what the check line says of a record, with the hour of its anchor in the zone of its card
+const anchorLine = (event: Event, zone: string | null) => (event.verified ? `✓ Matches its Ethereum anchor of ${date(event.at!, zone)}` : '✗ Does not match any Ethereum anchor')
+
+// The hours already on screen, written again when a place has come, in the zone it gives to its card and to the cards
+// after it: the day on each tile, the moments the rows give, the hour of each anchor already checked, and the day under
+// the seal, which follows the last place of the path. What does not change stays as it is.
+function retime(events: Event[], cards: Map<Hex, HTMLElement>) {
+    for (const event of events) {
+        const li = cards.get(event.ref)
+        const data = event.data
+        if (!li || !data) continue
+        const zone = zoneAt(events, event)
+        const [d, m] = dayAndMonth(data.at, zone)
+        const [tileDay, tileMonth] = li.querySelectorAll<HTMLElement>('.tile b, .tile span')
+        if (tileDay && tileMonth) {
+            swap(tileDay, d)
+            swap(tileMonth, m)
+        }
+        for (const [key, value] of moments(data, zone)) {
+            const row = [...li.querySelectorAll<HTMLElement>('.card .row')].find(each => each.querySelector('.k')?.textContent === key)
+            const shown = row?.querySelector<HTMLElement>('.v')
+            if (shown && value) swap(shown, value)
+        }
+        const check = li.querySelector<HTMLElement>('.card .check')
+        if (check && !check.classList.contains('pending')) swap(check, anchorLine(event, zone))
+    }
+    const last = events.at(-1)
+    if (storedUntil && last && !$('alive').hidden) swap($('alive-until'), day(storedUntil.toISOString(), zoneAt(events, last)))
 }
 
 export function placeCard(path: HTMLOListElement, events: Event[], event: Event, explorer: string | undefined) {
     const li = document.createElement('li')
     li.className = 'step'
     li.dataset.ref = event.ref
-    li.innerHTML = `<div class="unfold"><div class="unfold-in">${tile(event)}<div class="card">${card(event, explorer)}</div></div></div>`
+    const zone = zoneAt(events, event)
+    li.innerHTML = `<div class="unfold"><div class="unfold-in">${tile(event, zone)}<div class="card">${card(event, explorer, zone)}</div></div></div>`
     const index = events.indexOf(event)
     const next = events[index + 1]
     const before = next ? path.querySelector<HTMLLIElement>(`li[data-ref="${next.ref}"]`) : null
@@ -519,12 +618,12 @@ export function placeCard(path: HTMLOListElement, events: Event[], event: Event,
     return li
 }
 
-function markCheck(li: HTMLElement, event: Event) {
+function markCheck(li: HTMLElement, event: Event, zone: string | null) {
     li.classList.add(event.verified ? 'ok' : 'bad')
     const check = li.querySelector('.check')!
     check.classList.remove('pending')
     check.classList.add(event.verified ? 'ok' : 'bad')
-    swap(check as HTMLElement, event.verified ? `✓ Matches its Ethereum anchor of ${date(event.at!)}` : '✗ Does not match any Ethereum anchor')
+    swap(check as HTMLElement, anchorLine(event, zone))
 }
 
 // ---------- the files a record names ----------
@@ -652,9 +751,9 @@ const coordinate = (value: unknown, most: number): value is number => typeof val
 
 // Where a location file says a place is, when the page can show it: a GeoJSON Feature whose geometry is a Point, with two
 // coordinates, the longitude and then the latitude, as GeoJSON writes them, that are on Earth; the words for the place
-// and the key of the site, each when it is a line of text; and the code of the country, when it is two capital letters.
-// Like a description it is found out here, once, before anything is painted from it. A file of another shape, or that
-// is not JSON, says nothing.
+// and the key of the site, each when it is a line of text; the code of the country, when it is two capital letters; and
+// the zone the place keeps (`timezone`), when it is a name the browser knows. Like a description it is found out here,
+// once, before anything is painted from it. A file of another shape, or that is not JSON, says nothing.
 export function readPoint(bytes: Uint8Array): Point | null {
     try {
         const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as { [key: string]: unknown } | null
@@ -665,7 +764,7 @@ export function readPoint(bytes: Uint8Array): Point | null {
         if (geometry.type !== 'Point' || coordinates.length !== 2 || !coordinate(lon, 180) || !coordinate(lat, 90)) return null
         const properties = (typeof value.properties === 'object' && value.properties !== null ? value.properties : {}) as { [key: string]: unknown }
         const code = typeof properties.country === 'string' && /^[A-Z]{2}$/.test(properties.country) ? properties.country : null
-        return { site: line(properties.site), place: line(properties.place), country: code, lat, lon }
+        return { site: line(properties.site), place: line(properties.place), country: code, zone: knownZone(properties.timezone), lat, lon }
     } catch {
         return null
     }
@@ -675,6 +774,8 @@ export function readPoint(bytes: Uint8Array): Point | null {
 // names, and where the bag went, from the file the transport record names, for the map of the Delivered card to join
 // them. Another bag starts from none.
 export const places: { plant: Point | null; destination: Point | null } = { plant: null, destination: null }
+// The same places by the reference of the record that named each, for the hours of the cards (zoneAt).
+const placed = new Map<Hex, Point>()
 
 // The coordinates as a visitor reads them, 20.2353° N, 85.1091° E, and as OpenStreetMap takes them: in the address only
 // numbers of the page's own making, to six decimals, and nothing the file said.
@@ -695,7 +796,8 @@ function landRows(before: Element, list: (string | null | undefined)[][]) {
 // with the description, and read like it: hashed against its reference, then found out once. When it has come, the
 // Received card, already on screen, gains two rows before its check: the place, with the flag of its country after it,
 // by the code the file gives or else the name its words end with, and the coordinates, linked to OpenStreetMap, which
-// is asked for nothing unless the link is tapped.
+// is asked for nothing unless the link is tapped. The hours of the path are then written in the zone of the plant
+// (retime).
 async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLElement>) {
     const intake = events.find(e => e.data?.phase === 'intake')
     const ref = documentOf(intake?.data, SITE_LOCATION, GEOJSON)
@@ -704,8 +806,10 @@ async function placePlant(mine: Product, events: Event[], cards: Map<Hex, HTMLEl
     const point = bytes ? readPoint(bytes) : null
     if (!point || product !== mine) return // it did not come, or another bag is being read
     places.plant = point
+    placed.set(intake.ref, point)
     const check = cards.get(intake.ref)?.querySelector('.check')
     if (check) landRows(check, [['Site', flagged(point.country ?? countryOf(point.place), point.place)], geoRow('GPS', point)])
+    retime(events, cards)
 }
 
 // ---------- the curves of a cycle: the light file its record names ----------
@@ -976,12 +1080,14 @@ async function placeDestination(mine: Product, events: Event[], cards: Map<Hex, 
     const point = bytes ? readPoint(bytes) : null
     if (!point || product !== mine) return // it did not come, or another bag is being read
     places.destination = point
+    placed.set(transport.ref, point)
     const li = cards.get(transport.ref)
     const check = li?.querySelector('.card .check')
     if (!li || !check) return
     const to = [...li.querySelectorAll<HTMLElement>('.card .row')].find(row => row.querySelector('.k')?.textContent === 'To')
     if (to) to.querySelector('.v')?.insertAdjacentHTML('beforeend', `<span class="geo late">${linked(geo(point), osm(point), 'OpenStreetMap')}</span>`)
     else landRows(check, [geoRow('To', point)])
+    retime(events, cards)
 }
 
 // The distance between two places as the crow flies, in kilometres, on a round Earth
@@ -1572,9 +1678,12 @@ async function stampUntil(config: Page, stamp: string): Promise<Date | null> {
 
 // The line under the seal: "Stored until" and a day. The day written in the configuration (storage.until) goes up at
 // once and stands when nothing better comes; the stamp's takes its place when it comes, most often before the line is
-// in sight. With a stamp, and a page to look one up on (storage.stamp_page, an https address with {stamp} where the id
-// goes), the line is a link to that page for that stamp; without either it is a line and no link.
-function showStoredUntil(config: Page, stamp: string | null, until: Promise<Date | null> | null) {
+// in sight, as the day it falls on where the bag last was (`zone`, the zone of the last place of the path, UTC until one
+// has come), and is kept for the places that come after it (storedUntil, retime). With a stamp, and a page to look one
+// up on (storage.stamp_page, an https address with {stamp} where the id goes), the line is a link to that page for that
+// stamp; without either it is a line and no link.
+let storedUntil: Date | null = null
+function showStoredUntil(config: Page, stamp: string | null, until: Promise<Date | null> | null, zone: () => string | null) {
     const line = $<HTMLAnchorElement>('alive')
     const page = config.storage?.stamp_page
     line.removeAttribute('href')
@@ -1592,7 +1701,9 @@ function showStoredUntil(config: Page, stamp: string | null, until: Promise<Date
     const mine = product
     // the day is the seal's: on a plate that opened again, because its sources disagree, it does not come back
     void until?.then(when => {
-        if (when && product === mine && $('hero').classList.contains('verified')) show(day(when.toISOString()))
+        if (!when || product !== mine || !$('hero').classList.contains('verified')) return
+        storedUntil = when
+        show(day(when.toISOString(), zone()))
     })
 }
 
@@ -1666,6 +1777,8 @@ export function reset() {
     resetLater()
     resetFruit()
     places.plant = places.destination = null
+    placed.clear()
+    storedUntil = null
     stalled.clear()
     row(1, 'reading…', 'busy')
     row(2, 'waiting', 'idle')
@@ -1830,7 +1943,7 @@ async function check(config: Page) {
         product = readProduct(gateways, events)
 
         // 3 · the result of the check, on each card and on the plate
-        for (const event of events) markCheck(cards.get(event.ref)!, event)
+        for (const event of events) markCheck(cards.get(event.ref)!, event, zoneAt(events, event))
         const good = events.filter(e => e.verified).length
         const allGood = good === events.length
         row(3, `${good} of ${events.length} ${events.length === 1 ? 'match' : 'matches'}`, allGood ? 'lit' : 'bad')
@@ -1842,7 +1955,7 @@ async function check(config: Page) {
         status(allGood ? 'verified' : 'mismatch')
         if (allGood) {
             $('proof-fold').classList.add('open')
-            showStoredUntil(config, stamp, until)
+            showStoredUntil(config, stamp, until, () => zoneAt(events, events.at(-1)!))
         }
         const mine = product
         later(() => {

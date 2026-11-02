@@ -1541,7 +1541,7 @@ function received(documents) {
 const receivedCard = () => cards().find((li) => li.querySelector('h2').textContent === 'Received')
 const rowsOf = (li) => [...li.querySelectorAll('.row')].map((row) => [row.querySelector('.k').textContent, row.querySelector('.v').textContent])
 const asIs = ['Fruit', 'Weight', 'Sourcing']
-const plant = { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', country: null, lat: 20.235281, lon: 85.109112 }
+const plant = { site: 'urn:bdf:site:india-1', place: 'Dhodapalli, Odisha 752077, India', country: null, zone: null, lat: 20.235281, lon: 85.109112 }
 
 test('the plant: the Received card says where it is, from the file the intake record names, and its coordinates are a link to OpenStreetMap', async () => {
     const files = [site()]
@@ -2145,7 +2145,7 @@ test('another bag while the curves of the first are still on their way: nothing 
 // places, which is asked for nothing. The map is the page's own drawing: no tile, no script and no image from anyone.
 const mumbai = { type: 'Feature', geometry: { type: 'Point', coordinates: [72.867442, 19.064192] }, properties: { place: 'Jio World Convention Centre, G Block, Bandra Kurla Complex, Bandra East, Mumbai 400098, India' } }
 const destination = (value = mumbai, name = 'destination-location.geojson', type = 'application/geo+json') => file(name, type, bytes(value))
-const devcon = { site: null, place: mumbai.properties.place, country: null, lat: 19.064192, lon: 72.867442 }
+const devcon = { site: null, place: mumbai.properties.place, country: null, zone: null, lat: 19.064192, lon: 72.867442 }
 // a bag of banana that went from the plant to Devcon: its intake names the plant's file and its transport the destination's,
 // unless a test names other documents (`plant`, `went`) or says otherwise of the transport; the reference of the transport
 // record is returned
@@ -2411,6 +2411,148 @@ test('another bag while the files of the route are still on their way: nothing o
     assert.deepEqual(cards().map((li) => li.querySelector('h2').textContent), ['Packed'])
     assert.equal(document.querySelector('.route'), null)
     assert.equal(document.documentElement.outerHTML.includes('Jio'), false)
+})
+
+// ---------- the hours of the path: in the time of where the bag was ----------
+// The records write their moments in UTC. Each card shows them in the time of the last place the path gives at or before
+// its record: the plant's for Received and for the cards after it that have no place of their own, where the bag went
+// for Delivered. The zone of a place is the one its file names (`timezone`), else that of its country when the country
+// keeps one clock, else none, and the hours stay in UTC, said so. A file comes after its card: the hours are written in
+// UTC first, and again when it has come.
+const madrid = { type: 'Feature', geometry: { type: 'Point', coordinates: [-3.70379, 40.416775] }, properties: { place: 'Madrid, Spain', timezone: 'Europe/Madrid' } }
+// the anchor of every record the tests put, 2 October 2025 at 10:13 UTC, in the time of the plant, of Madrid, and as written
+const anchoredInIndia = '✓ Matches its Ethereum anchor of 2 Oct 2025, 15:43'
+const anchoredInMadrid = '✓ Matches its Ethereum anchor of 2 Oct 2025, 12:13'
+const anchoredInUtc = '✓ Matches its Ethereum anchor of 2 Oct 2025, 10:13 UTC'
+const cardOf = (title) => cards().find((li) => li.querySelector('h2').textContent === title)
+const checkOf = (li) => li.querySelector('.check').textContent
+const tileOf = (li) => [...li.querySelectorAll('.tile b, .tile span')].map((el) => el.textContent)
+const momentsOf = (li) => rowsOf(li).filter(([key]) => ['Departed', 'Arrived'].includes(key))
+const inUtc = [['Departed', '27 Oct 2026, 03:26 UTC'], ['Arrived', '2 Nov 2026, 09:20 UTC']]
+const inMadrid = [['Departed', '27 Oct 2026, 04:26'], ['Arrived', '2 Nov 2026, 10:20']]
+const inIndia = [['Departed', '27 Oct 2026, 08:56'], ['Arrived', '2 Nov 2026, 14:50']]
+// a bag of banana whose packing was written at 20:30 UTC on 30 September, two in the morning of 1 October at the plant, and
+// that went from the plant, whose intake names `plant`, to where `went` says, with what else the transport record is told
+function wentTo(went, transport = {}, plant = [site()]) {
+    const intake = put({ phase: 'intake', at: '2026-09-25T08:00:00Z', fruit: 'banana', kg: 20, sourcing: 'rescued', documents: plant })
+    const packing = put(packed({ at: '2026-09-30T20:30:00Z', product: 'dried banana', inputs: [intake] }))
+    net.head = put({ phase: 'transport', at: '2026-11-02T10:00:00Z', product: 'dried banana', origin: 'urn:bdf:site:india-1', destination: 'Madrid', departure: '2026-10-27T03:26:59Z', arrival: '2026-11-02T09:20:36Z', carrier: 'air freight', documents: went, inputs: [packing], ...transport })
+    return net.head
+}
+
+test('the hours of the path: Received and Packed in the time of the plant, from the country its address ends with; Delivered in that of where the bag went, from the zone its file names', async () => {
+    wentTo([destination(madrid)])
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    const received = cardOf('Received')
+    const packedCard = cardOf('Packed')
+    const delivered = deliveredCard()
+    assert.equal(checkOf(received), anchoredInIndia)
+    assert.equal(checkOf(packedCard), anchoredInIndia)
+    assert.equal(checkOf(delivered), anchoredInMadrid)
+    // the packing, written at 20:30 UTC on 30 September, was written on 1 October where it was written
+    assert.deepEqual(tileOf(received), ['25', 'Sept'])
+    assert.deepEqual(tileOf(packedCard), ['1', 'Oct'])
+    assert.deepEqual(tileOf(delivered), ['2', 'Nov'])
+    assert.deepEqual(momentsOf(delivered), inMadrid)
+    // the record is shown as written: its moments in UTC, and the tile keeps the moment it stands for
+    assert.ok(delivered.querySelector('pre').textContent.includes('"departure": "2026-10-27T03:26:59Z"'))
+    assert.equal(packedCard.querySelector('.tile').getAttribute('datetime'), '2026-09-30T20:30:00Z')
+    clean(document)
+})
+
+test('a destination in a country with several clocks, and no zone in its file: the hours of Delivered stay in UTC, said so, and the plant keeps its time', async () => {
+    const chicago = { type: 'Feature', geometry: { type: 'Point', coordinates: [-87.6298, 41.8781] }, properties: { place: 'Chicago, Illinois, United States' } }
+    wentTo([destination(chicago)])
+    await scan()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(checkOf(cardOf('Received')), anchoredInIndia)
+    assert.equal(checkOf(deliveredCard()), anchoredInUtc)
+    assert.deepEqual(momentsOf(deliveredCard()), inUtc)
+    assert.deepEqual(tileOf(deliveredCard()), ['2', 'Nov'])
+    clean(document)
+})
+
+test('a zone the file names that the browser does not know, or that is not a name: the country of the place decides, as if the file had named none', async () => {
+    for (const timezone of ['Mars/Olympus', hostile('timezone'), 7, null, '']) {
+        wentTo([destination({ ...mumbai, properties: { ...mumbai.properties, timezone } })])
+        await scan()
+        assert.deepEqual(momentsOf(deliveredCard()), inIndia, String(timezone))
+        assert.equal(page.places.destination.zone, null, String(timezone))
+    }
+    clean(document)
+})
+
+test('the hours before a file has come, and after: UTC, said so, while no place before the record is in; the last place in meanwhile; the record’s own once its file has come', async () => {
+    // the plant's file held back: Received and Packed wait in UTC, and Delivered has its destination
+    let files = [site(), destination(madrid)]
+    wentTo([files[1]], {}, [files[0]])
+    let open = slow(files[0])
+    location.hash = `#11155111:${contract}/1`
+    let scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(checkOf(cardOf('Received')), anchoredInUtc)
+    assert.equal(checkOf(cardOf('Packed')), anchoredInUtc)
+    assert.deepEqual(tileOf(cardOf('Packed')), ['30', 'Sept'])
+    assert.equal(checkOf(deliveredCard()), anchoredInMadrid)
+    assert.deepEqual(momentsOf(deliveredCard()), inMadrid)
+    open()
+    await turns()
+    await scanning
+    assert.equal(checkOf(cardOf('Received')), anchoredInIndia)
+    assert.equal(checkOf(cardOf('Packed')), anchoredInIndia)
+    assert.deepEqual(tileOf(cardOf('Packed')), ['1', 'Oct'])
+    assert.equal(checkOf(deliveredCard()), anchoredInMadrid)
+    // the destination's file held back: Delivered keeps the time of the plant, the last place in, until its own has come
+    net.instead.clear()
+    files = [site(), destination(madrid)]
+    wentTo([files[1]], {}, [files[0]])
+    open = slow(files[1])
+    location.hash = `#11155111:${contract}/1`
+    scanning = page.main()
+    await turns()
+    assert.ok($('hero').classList.contains('verified'))
+    assert.equal(checkOf(deliveredCard()), anchoredInIndia)
+    assert.deepEqual(momentsOf(deliveredCard()), inIndia)
+    open()
+    await turns()
+    await scanning
+    assert.equal(checkOf(deliveredCard()), anchoredInMadrid)
+    assert.deepEqual(momentsOf(deliveredCard()), inMadrid)
+    clean(document)
+})
+
+test('the day under the seal falls where the bag last was: when the stamp answers before the place has come, and after', async (t) => {
+    t.mock.method(Date, 'now', () => NOW)
+    // paid up to noon UTC on 27 December: 28 December already in Auckland
+    const auckland = { type: 'Feature', geometry: { type: 'Point', coordinates: [174.7633, -36.8485] }, properties: { place: 'Auckland, New Zealand', timezone: 'Pacific/Auckland' } }
+    // the stamp answers first: the day comes up in the time of the plant, the last place in, and is written again when the destination has come
+    let went = destination(auckland)
+    wentTo([went], { stamp })
+    let open = slow(went)
+    location.hash = `#11155111:${contract}/1`
+    let scanning = page.main()
+    await turns()
+    assert.deepEqual(line(), { ...linked, until: '27 Dec 2026' })
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual(line(), { ...linked, until: '28 Dec 2026' })
+    // the place comes first: the day of the configuration stands until the stamp answers, and the stamp's comes up in the time of the place
+    net.instead.clear()
+    went = destination(auckland)
+    wentTo([went], { stamp })
+    open = hold()
+    location.hash = `#11155111:${contract}/1`
+    scanning = page.main()
+    await turns()
+    assert.equal(line().until, written.until)
+    open()
+    await turns()
+    await scanning
+    assert.deepEqual(line(), { ...linked, until: '28 Dec 2026' })
+    clean(document)
 })
 
 // ---------- the holder's picture ----------
