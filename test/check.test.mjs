@@ -217,6 +217,17 @@ test('a first gateway that takes the request and never answers: the page gives u
     assert.deepEqual([asked(first), asked(second)], [1, 1])
 })
 
+test('a first gateway that answers and falls silent halfway through a record: the page gives up on it and asks the second', async (t) => {
+    const timeout = AbortSignal.timeout.bind(AbortSignal)
+    t.mock.method(AbortSignal, 'timeout', () => timeout(5)) // the wait, cut short for the test
+    net.head = put(packed())
+    net.instead.set(first, () => new Response(new ReadableStream({ start: (controller) => controller.enqueue(new Uint8Array(8)) })))
+    await scan()
+    assert.match(cards()[0].querySelector('.check').textContent, /^✓ Matches its Ethereum anchor of /)
+    assert.ok($('hero').classList.contains('verified'))
+    assert.deepEqual([asked(first), asked(second)], [1, 1])
+})
+
 test('no gateway answers: that is the network, not the record, and the page offers to try again', async (t) => {
     t.mock.method(console, 'error', () => {}) // the page logs what stopped it
     net.head = put(packed())

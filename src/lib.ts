@@ -21,13 +21,34 @@ export function hex(ref: unknown) {
     return (ref.startsWith('0x') ? ref : `0x${ref}`).toLowerCase() as Hex
 }
 
-// A record is small. The page waits this long for a gateway and takes this much from it, and no more: one that is slow
-// or serves something else is left for the next.
+// A record is small and a photograph not much more, but a gateway's bytes can come slowly. The page waits this long for a
+// gateway to say something, its answer or more of its bytes; this long for the whole of a file from one that keeps saying
+// something; and takes this much from it, and no more. One that falls silent, drags on or serves something else is left
+// for the next.
 const WAIT = 12_000
+const LONGEST = 30_000
 const MOST = 1024 * 1024
 
+// A wait that ends by failing as a timeout fails, which is how the page knows a gateway that did not answer.
+const outOfTime = (ms: number) =>
+    new Promise<never>((_, reject) => {
+        const signal = AbortSignal.timeout(ms)
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+
 export async function download(gateway: string, ref: Hex) {
-    const response = await fetch(`${gateway}/bytes/${ref.slice(2)}`, { signal: AbortSignal.timeout(WAIT) })
+    // the whole file has one clock, and each thing the gateway is waited for starts another: bytes still coming are not cut
+    const stop = new AbortController()
+    const whole = outOfTime(LONGEST)
+    const heard = async <T>(step: Promise<T>) => {
+        try {
+            return await Promise.race([step, whole, outOfTime(WAIT)])
+        } catch (error) {
+            stop.abort(error)
+            throw error
+        }
+    }
+    const response = await heard(fetch(`${gateway}/bytes/${ref.slice(2)}`, { signal: stop.signal }))
     if (!response.ok) throw Error(`download failed: ${response.status}`)
     const large = () => Error(`download failed: more than ${MOST} bytes`)
     if (Number(response.headers.get('content-length')) > MOST) throw large()
@@ -36,7 +57,7 @@ export async function download(gateway: string, ref: Hex) {
     const parts: Uint8Array[] = []
     let size = 0
     while (reader) {
-        const { done, value } = await reader.read()
+        const { done, value } = await heard(reader.read())
         if (done) break
         size += value.length
         if (size > MOST) {
