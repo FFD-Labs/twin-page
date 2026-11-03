@@ -124,7 +124,8 @@ Every published file, in order. A release has a number, a folder that is never w
 | 0.3 | 11 Oct 2026 | `releases/0.3/` | `v0.3` | `804395a26c31d6739ecacdd80b0fc210a9f1b5e0e566341f4aee44630428b1fd` | superseded |
 | 0.4 | 11 Oct 2026 | `releases/0.4/` | `v0.4` | `df51fe61184360017716f81cee96f6eba8cf3f0bb9e1c1664a563c28fd9ba613` | superseded |
 | 0.5 | 1 Nov 2026 | `releases/0.5/` | `v0.5` | `c28d6309cca9dfd5e891e31959b3f3a26f08742614f87a31a43f2e2c0597fe85` | superseded |
-| 0.6 | 4 Nov 2026 | `releases/0.6/` | `v0.6` | `496892dbde3b0b7baaa716f855c44e27f7a2e6255eaf3e153e196174c74dc206` | current |
+| 0.6 | 4 Nov 2026 | `releases/0.6/` | `v0.6` | `496892dbde3b0b7baaa716f855c44e27f7a2e6255eaf3e153e196174c74dc206` | superseded |
+| 0.7 | 4 Nov 2026 | `releases/0.7/` | `v0.7` | `383409e1b332d73fe7b8c415b8cfb76b14999dacac67f83552405c97e767520e` | current |
 
 The file to use is the one marked current. Do not use 0.1, withdrawn: it paints a record before checking it, so a gateway or an RPC that lies can run script in it. Its file stays here with its hash so that a copy can be recognised.
 
