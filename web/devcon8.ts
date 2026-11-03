@@ -1548,6 +1548,45 @@ const ENTRY_GLYPHS: { [kind: string]: string } = {
 const entryGlyph = (kind: string) => `<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">${Object.hasOwn(ENTRY_GLYPHS, kind) ? ENTRY_GLYPHS[kind] : '<path class="gc" d="M12 6.5l5.5 5.5-5.5 5.5-5.5-5.5z"/>'}</svg>`
 const SIGNED = '✓ Signed by the holder of this record'
 
+// An address on a slip: its two ends in the mono of the page, the whole of it copied when tapped (copyValue, below)
+const COPY_ICONS =
+    '<svg class="ico idle" viewBox="0 0 12 12" aria-hidden="true"><rect x="4.25" y="4.25" width="6.5" height="6.5" rx="1.4"/><path d="M7.75 2.6V2.5A1.25 1.25 0 0 0 6.5 1.25h-4A1.25 1.25 0 0 0 1.25 2.5v4A1.25 1.25 0 0 0 2.5 7.75h.1"/></svg><svg class="ico done" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.4 6.4l2.4 2.4 4.8-5.2"/></svg>'
+const copySlip = (value: string, what: string) =>
+    `<button class="copy" type="button" data-copy="${esc(value)}" data-what="${esc(what)}" title="${esc(value)}" aria-label="${esc(`${what} ${value}. Tap to copy`)}"><span class="val">${esc(value.slice(0, 6))}<span class="gap">…</span>${esc(value.slice(value.startsWith('0x') ? -4 : -6))}</span>${COPY_ICONS}<span class="hush" role="status"></span></button>`
+
+// The whole value to the clipboard; where the browser keeps it closed, a selection copied the old way. The slip turns to
+// the ink with a tick for a moment, and a screen reader hears it.
+async function copyValue(button: HTMLElement) {
+    const value = button.dataset.copy
+    if (!value) return
+    let copied = await (navigator.clipboard?.writeText(value) ?? Promise.reject()).then(() => true, () => false)
+    if (!copied) {
+        const area = document.createElement('textarea')
+        area.value = value
+        area.readOnly = true
+        area.className = 'hush'
+        document.body.append(area)
+        area.select()
+        try {
+            copied = document.execCommand('copy')
+        } catch {
+            copied = false
+        }
+        area.remove()
+    }
+    const said = button.querySelector<HTMLElement>('.hush')
+    clearTimeout(Number(button.dataset.timer))
+    if (said) said.textContent = copied ? `${button.dataset.what ?? 'Value'} copied` : 'It could not be copied'
+    if (!copied) return
+    button.dataset.state = 'copied'
+    button.dataset.timer = String(
+        setTimeout(() => {
+            delete button.dataset.state
+            if (said) said.textContent = ''
+        }, 1600)
+    )
+}
+
 // The chapter of the bag's holder, from the first gateway whose feed update is the holder's and whose chapter is this
 // bag's; null when no gateway serves one. A gateway that serves nothing, another signer, other bytes or another bag's
 // chapter is passed over for the next.
@@ -1568,21 +1607,21 @@ async function chapterOf(gateways: string[], owner: Address, chainId: number, co
     return null
 }
 
-function entryCard(entry: Entry, clock: Clock | null, gateway: string) {
+function entryCard(entry: Entry, clock: Clock | null, gateway: string, holder: Address) {
     const title = entry.title ?? cap(entry.kind.replace(/-/g, ' '))
     const file = entry.image ? `<a class="btn" href="${esc(`${gateway}/bytes/${entry.image.ref.slice(2)}`)}" target="_blank" rel="noopener">Swarm file ↗</a>` : ''
     return `
         <h2>${entryGlyph(entry.kind)}${esc(title)}</h2>
         ${entry.image ? `<figure class="added" data-ref="${esc(entry.image.ref)}"></figure>` : ''}
         ${entry.text ? `<p class="said">${esc(entry.text)}</p>` : ''}
-        ${rows([['Added', date(entry.at, clock)]])}
+        ${rows([['Added', date(entry.at, clock)]])}<div class="row"><span class="k">Signed by</span><span class="v">${copySlip(holder, 'Address')}</span></div>
         <p class="check ok">${SIGNED}</p>
         ${file ? `<div class="links">${file}</div>` : ''}`
 }
 
 // The cards of the chapter, at the end of the path, opening after the records' cards; then each picture, read against its
 // reference like every file the page shows, held under an address of the page's own making, and set in its card.
-function placeChapter(path: HTMLOListElement, events: Event[], { chapter, gateway }: { chapter: Chapter; gateway: string }, gateways: string[], opensAt: number) {
+function placeChapter(path: HTMLOListElement, events: Event[], { chapter, gateway }: { chapter: Chapter; gateway: string }, holder: Address, gateways: string[], opensAt: number) {
     const clock = events.length ? clockAt(events, events.at(-1)!) : null
     const mine = product
     chapter.entries.forEach((entry, i) => {
@@ -1590,7 +1629,7 @@ function placeChapter(path: HTMLOListElement, events: Event[], { chapter, gatewa
         li.className = 'step ok added-step'
         li.dataset.kind = entry.kind
         const [d, m] = dayAndMonth(entry.at, clock)
-        li.innerHTML = `<div class="unfold"><div class="unfold-in"><time class="tile" datetime="${esc(entry.at)}"><b>${d}</b><span>${m}</span></time><div class="card">${entryCard(entry, clock, gateway)}</div></div></div>`
+        li.innerHTML = `<div class="unfold"><div class="unfold-in"><time class="tile" datetime="${esc(entry.at)}"><b>${d}</b><span>${m}</span></time><div class="card">${entryCard(entry, clock, gateway, holder)}</div></div></div>`
         path.append(li)
         later(() => li.classList.add('open'), Math.max(60, opensAt - performance.now()) + i * UNFOLD_GAP)
         if (!entry.image) return
@@ -2070,7 +2109,7 @@ async function check(config: Page) {
         const custody = config.custody && isAddress(config.custody) ? config.custody : null
         if (allGood && owner && !(custody && isAddressEqual(owner, custody))) {
             const opensAt = performance.now() + lastCard + UNFOLD_GAP
-            void chapterOf(gateways, owner, chainId, address, parsed.id).then(found => found && product === mine && placeChapter(path, events, found, gateways, opensAt))
+            void chapterOf(gateways, owner, chainId, address, parsed.id).then(found => found && product === mine && placeChapter(path, events, found, owner, gateways, opensAt))
         }
 
         void Promise.all(
@@ -2103,6 +2142,12 @@ async function check(config: Page) {
         notice('We couldn’t reach the records right now.', `The records don’t expire. Try again in a moment.${where}${details}`, true)
     }
 }
+
+// A slip with an address on it copies the address when tapped, wherever on the page it is.
+document.addEventListener('click', event => {
+    const button = event.target instanceof Element ? event.target.closest<HTMLElement>('button.copy') : null
+    if (button) void copyValue(button)
+})
 
 // Another bag in the link is another page: it is loaded again and read from nothing, not left under the seal of the bag before.
 window.addEventListener('hashchange', () => location.reload())

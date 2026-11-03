@@ -2686,6 +2686,9 @@ test('a chapter signed by the holder: one card per entry after the records, sign
     const [photoCard, messageCard] = addedCards()
     for (const li of [photoCard, messageCard]) {
         assert.equal(li.querySelector('.check').textContent, '✓ Signed by the holder of this record')
+        const slip = li.querySelector('button.copy')
+        assert.equal(slip.dataset.copy, writer.address, 'the slip copies the whole address of the signer')
+        assert.equal(slip.querySelector('.val').textContent, '0x7E5F…5Bdf')
         assert.doesNotMatch(li.textContent, /Ethereum anchor/)
         assert.ok(li.classList.contains('open'))
     }
