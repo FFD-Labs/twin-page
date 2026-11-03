@@ -40,7 +40,12 @@
                               from the cycle record (config: gateways); and how long the stamp the bag's record names is
                               paid for, read only, once every record has matched, from Swarm's PostageStamp contract
                               through the RPCs of the config for its chain, never a wallet (config: rpcs, storage)
-              the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept
+              the holder      only if the twin has moved to an address with an ENS avatar, that image, from wherever it is kept;
+                              and, once every record has matched and the twin has moved, what the holder added to the bag's
+                              record, from the gateways of the config, read only: the feed the holder signs (topic "taste")
+                              and the chapter it names, shown only when the update is signed by the holder and the chapter is
+                              the bytes its reference names and says it is this bag's, then the pictures it names, each
+                              hashed before it is shown
               this file       itself, once more, to show its fingerprint in the footer, with a bag in the link or without one.
                               With none, it is the one thing the page asks for
               OpenStreetMap   not asked: the coordinates of the plant on the Received card and of the destination on the
@@ -326,6 +331,11 @@
             .step.ok .tile::before { background: var(--ink); }
             .step.bad .tile, .step.bad .tile::before { color: var(--bad); border-color: var(--bad); }
             .twin-born { margin-top: .35rem; color: var(--panel-ink-2); }
+            /* the cards of the holder's chapter: the picture in the panel, the text as it was written */
+            .added { margin: .9rem 0 0; }
+            .added img { display: block; width: 100%; height: auto; max-height: 70vh; object-fit: contain; border-radius: .4rem; background: var(--panel-tint); }
+            .said { margin-top: .75rem; font-size: 1.06rem; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; }
+            .card .added + .row, .card .said + .row, .card h2 + .row { margin-top: .75rem; border-top: 1px solid var(--panel-rule); }
             .card h2 + .row, .card .twin-born + .row, .card .chips + .row { margin-top: .75rem; border-top: 1px solid var(--panel-rule); }
             /* the rows a file adds to a card once it has come, where the plant is, land as the blocks do; so do the coordinates
                of where the bag went, under the words of the To row */
