@@ -122,7 +122,8 @@ Every published file, in order. A release has a number, a folder that is never w
 | 0.2 | 10 Oct 2026 | `releases/2026-10-10/` | `2026-10-10` | `0e6f48570feedab7d29b1b6a741eabf1366ea2a4aacd201b3052f54eee69d95e` | superseded |
 | 0.3 | 11 Oct 2026 | `releases/0.3/` | `v0.3` | `804395a26c31d6739ecacdd80b0fc210a9f1b5e0e566341f4aee44630428b1fd` | superseded |
 | 0.4 | 11 Oct 2026 | `releases/0.4/` | `v0.4` | `df51fe61184360017716f81cee96f6eba8cf3f0bb9e1c1664a563c28fd9ba613` | superseded |
-| 0.5 | 1 Nov 2026 | `releases/0.5/` | `v0.5` | `c28d6309cca9dfd5e891e31959b3f3a26f08742614f87a31a43f2e2c0597fe85` | current |
+| 0.5 | 1 Nov 2026 | `releases/0.5/` | `v0.5` | `c28d6309cca9dfd5e891e31959b3f3a26f08742614f87a31a43f2e2c0597fe85` | superseded |
+| 0.6 | 4 Nov 2026 | `releases/0.6/` | `v0.6` | `496892dbde3b0b7baaa716f855c44e27f7a2e6255eaf3e153e196174c74dc206` | current |
 
 The file to use is the one marked current. Do not use 0.1, withdrawn: it paints a record before checking it, so a gateway or an RPC that lies can run script in it. Its file stays here with its hash so that a copy can be recognised.
 
@@ -176,7 +177,7 @@ The faces are cut once, when a master changes or the page writes something new i
 
 ## Status
 
-2 November 2026. Release 0.5, on real records, for Devcon 8 (3 to 6 November).
+4 November 2026. Release 0.6, on real records, for Devcon 8 (3 to 6 November).
 
 - The page reads the real records on mainnet, in the contract the QR of every bag names, as far as delivery: each of the 7,500 bags points to its transport, from the plant to Mumbai. The test contract on Sepolia opens too, with a transport on its banana bags.
 - Each fruit has a stamp of its own on Swarm. Unless someone adds to them, the three run out on 28 December 2026; the page shows the day of the bag's own stamp when it can read it.
