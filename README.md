@@ -73,7 +73,7 @@ Top to bottom, each block filling in as its records arrive. The page opens in iv
 | What the holder added | After the records, one card per entry of the bag's chapter: a photo, a message, and kinds to come, each drawn the same way, its time, its picture or its text, and "Signed by the holder of this record". Shown only when the holder's feed update is signed by the address the contract names and the chapter is the bytes its reference names and says it is this bag's. Never anchored, never counted among the records | The holder's feed on Swarm, topic `taste` |
 | The arithmetic | If this fruit was rescued: the grams in the bag, the fresh fruit they came from and the CO₂e that stays out of the air, every assumption in view | The records and the factors in the config |
 | The twin | Who holds it: the jazzicon of the address, or its ENS name and avatar | Ethereum and ENS |
-| The footer | Anchored on Ethereum, stored on Swarm, living on public rails. Three rows of small print: where the code is, the fingerprint of the file, and the contract on its explorer | The config |
+| The footer | Held on Ethereum, stored on Swarm, living on public rails. Three rows of small print: where the code is, the fingerprint of the file, and the contract on its explorer | The config |
 
 The states the page handles: no record yet for the bag; no bag in the link, or one cut short (the page opens on how it works and reads no network); a contract it does not list; a network it has no RPC for; a source that does not answer (the next is asked; when none does, Try again); a record that fails the check; a record that passes and is of a kind the page does not know.
 
