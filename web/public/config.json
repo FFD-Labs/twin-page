@@ -41,7 +41,6 @@
     "source": "https://github.com/FFD-Labs/twin-page",
     "co2": {
         "factor_kg_per_kg": 0.6,
-        "factor_source": "source to cite",
         "scenario": "an open dump",
         "scenario_written": "2026-10-04",
         "label": null,

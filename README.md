@@ -69,7 +69,7 @@ Top to bottom, each block filling in as its records arrive. The page opens in iv
 |---|---|---|
 | The front | The pouch's crystal with the twin's number in the hexagon, the name of the fruit, and the three reads on one line: your device asks Ethereum, then Swarm, then hashes every record. The hexagon closes when every record matches, with the day the records are paid up to on Swarm under the seal | Ethereum and Swarm |
 | The fruit | The back of the pouch: the photograph where the QR sticker sits, and the label: grams per bag, energy, sugars, protein, fat, fibre, and the full table per 100 g | Files named by the packing record |
-| The path | One card per record: received, freeze-dried, packed, delivered. Each with its rows, the check against its Ethereum anchor and the anchor's date, links to the anchor and to the file on Swarm, and the raw record. Received names the farm and the plant, with a flag and coordinates. Freeze-dried draws the cycle: temperature and pressure hour by hour, the coldest point and the lowest pressure marked. Delivered draws the route from the plant to where the bag went | The records on Swarm, and the files they name |
+| The path | One card per record: received, freeze-dried, packed, delivered. Each with its rows, the check against its Ethereum anchor and the anchor's date, links to the anchor and to the file on Swarm, and the raw record. The records write their moments in UTC; the cards show them in the time of where the bag was, the last place the path gives at or before the record, by the zone its file names or the country of its address, with the short name of that zone where the browser has one (IST, CET), and in UTC, said so, until a place has come. Received names the farm and the plant, with a flag and coordinates. Freeze-dried draws the cycle: temperature and pressure hour by hour, the coldest point and the lowest pressure marked. Delivered draws the route from the plant to where the bag went | The records on Swarm, and the files they name |
 | The arithmetic | If this fruit was rescued: the grams in the bag, the fresh fruit they came from and the CO₂e that stays out of the air, every assumption in view | The records and the factors in the config |
 | The twin | Who holds it: the jazzicon of the address, or its ENS name and avatar | Ethereum and ENS |
 | The footer | Anchored on Ethereum, stored on Swarm, living on public rails. Three rows of small print: where the code is, the fingerprint of the file, and the contract on its explorer | The config |
@@ -122,7 +122,8 @@ Every published file, in order. A release has a number, a folder that is never w
 | 0.2 | 10 Oct 2026 | `releases/2026-10-10/` | `2026-10-10` | `0e6f48570feedab7d29b1b6a741eabf1366ea2a4aacd201b3052f54eee69d95e` | superseded |
 | 0.3 | 11 Oct 2026 | `releases/0.3/` | `v0.3` | `804395a26c31d6739ecacdd80b0fc210a9f1b5e0e566341f4aee44630428b1fd` | superseded |
 | 0.4 | 11 Oct 2026 | `releases/0.4/` | `v0.4` | `df51fe61184360017716f81cee96f6eba8cf3f0bb9e1c1664a563c28fd9ba613` | superseded |
-| 0.5 | 1 Nov 2026 | `releases/0.5/` | `v0.5` | `c28d6309cca9dfd5e891e31959b3f3a26f08742614f87a31a43f2e2c0597fe85` | current |
+| 0.5 | 1 Nov 2026 | `releases/0.5/` | `v0.5` | `c28d6309cca9dfd5e891e31959b3f3a26f08742614f87a31a43f2e2c0597fe85` | superseded |
+| 0.6 | 4 Nov 2026 | `releases/0.6/` | `v0.6` | `496892dbde3b0b7baaa716f855c44e27f7a2e6255eaf3e153e196174c74dc206` | current |
 
 The file to use is the one marked current. Do not use 0.1, withdrawn: it paints a record before checking it, so a gateway or an RPC that lies can run script in it. Its file stays here with its hash so that a copy can be recognised.
 
@@ -176,12 +177,11 @@ The faces are cut once, when a master changes or the page writes something new i
 
 ## Status
 
-1 November 2026. Release 0.5, on real records, for Devcon 8 (3 to 6 November).
+4 November 2026. Release 0.6, on real records, for Devcon 8 (3 to 6 November).
 
-- The page reads the real records on mainnet, in the contract the QR of every bag names, as far as its packing: no transport is declared on mainnet. The test contract on Sepolia opens too, with a transport on its banana bags.
+- The page reads the real records on mainnet, in the contract the QR of every bag names, as far as delivery: each of the 7,500 bags points to its transport, from the plant to Mumbai. The test contract on Sepolia opens too, with a transport on its banana bags.
 - Each fruit has a stamp of its own on Swarm. Unless someone adds to them, the three run out on 28 December 2026; the page shows the day of the bag's own stamp when it can read it.
 - The nutrition figures are the producer's, given per 5 g serving as ranges; each description declares the middle of each range for 100 g and keeps the ranges as given.
-- The CO₂ factor and its reference scenario are placeholders.
 - The test records of bags 1 to 20 on Sepolia are of mango and name no file of a product.
 - The bags and their packaging are separate work, not in this repository.
 
