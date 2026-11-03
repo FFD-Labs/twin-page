@@ -6,8 +6,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, mock, test } from 'node:test'
-import { decodeFunctionData, encodeErrorResult, encodeFunctionResult, parseAbi } from 'viem'
-import { abi, hex, swarmHash } from '../src/lib.ts'
+import { bytesToHex, concat, decodeFunctionData, encodeErrorResult, encodeFunctionResult, hexToBytes, keccak256, parseAbi } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { abi, hex, signerOf, swarmHash } from '../src/lib.ts'
 import { clean, hostile, loads, openPage } from './page.mjs'
 
 const contract = '0x240dfbca7064d091149169eff95f764d1e21cea7'
@@ -2613,4 +2614,141 @@ test('the holder’s picture: it takes the jazzicon’s place without telling it
         assert.equal($('holder').querySelector('img.pic'), null, name)
         assert.ok($('holder').querySelector('.pic.jazz'), name)
     }
+})
+
+// ---------- the holder's chapter ----------
+// What the holder of a bag added to its record: a feed on Swarm, topic "taste", signed by the holder, whose latest update
+// names a small JSON document with one entry per kind. FFD-Labs/kitchen writes it (docs/FORMAT.md there). The page reads
+// it once every record has matched, shows it only when the update is the holder's and the chapter is this bag's, and
+// draws each entry as a card after the records: never as anchored.
+
+// A real update, as a public gateway served it on 4 Nov 2026: the feed of pilot bag 900002, written by the Kitchen with
+// the public test key 1, whose address is 0x7E5F…5Bdf. The page must recover that address from Bee's own signature.
+test('a feed update as Bee serves it: its signature recovers the address that wrote it', async () => {
+    const signer = await signerOf({
+        ref: '0xc1b9c698dadf99a8ea1612d28c8ad350a2d4192ef9f3fb5bed93fc832c416850',
+        index: 1n,
+        signature: '0xeb968f5bf57d89b3ef326e7a98d9f2df03e070c301b6451d47c9afe102ad7bbb62602867fb5cac7a01dd0e463cfb1e0b3c66960e5b37645650b70688763879d01c'
+    })
+    assert.equal(signer, '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf')
+    const other = await signerOf({
+        ref: '0xc1b9c698dadf99a8ea1612d28c8ad350a2d4192ef9f3fb5bed93fc832c416850',
+        index: 2n,
+        signature: '0xeb968f5bf57d89b3ef326e7a98d9f2df03e070c301b6451d47c9afe102ad7bbb62602867fb5cac7a01dd0e463cfb1e0b3c66960e5b37645650b70688763879d01c'
+    })
+    assert.notEqual(other, '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf', 'the index is part of what is signed')
+})
+
+const writer = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+const otherKey = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
+const TOPIC = keccak256(new TextEncoder().encode('taste'))
+// a chapter on Swarm under its reference, and the feed update that names it, signed by `by`, as the gateway's headers carry it
+async function chapter(doc, { by = writer, index = 0n } = {}) {
+    const content = bytes(doc)
+    const ref = swarmHash(content)
+    net.files.set(ref, content)
+    const indexBytes = new Uint8Array(8)
+    new DataView(indexBytes.buffer).setBigUint64(0, index, false)
+    const identifier = keccak256(concat([TOPIC, bytesToHex(indexBytes)]))
+    const wrapped = swarmHash(hexToBytes(ref))
+    const signature = await by.signMessage({ message: { raw: keccak256(concat([identifier, wrapped])) } })
+    return { ref, index, signature }
+}
+const feedFrom = (update) => (request) => {
+    if (request.url.includes('/feeds/')) {
+        if (!update || !request.url.includes(`/feeds/${writer.address.slice(2).toLowerCase()}/${TOPIC.slice(2)}`)) return new Response('{"message":"no update found"}', { status: 404 })
+        return new Response(hexToBytes(update.ref), { headers: { 'content-type': 'application/octet-stream', 'swarm-feed-index': update.index.toString(16).padStart(16, '0'), 'swarm-soc-signature': update.signature.slice(2) } })
+    }
+    const content = net.files.get(`0x${request.url.split('/bytes/')[1]}`)
+    return content ? answer(content, 'application/octet-stream') : new Response('not found', { status: 404 })
+}
+const ourChapter = (entries) => ({ format: 'ffd-bag-chapter/1', chain: 11155111, contract, bag: 1, updated: '2026-11-10T14:12:37Z', entries })
+const addedCards = () => [...document.querySelectorAll('#path li.added-step')]
+
+test('a chapter signed by the holder: one card per entry after the records, signed and never anchored, the photo read against its reference', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    bag([])
+    net.owner = writer.address
+    const picture = webp(7)
+    const pictureRef = swarmHash(picture)
+    net.files.set(pictureRef, picture)
+    const update = await chapter(ourChapter([
+        { kind: 'photo', at: '2026-11-10T14:12:37Z', title: 'Taste', image: { ref: pictureRef.slice(2), type: 'image/webp', width: 1400, height: 1050 } },
+        { kind: 'message', at: '2026-11-11T09:03:51Z', title: 'Message', text: 'Made it with lime.' }
+    ]))
+    net.instead.set(first, feedFrom(update))
+    await scan()
+    for (let i = 0; i < 20; i++) {
+        mock.timers.runAll()
+        await new Promise((turn) => setImmediate(turn))
+    }
+    assert.deepEqual(cards().map((li) => li.querySelector('h2').textContent), ['Received', 'Freeze-dried', 'Packed', 'Taste', 'Message'])
+    const [photoCard, messageCard] = addedCards()
+    for (const li of [photoCard, messageCard]) {
+        assert.equal(li.querySelector('.check').textContent, '✓ Signed by the holder of this record')
+        const slip = li.querySelector('button.copy')
+        assert.equal(slip.dataset.copy, writer.address, 'the slip copies the whole address of the signer')
+        assert.equal(slip.querySelector('.val').textContent, '0x7E5F…5Bdf')
+        assert.doesNotMatch(li.textContent, /Ethereum anchor/)
+        assert.ok(li.classList.contains('open'))
+    }
+    assert.ok(photoCard.querySelector('.added img'), 'the photo is in its card')
+    assert.equal(photoCard.querySelector('.links a').href, `${first}/bytes/${pictureRef.slice(2)}`)
+    assert.equal(messageCard.querySelector('.said').textContent, 'Made it with lime.')
+    assert.equal(messageCard.querySelector('.added'), null)
+    assert.equal($('step-3').querySelector('.v').textContent, '3 of 3 matches', 'the chapter is not counted among the records')
+    clean(document)
+})
+
+test('a chapter signed by someone else, one of another bag, or none: no card is added', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    const entry = { kind: 'message', at: '2026-11-11T09:03:51Z', text: 'not the holder' }
+    for (const [why, update] of [
+        ['signed by another key', await chapter(ourChapter([entry]), { by: otherKey })],
+        ['another bag', await chapter({ ...ourChapter([entry]), bag: 2 })],
+        ['another contract', await chapter({ ...ourChapter([entry]), contract: printed })],
+        ['no feed', null]
+    ]) {
+        bag([])
+        net.owner = writer.address
+        net.instead.set(first, feedFrom(update))
+        net.instead.set(second, feedFrom(update))
+        await scan()
+        for (let i = 0; i < 20; i++) {
+            mock.timers.runAll()
+            await new Promise((turn) => setImmediate(turn))
+        }
+        assert.equal(addedCards().length, 0, why)
+        assert.equal(cards().length, 3, why)
+    }
+})
+
+test('a twin not created yet, or records that do not all match: no feed is asked for', async (t) => {
+    t.mock.method(console, 'error', () => {}) // the RPC of the test knows no names, and the page logs that
+    bag([])
+    await scan()
+    assert.equal(net.asked.filter((url) => url.includes('/feeds/')).length, 0, 'no holder')
+    net.asked.length = 0
+    bag([])
+    net.owner = writer.address
+    net.anchors.delete(net.head) // the packing record has no anchor: the check fails
+    await scan()
+    assert.equal(net.asked.filter((url) => url.includes('/feeds/')).length, 0, 'a record that did not match')
+})
+
+test('a chapter whose values are HTML: each stays text, in a card like any other', async (t) => {
+    t.mock.method(console, 'error', () => {})
+    bag([])
+    net.owner = writer.address
+    const update = await chapter(ourChapter([{ kind: 'message', at: '2026-11-11T09:03:51Z', title: hostile('title'), text: hostile('text') }]))
+    net.instead.set(first, feedFrom(update))
+    await scan()
+    for (let i = 0; i < 20; i++) {
+        mock.timers.runAll()
+        await new Promise((turn) => setImmediate(turn))
+    }
+    const [card] = addedCards()
+    assert.ok(card)
+    assert.equal(card.querySelector('.said').textContent, hostile('text').slice(0, 500))
+    clean(document)
 })

@@ -1,6 +1,6 @@
 // What the page needs to read a bag, and nothing that signs or uploads: the shape of the config, the read side of the
 // contract, the sticker format, downloading a record from a gateway and hashing it the way Swarm does.
-import { bytesToHex, keccak256, parseAbi, type Address, type Hex } from './rails.ts'
+import { bytesToHex, hexToBytes, keccak256, parseAbi, recoverMessageAddress, type Address, type Hex } from './rails.ts'
 
 // `rpcs`: the RPCs the page asks, by network and in order. The first that answers is read; the next is asked whether it says the same.
 // `chain`: the network of `contract`, on whose explorer the footer links it.
@@ -129,3 +129,93 @@ export function parseSticker(hash: string) {
 }
 
 export class NotOfficial extends Error {}
+
+// ---------- the bag's chapter: what its holder added to its record ----------
+// The holder of a bag writes a feed on Swarm, topic "taste", whose latest update names a small JSON document, the chapter:
+// one entry per kind, a photo, a message, each with its time and a picture or a text. FFD-Labs/kitchen writes it and its
+// docs/FORMAT.md is the contract. It is not anchored: what the page checks is that the update is signed by the address
+// that holds the record, and that the chapter is the bytes its reference names.
+export const TOPIC = keccak256(new TextEncoder().encode('taste'))
+export const CHAPTER_BYTES = 4096
+export const CHAPTER_ENTRIES = 8
+export const ENTRY_TITLE = 60
+export const ENTRY_TEXT = 500
+export const IMAGE_TYPES = ['image/webp', 'image/jpeg', 'image/png', 'image/avif']
+export type Entry = { kind: string; at: string; title?: string; text?: string; image?: { ref: Hex; type: string; width?: number; height?: number } }
+export type Chapter = { chain?: number; contract?: string; bag?: number; entries: Entry[] }
+
+const KIND = /^[a-z][a-z0-9-]{0,31}$/
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/
+
+// A chapter read from its bytes, trimmed to what the page may draw, or null when the bytes are not one. An entry that
+// breaks a rule, or repeats a kind, is dropped and the rest still show.
+export function readChapter(bytes: Uint8Array): Chapter | null {
+    if (bytes.length === 0 || bytes.length > CHAPTER_BYTES) return null
+    let doc: unknown
+    try {
+        doc = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+    } catch {
+        return null
+    }
+    if (!doc || typeof doc !== 'object') return null
+    const { format, chain, contract, bag, entries } = doc as { [key: string]: unknown }
+    if (typeof format !== 'string' || !format.startsWith('ffd-bag-chapter/1') || !Array.isArray(entries)) return null
+    const seen = new Set<string>()
+    const kept: Entry[] = []
+    for (const raw of entries.slice(0, CHAPTER_ENTRIES) as unknown[]) {
+        if (!raw || typeof raw !== 'object') continue
+        const { kind, at, title, text, image } = raw as { [key: string]: unknown }
+        if (typeof kind !== 'string' || !KIND.test(kind) || seen.has(kind)) continue
+        if (typeof at !== 'string' || !INSTANT.test(at)) continue
+        const entry: Entry = { kind, at }
+        if (typeof title === 'string' && title.trim()) entry.title = title.trim().slice(0, ENTRY_TITLE)
+        if (typeof text === 'string' && text.trim()) entry.text = text.trim().slice(0, ENTRY_TEXT)
+        if (image && typeof image === 'object') {
+            const { ref, type, width, height } = image as { [key: string]: unknown }
+            if (typeof type === 'string' && IMAGE_TYPES.includes(type)) {
+                try {
+                    entry.image = { ref: hex(ref), type }
+                    if (Number.isInteger(width) && (width as number) > 0) entry.image.width = width as number
+                    if (Number.isInteger(height) && (height as number) > 0) entry.image.height = height as number
+                } catch {
+                    // not a reference: no picture
+                }
+            }
+        }
+        if (!entry.image && !entry.text) continue
+        seen.add(kind)
+        kept.push(entry)
+    }
+    return {
+        chain: Number.isInteger(chain) ? (chain as number) : undefined,
+        contract: typeof contract === 'string' ? contract : undefined,
+        bag: Number.isInteger(bag) ? (bag as number) : undefined,
+        entries: kept
+    }
+}
+
+// The latest update of the holder's feed, as a gateway serves it: the reference it names, its index and its signature, or
+// null when the feed has none. Bee answers the update's payload raw, the index and the signature in its headers.
+export async function feedOf(gateway: string, owner: Address) {
+    const response = await fetch(`${gateway}/feeds/${owner.slice(2).toLowerCase()}/${TOPIC.slice(2)}?type=sequence`, { signal: AbortSignal.timeout(WAIT) })
+    if (response.status === 404) return null
+    if (!response.ok) throw Error(`feed failed: ${response.status}`)
+    const index = response.headers.get('swarm-feed-index') ?? ''
+    const signature = response.headers.get('swarm-soc-signature') ?? ''
+    const body = new Uint8Array(await response.arrayBuffer())
+    if (body.length !== SEGMENT || !/^[0-9a-f]{16}$/i.test(index) || !/^[0-9a-f]{130}$/i.test(signature)) throw Error('feed failed: not a feed update')
+    return { ref: bytesToHex(body), index: BigInt(`0x${index}`), signature: `0x${signature}` as Hex }
+}
+
+// Who signed a feed update: the address the signature of its single owner chunk recovers to. The chunk wraps the
+// reference (a span of 32 and the 32 bytes) under the identifier keccak256(topic || index), and its owner signs
+// keccak256(identifier || the wrapped chunk's address) as an Ethereum message.
+export async function signerOf(update: { ref: Hex; index: bigint; signature: Hex }) {
+    const index = new Uint8Array(8)
+    new DataView(index.buffer).setBigUint64(0, update.index, false)
+    const topic = hexToBytes(TOPIC)
+    const identifier = keccak256(new Uint8Array([...topic, ...index]), 'bytes')
+    const wrapped = chunkAddress(hexToBytes(update.ref), SEGMENT)
+    const digest = keccak256(new Uint8Array([...identifier, ...wrapped]))
+    return recoverMessageAddress({ message: { raw: digest }, signature: update.signature })
+}

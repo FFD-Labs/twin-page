@@ -70,9 +70,10 @@ Top to bottom, each block filling in as its records arrive. The page opens in iv
 | The front | The pouch's crystal with the twin's number in the hexagon, the name of the fruit, and the three reads on one line: your device asks Ethereum, then Swarm, then hashes every record. The hexagon closes when every record matches, with the day the records are paid up to on Swarm under the seal | Ethereum and Swarm |
 | The fruit | The back of the pouch: the photograph where the QR sticker sits, and the label: grams per bag, energy, sugars, protein, fat, fibre, and the full table per 100 g | Files named by the packing record |
 | The path | One card per record: received, freeze-dried, packed, delivered. Each with its rows, the check against its Ethereum anchor and the anchor's date, links to the anchor and to the file on Swarm, and the raw record. The records write their moments in UTC; the cards show them in the time of where the bag was, the last place the path gives at or before the record, by the zone its file names or the country of its address, with the short name of that zone where the browser has one (IST, CET), and in UTC, said so, until a place has come. Received names the farm and the plant, with a flag and coordinates. Freeze-dried draws the cycle: temperature and pressure hour by hour, the coldest point and the lowest pressure marked. Delivered draws the route from the plant to where the bag went | The records on Swarm, and the files they name |
+| What the holder added | After the records, one card per entry of the bag's chapter: a photo, a message, and kinds to come, each drawn the same way, its time, its picture or its text, and "Signed by the holder of this record". Shown only when the holder's feed update is signed by the address the contract names and the chapter is the bytes its reference names and says it is this bag's. Never anchored, never counted among the records | The holder's feed on Swarm, topic `taste` |
 | The arithmetic | If this fruit was rescued: the grams in the bag, the fresh fruit they came from and the CO₂e that stays out of the air, every assumption in view | The records and the factors in the config |
 | The twin | Who holds it: the jazzicon of the address, or its ENS name and avatar | Ethereum and ENS |
-| The footer | Anchored on Ethereum, stored on Swarm, living on public rails. Three rows of small print: where the code is, the fingerprint of the file, and the contract on its explorer | The config |
+| The footer | Held on Ethereum, stored on Swarm, living on public rails. Three rows of small print: where the code is, the fingerprint of the file, and the contract on its explorer | The config |
 
 The states the page handles: no record yet for the bag; no bag in the link, or one cut short (the page opens on how it works and reads no network); a contract it does not list; a network it has no RPC for; a source that does not answer (the next is asked; when none does, Try again); a record that fails the check; a record that passes and is of a kind the page does not know.
 
@@ -136,7 +137,7 @@ To publish the next one: `npm run release -- <n>` builds the file, files it in `
 - No image until everything else is on screen; then the photograph, the cover and the background, each once the one before is in or has failed, each shown only when its bytes give its reference.
 - No cookies, nothing kept on the device, nothing signed, uploaded or moved.
 - What follows `#` in the link is not sent to whoever serves the page. The source it reads Ethereum with sees the bag; the gateways see which records are fetched.
-- No script but its own three, named by hash in the Content-Security-Policy. What a record says is written as text.
+- No script but its own three, named by hash in the Content-Security-Policy. What a record says, and what the holder's chapter says, is written as text.
 - No off-chain lookup (CCIP-Read): a name kept off-chain is not resolved, and its holder is shown by address.
 - Never the full curves of a cycle (about 2 MB of SenML): it draws the light file the record names for the page, and the full data opens on Swarm only when tapped.
 
@@ -177,13 +178,14 @@ The faces are cut once, when a master changes or the page writes something new i
 
 ## Status
 
-4 November 2026. Release 0.6, on real records, for Devcon 8 (3 to 6 November).
+4 November 2026. Release 0.7, on real records, for Devcon 8 (3 to 6 November).
 
 - The page reads the real records on mainnet, in the contract the QR of every bag names, as far as delivery: each of the 7,500 bags points to its transport, from the plant to Mumbai. The test contract on Sepolia opens too, with a transport on its banana bags.
+- After the records, the page shows what the bag's holder has added: one card per entry of the chapter the holder signs, read from their feed on Swarm (topic `taste`), and shown only when the update's signature recovers the address the contract names for the twin. These cards are the holder's, never anchored; a bag whose holder has added nothing shows none.
 - Each fruit has a stamp of its own on Swarm. Unless someone adds to them, the three run out on 28 December 2026; the page shows the day of the bag's own stamp when it can read it.
 - The nutrition figures are the producer's, given per 5 g serving as ranges; each description declares the middle of each range for 100 g and keeps the ranges as given.
 - The test records of bags 1 to 20 on Sepolia are of mango and name no file of a product.
-- The bags and their packaging are separate work, not in this repository.
+- The bags and their packaging are separate work, not in this repository. So is the Kitchen, the page where a bag's holder adds a photo to its record; this page draws what it writes, after the records.
 
 ## License
 
